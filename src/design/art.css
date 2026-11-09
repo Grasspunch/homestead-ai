@@ -1,0 +1,781 @@
+/* The art browser (#/art/...). Built from tokens.css and the library's shared classes. */
+
+.art-head {
+  margin-bottom: var(--s-6);
+}
+
+.art-head .art-credit {
+  margin-top: var(--s-1);
+  font: var(--body);
+}
+
+.art-credit a,
+.art-missing a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+.art-credit a:hover,
+.art-missing a:hover {
+  text-decoration-color: var(--ink);
+}
+
+/* ---- toolbar: sticks to the top of the scrolling page ---- */
+
+.art-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0 calc(var(--s-4) * -1) var(--s-6);
+  padding: var(--s-3) var(--s-4);
+  background: var(--sheet);
+  border-bottom: 1px solid var(--rule);
+}
+
+.art-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+}
+
+.art-search {
+  flex: 0 1 320px;
+}
+
+.art-bar .hs-check {
+  min-height: 0;
+  padding: 0;
+  align-items: center;
+}
+
+.art-bar .hs-check-box {
+  margin-top: 0;
+}
+
+.art-count {
+  margin: 0 0 var(--s-6);
+  color: var(--ink-2);
+}
+
+/* ---- folders ---- */
+
+.art-folder {
+  padding-bottom: var(--s-8);
+}
+
+.art-folder + .art-folder {
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--rule-soft);
+}
+
+.art-dir {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  margin: 0 0 var(--s-4);
+}
+
+.art-dir code {
+  font: var(--mono);
+  font-weight: 400;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.art-dir span {
+  font: var(--caption);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* Specimens flow in rows at their own width, so a 16px icon and a 384px sheet both sit at a whole-number scale. */
+.art-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s-5) var(--s-4);
+}
+
+.art-spec {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: zoom-in;
+  border-radius: var(--r-3);
+}
+
+.art-ground {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-3);
+  image-rendering: pixelated;
+  transition: border-color var(--t-quick) var(--ease);
+}
+
+.art-spec:hover .art-ground {
+  border-color: var(--rule-strong);
+}
+
+.art-spec:hover .art-cap b {
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+.art-pic {
+  position: relative;
+  display: block;
+}
+
+.art-pic img,
+.art-canvas img {
+  display: block;
+  image-rendering: pixelated;
+  user-select: none;
+}
+
+.art-cap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin-top: var(--s-2);
+}
+
+.art-cap b {
+  font: var(--label);
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.art-cap b code {
+  font: var(--mono);
+  font-size: 12px;
+}
+
+.art-cap > code {
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.art-cap em {
+  font-style: normal;
+  color: var(--out);
+}
+
+/* Manifest frames over a sheet: a blue line with a white halo, legible on every ground. */
+.art-rects {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.art-rects rect {
+  fill: transparent;
+  stroke: var(--out);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  paint-order: stroke;
+  filter: drop-shadow(0 0 1px var(--sheet));
+}
+
+.art-drawer .art-rects rect {
+  pointer-events: all;
+}
+
+.art-rects rect.on {
+  fill: rgba(45, 93, 168, 0.18);
+  stroke-width: 2.5px;
+}
+
+.art-rects rect.pick {
+  stroke: var(--sprout);
+  stroke-width: 2.5px;
+  pointer-events: none;
+}
+
+/* ---- fonts, source files and the license: ruled rows ---- */
+
+.art-fonts,
+.art-quiet {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.art-fonts li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-4) 0;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.art-fonts li:last-child {
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.art-font-sample {
+  color: var(--ink);
+  line-height: 1.25;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  overflow-wrap: anywhere;
+}
+
+.art-font-meta,
+.art-quiet li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+}
+
+.art-font-meta code,
+.art-quiet code {
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.art-font-meta span,
+.art-quiet span {
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.art-grid + .art-quiet,
+.art-fonts + .art-quiet {
+  margin-top: var(--s-5);
+}
+
+.art-quiet li {
+  padding: 6px 0;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.art-license {
+  border-top: 1px solid var(--rule-soft);
+}
+
+.art-quiet + .art-license {
+  border-top: 0;
+}
+
+.art-license summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  padding: 6px 0;
+  font: var(--label);
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: var(--r-1);
+}
+
+.art-license summary code {
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.art-license summary span {
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.art-license summary:hover {
+  color: var(--ink);
+}
+
+.art-license pre {
+  max-width: 88ch;
+  margin: var(--s-2) 0 0;
+  padding: var(--s-4);
+  background: var(--sheet-sunk);
+  border-radius: var(--r-2);
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+}
+
+/* ---- missing packs ---- */
+
+.art-missing {
+  max-width: 68ch;
+  padding: var(--s-6) 0;
+  border-top: 1px solid var(--rule);
+}
+
+.art-missing h2 {
+  font: var(--heading);
+  letter-spacing: var(--track-heading);
+  margin: 0 0 var(--s-3);
+}
+
+.art-missing p {
+  margin: 0 0 var(--s-4);
+  color: var(--ink-2);
+}
+
+.art-cmd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin: 0 0 var(--s-5);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  background: var(--sheet-sunk);
+  border-radius: var(--r-2);
+}
+
+.art-cmd code {
+  font: var(--mono);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* ---- detail drawer ---- */
+
+.art-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(920px, calc(100vw - var(--s-12)));
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: var(--float-shadow);
+}
+
+.art-drawer[open] {
+  display: flex;
+  flex-direction: column;
+  animation: art-in var(--t-base) var(--ease-enter);
+}
+
+.art-drawer::backdrop {
+  background: rgba(36, 29, 51, 0.24);
+}
+
+@keyframes art-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .art-drawer[open] {
+    animation: none;
+  }
+}
+
+.art-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-5) var(--s-6) var(--s-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.art-drawer-head h2 {
+  font: var(--heading);
+  letter-spacing: var(--track-heading);
+  margin: 0 0 var(--s-1);
+  overflow-wrap: anywhere;
+}
+
+.art-drawer-head p {
+  margin: 0;
+}
+
+.art-drawer-head code {
+  font: var(--mono);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.art-drawer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-top: var(--s-1) !important;
+  color: var(--ink-3);
+}
+
+.art-drawer-meta code {
+  color: var(--ink-3);
+}
+
+.art-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--s-4) var(--s-6) var(--s-10);
+}
+
+.art-drawer-body h3 {
+  font: var(--title);
+  margin: 0 0 var(--s-3);
+}
+
+.art-drawer-body > section {
+  margin-top: var(--s-6);
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--rule-soft);
+}
+
+.art-drawer-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-3);
+  margin-bottom: var(--s-4);
+}
+
+.art-view {
+  max-height: 58vh;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-3);
+}
+
+.art-canvas {
+  position: relative;
+  image-rendering: pixelated;
+}
+
+.art-canvas[data-pick] {
+  cursor: crosshair;
+}
+
+.art-gridlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(36, 29, 51, 0.28) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(36, 29, 51, 0.28) 1px, transparent 1px);
+  background-size: var(--cell) var(--cell);
+}
+
+.art-readout {
+  min-height: 20px;
+  margin: var(--s-2) 0 0;
+  font: var(--caption);
+  color: var(--ink-3);
+}
+
+.art-readout code {
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.art-player-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-5);
+}
+
+.art-frame {
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: var(--s-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-3);
+}
+
+.art-frame-img {
+  display: block;
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+}
+
+.art-player-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+  flex: 1;
+}
+
+.art-player-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.art-select {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font: var(--label);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.art-select select {
+  height: var(--control-sm);
+  padding: 0 var(--s-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  background: var(--sheet-sunk);
+  color: var(--ink);
+  font: var(--body);
+}
+
+.art-scrub {
+  flex: 1;
+  min-width: 120px;
+  accent-color: var(--ink);
+}
+
+.art-player-count {
+  font: var(--mono);
+  color: var(--ink-2);
+  min-width: 5ch;
+}
+
+.art-player-at {
+  margin: 0;
+  font: var(--caption);
+  color: var(--ink-3);
+}
+
+.art-player-at code {
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.art-copy-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+}
+
+.art-copy-row code,
+.art-copy-row pre {
+  min-width: 0;
+  margin: 0;
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.art-copy-row code {
+  padding-top: 7px;
+}
+
+.art-copy-row pre {
+  flex: 1;
+  padding: var(--s-3);
+  background: var(--sheet-sunk);
+  border-radius: var(--r-2);
+}
+
+.art-hint {
+  margin: var(--s-1) 0 var(--s-3);
+  font: var(--caption);
+  color: var(--ink-3);
+}
+
+.art-usedby ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.art-usedby summary {
+  margin-bottom: var(--s-2);
+  font: var(--label);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.art-usedby summary:hover {
+  color: var(--ink);
+}
+
+.art-usedby button {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--r-1);
+  background: none;
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.art-usedby button:hover,
+.art-usedby button:focus-visible {
+  background: var(--out-soft);
+  color: var(--ink);
+}
+
+/* ---- used by the app ---- */
+
+.art-used-group {
+  padding-bottom: var(--s-8);
+}
+
+.art-used-group + .art-used-group {
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--rule);
+}
+
+.art-used-group > h2 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  font: var(--heading);
+  letter-spacing: var(--track-heading);
+  margin: 0 0 var(--s-4);
+}
+
+.art-used-group > h2 span {
+  font: var(--mono);
+  color: var(--ink-3);
+}
+
+.art-used-sheet + .art-used-sheet {
+  margin-top: var(--s-6);
+}
+
+.art-used-sheet h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-1) var(--s-3);
+  margin: 0 0 var(--s-3);
+}
+
+.art-used-sheet h3 code {
+  font: var(--mono);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.art-used-sheet h3 span {
+  font: var(--caption);
+  color: var(--ink-3);
+}
+
+.art-used-sheet .art-hint {
+  margin-top: calc(var(--s-2) * -1);
+}
+
+.art-used {
+  margin: 0;
+  min-width: 0;
+}
+
+.art-used .art-ground {
+  display: grid;
+}
+
+.art-anims {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.art-anims li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.art-anims li:last-child {
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.art-anim-cap {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+}
+
+.art-anim-cap b code {
+  font: var(--mono);
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.art-anim-cap > code {
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.art-anim-play,
+.art-anim-strip {
+  display: flex;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  image-rendering: pixelated;
+}
+
+.art-anim-strip {
+  justify-self: start;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.art-anim-strip > * {
+  flex: none;
+}
+
+@media (max-width: 760px) {
+  .art-anim-strip {
+    grid-column: 1 / -1;
+  }
+  .art-player-row {
+    flex-direction: column;
+  }
+  .art-drawer {
+    width: 100vw;
+  }
+}

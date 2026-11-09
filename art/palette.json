@@ -1,0 +1,24 @@
+{
+  "_doc": [
+    "The Sprout Lands default palette, read from \"Sprout Lands color pallet/Sprout Lands defautlt palette.png\"",
+    "in the Sprites packs (16x7 px). 12 ramps of 8, dark to light, plus one near-white.",
+    "shadow is the one translucent colour in the palette (alpha 0-255).",
+    "scripts/check-palette.py holds our own pixel art (art/authored) to these colours."
+  ],
+  "ramps": [
+    ["#713970", "#8a4a70", "#a35b70", "#af6776", "#bd757e", "#d99a9a", "#e8b5ac", "#f3d8c5"],
+    ["#6b4b5b", "#865161", "#a16159", "#ba7c54", "#d79e61", "#eeba77", "#f2cf8c", "#f7ebaa"],
+    ["#795e53", "#957a4b", "#b09643", "#bfa954", "#d4c169", "#eae178", "#eeee9b", "#f3f2c0"],
+    ["#566560", "#67835c", "#78a158", "#8db15d", "#a4c263", "#c0d470", "#d2e077", "#e8eeaa"],
+    ["#505e77", "#5f7a79", "#6e967c", "#82a884", "#97bb8e", "#aed499", "#c2e09a", "#dff0bb"],
+    ["#4a588e", "#577297", "#658ca1", "#7ba6b4", "#8cbfc2", "#9bd4c3", "#b1e0be", "#d6f1cd"],
+    ["#4c468b", "#555793", "#5f699c", "#7180b1", "#8599c7", "#92b2d4", "#99c5de", "#cbe0de"],
+    ["#504086", "#5c4e92", "#685d9e", "#766daa", "#867fb8", "#a09dd4", "#bcafde", "#ddd5de"],
+    ["#583f83", "#694a87", "#7b568c", "#90689f", "#a77bb3", "#c89dd1", "#d8b1e0", "#ebd6e0"],
+    ["#754c60", "#90625d", "#aa7959", "#b68962", "#c49a6c", "#dcb98a", "#e8cfa6", "#f3e5c2"],
+    ["#645552", "#7b6762", "#8c7369", "#9d866f", "#b2a486", "#c4bc93", "#ded9ab", "#f0efb9"],
+    ["#353738", "#474a4b", "#545959", "#6b7470", "#818b83", "#9da89a", "#c1c8b9", "#dce0d2"]
+  ],
+  "extra": ["#f3f4e7"],
+  "shadow": {"color": "#504086", "alpha": 30}
+}
