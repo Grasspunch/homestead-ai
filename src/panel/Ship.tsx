@@ -1,9 +1,9 @@
-// The end of the harvest, after the merge: CI on main, the deploy to production, the canary and the rollback.
-// The engine keeps this as its own phase, 'ship'; on screen it is part of Harvest.
-// Deploying is the one outbound step, so it alone is drawn in blue.
+// The end of the harvest, after the merge: CI on main, the deploy to production, the canary, the rollback,
+// the fix and the text to pet owners. The engine keeps this as its own phase, 'ship'; on screen it is part of Harvest.
+// Deploying and the text are the outbound steps, so they alone are drawn in blue.
 import './ship.css'
 import { useState } from 'react'
-import { CI_JOBS, HEALTH, RELEASE, fmtHealth } from '../sim/ship'
+import { ANNOUNCE, CI_JOBS, HEALTH, fmtHealth } from '../sim/ship'
 import { OUTPUT } from '../sim/review'
 import { useEngine } from '../ui'
 import { Envelope } from './Cards'
@@ -25,15 +25,18 @@ export function shipSub(e: E): string {
       return 'Deploy held'
     case 'canary':
     case 'canary2':
-      return 'Canary on 5% of users'
+      return 'Canary on 5% of visitors'
     case 'rollback':
-      return `Rolling back to ${RELEASE.previous}`
     case 'rolledback':
-      return `Rolled back to ${RELEASE.previous}`
+      return 'Rolled back to “Call us to book”'
+    case 'fixing':
+      return 'Fixing availability search'
     case 'rollout':
-      return `Rolling out, ${e.rollout}% of users`
+      return `Rolling out, ${e.rollout}% of visitors`
     case 'live':
-      return `Live for ${RELEASE.users} users`
+      return 'Live for everyone'
+    case 'announced':
+      return `Live, ${ANNOUNCE.audience} texted`
     default:
       return 'CI, deploy, canary'
   }
@@ -42,13 +45,16 @@ export function shipSub(e: E): string {
 export function ShipNow() {
   const e = useEngine()
   const st = e.shipStage
-  const deploying = st === 'canary' || st === 'canary2' || st === 'rollback' || st === 'rolledback' || st === 'rollout' || (st === 'deploy' && e.rolledBack) || (st === 'held' && e.deploys > 0)
-  const live = st === 'live'
+  const live = st === 'live' || st === 'announced'
+  const deploying = st === 'canary' || st === 'canary2' || st === 'rollback' || st === 'rolledback' || st === 'rollout' || (e.rolledBack && !live)
   const waitingOnYou = e.openAsks.length > 0
   // Once CI passes it folds into one line, so the deploy stays in view.
   const ciDone = CI_JOBS.every((j) => e.ci[j.id].state === 'pass')
   const [showCi, setShowCi] = useState(false)
-  const release = live ? `${RELEASE.users} users` : st === 'rollout' ? `${e.rollout}%` : e.rollout ? '5% canary' : e.rolledBack ? 'Rolled back' : 'Not deployed'
+  const release = live ? 'Everyone' : st === 'rollout' ? `${e.rollout}%` : st === 'canary' || st === 'canary2' ? '5% canary' : e.rolledBack ? 'Rolled back' : 'Not deployed'
+  const fixed = e.rolledBack && st !== 'rollback' && st !== 'rolledback' && st !== 'fixing' && !(st === 'held' && e.deploys < 2)
+  const announce = e.asks.find((a) => a.id === 'announce')
+  const textEnd = st === 'announced' ? 'Sent' : announce?.status === 'resolved' ? 'Not sent' : ANNOUNCE.cost
   return (
     <>
       <p className="headline" data-testid="ship-headline">
@@ -78,7 +84,7 @@ export function ShipNow() {
       <div className={`outbox deploybox ${live ? 'sent' : ''}`} data-testid="deploy-box">
         <ul className="rows">
           <li>
-            <Row mark={<Envelope />} label={`${RELEASE.app} ${RELEASE.version} to production`} end={release} tone={live ? 'done' : ''} />
+            <Row mark={<Envelope />} label="Online booking" end={release} tone={live ? 'done' : ''} />
           </li>
           {live && (
             <li>
@@ -91,24 +97,51 @@ export function ShipNow() {
               const watching = st === 'canary' || st === 'canary2'
               return (
                 <li key={h.id}>
-                  <Row mark={<GateMark s={!r.ok ? 'fail' : watching ? 'run' : 'pass'} />} label={h.name} end={r.ok ? fmtHealth(h, r.value) : `${fmtHealth(h, r.value)}, needs ${h.threshold.replace(/^At least /, '')}`} tone={!r.ok ? 'fail' : watching ? '' : 'done'} testId={`health-${h.id}`} />
+                  <Row mark={<GateMark s={!r.ok ? 'fail' : watching ? 'run' : 'pass'} />} label={h.name} end={r.ok ? fmtHealth(h, r.value) : `${fmtHealth(h, r.value)}, limit ${h.threshold.replace(/^(At least|Under) /, '')}`} tone={!r.ok ? 'fail' : watching ? '' : 'done'} testId={`health-${h.id}`} />
                 </li>
               )
             })}
           {e.rolledBack && (
             <li>
-              <Row label={`Rolled back to ${RELEASE.previous}`} end="5% of users, 6 min" onClick={() => e.go({ kind: 'log', tab: 'auto' })} testId="rollback-row" />
+              <Row label="Rolled back" end="5% for 6 min" onClick={() => e.go({ kind: 'log', tab: 'auto' })} testId="rollback-row" />
+            </li>
+          )}
+          {e.rolledBack && (st === 'fixing' || fixed) && (
+            <li>
+              <Row mark={<GateMark s={fixed ? 'pass' : 'run'} />} label="One query for 8 weeks" end={fixed ? '0.3 s on staging' : 'Fixing'} tone={fixed ? 'done' : ''} testId="fix-row" />
             </li>
           )}
         </ul>
         {st === 'held' && !waitingOnYou && (
           <div className="send">
-            <button className="btn out full" onClick={() => e.requestDeploy()} data-testid="deploy">
-              Deploy to production
-            </button>
+            {e.rolledBack ? (
+              <button className="btn primary full" onClick={() => e.requestDeploy()} data-testid="deploy">
+                Fix and redeploy
+              </button>
+            ) : (
+              <button className="btn out full" onClick={() => e.requestDeploy()} data-testid="deploy">
+                Deploy to production
+              </button>
+            )}
           </div>
         )}
       </div>
+      {live && (
+        <div className={`outbox deploybox ${st === 'announced' ? 'sent' : ''}`} data-testid="announce-box">
+          <ul className="rows">
+            <li>
+              <Row mark={<Envelope />} label={`Text to ${ANNOUNCE.audience}`} end={textEnd} tone={st === 'announced' ? 'done' : ''} testId="announce-row" />
+            </li>
+          </ul>
+          {st === 'live' && !waitingOnYou && (
+            <div className="send">
+              <button className="btn out full" onClick={() => e.requestAnnounce()} data-testid="announce">
+                Text {ANNOUNCE.audience}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <StaysWithYou />
     </>
   )

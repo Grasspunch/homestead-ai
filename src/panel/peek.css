@@ -38,16 +38,10 @@
   background: var(--failure);
   color: #fff;
 }
-.peek-team,
-.peek-doing,
-.peek-note {
+.peek-doing {
   margin: 6px 0 0;
   font-size: 14px;
   line-height: 1.45;
-}
-.peek-team,
-.peek-note {
-  color: var(--ink-soft);
 }
 .peek-facts {
   display: grid;

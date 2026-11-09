@@ -20,23 +20,6 @@
   font-size: 14px;
 }
 
-.tree-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 10px 8px;
-}
-
-.tree-head strong {
-  font-size: 15px;
-}
-
-.tree-head span {
-  color: var(--ink-faint);
-  font-size: 12.5px;
-}
-
 .tree-list {
   outline: none;
   border-radius: 8px;
@@ -130,8 +113,8 @@
   color: var(--out);
 }
 
-.glyph.sleep {
-  color: var(--ink-faint);
+.glyph.done {
+  color: var(--sprout-deep);
   font-size: 12px;
 }
 
@@ -176,4 +159,10 @@
 /* Grow rows slide when their state changes, and only then. */
 .rows.nested.sorting > li {
   will-change: transform;
+}
+
+/* An ask card's title leads with its reason glyph. */
+.card h3 > .glyph {
+  margin-right: 8px;
+  vertical-align: 2px;
 }

@@ -21,61 +21,53 @@ export interface LibItem {
 }
 
 export const LIBRARY: Record<string, LibItem> = {
-  'web-app/src/': {
+  'front-desk-hours.csv': {
     kind: 'file',
-    what: 'The web app source code',
-    owner: 'Web team',
-    updated: 'today',
-    tokens: 18_600,
-    preview: 'src/api/session.ts\n  export const startSession = (token) =>\n    post("/v1/session", { token })',
+    what: 'Opening hours, kept by the front desk',
+    owner: 'Front desk',
+    updated: 'Aug 14',
+    tokens: 400,
+    preview: 'Monday to Friday, 8:00 to 19:00\nSaturday, 9:00 to 13:00\nSunday, closed',
   },
-  'auth-spec.md': {
+  'vets.md': {
     kind: 'file',
-    what: 'Design spec for Google sign-in',
-    owner: 'Design team',
-    updated: 'Nov 4',
-    tokens: 2_100,
-    preview: 'Frame 2: "Continue with Google" sits above the email field, full width. Errors show under the button.',
+    what: 'The vets, what each one sees, and how long visits take',
+    owner: 'Practice team',
+    updated: 'Oct 6',
+    tokens: 900,
+    preview: 'Dr Patel: dogs and cats. Dr Okafor: small pets. Dr Hughes: cats and dogs.\nA checkup or a vaccination takes 15 minutes.',
   },
-  'e2e-tests/': {
+  'staff-rota/rota.md': {
     kind: 'file',
-    what: 'End-to-end test suite',
-    owner: 'QA team',
-    updated: 'Nov 6',
-    tokens: 5_400,
-    preview: 'email-login.spec.ts\nsignup.spec.ts\nreset-password.spec.ts',
+    what: 'Which vet works when, from the Staff rota project',
+    owner: 'Practice team',
+    updated: 'Nov 3',
+    tokens: 700,
+    preview: 'No vet works Saturdays from 1 December. The clinic is closed on Saturdays from that date.',
   },
-  'session-api-v2/CHANGELOG.md': {
-    kind: 'file',
-    what: 'Changelog from the Session API v2 project',
-    owner: 'Platform team',
-    updated: 'yesterday',
-    tokens: 800,
-    preview: 'Nov 8: /v1/session removed from staging. Removed from production Nov 12. Use POST /v2/session.',
-  },
-  'oauth-security.md': {
+  'brand-style.md': {
     kind: 'skill',
-    what: 'How we do OAuth safely: state, PKCE, no tokens in logs',
-    owner: 'Security team',
+    what: 'How Willow Lane Vets looks and sounds',
+    owner: 'Design, used in 4 past runs',
+    updated: 'Sep 12',
+    tokens: 1_000,
+    preview: 'Warm green for actions, cream behind pages. Plain words. One question per screen on a phone.',
+  },
+  'owner-data.md': {
+    kind: 'skill',
+    what: 'How we handle owners’ phone numbers and pets’ records',
+    owner: 'Practice team',
     updated: 'Oct 2',
-    tokens: 1_100,
-    preview: 'Always send a state parameter. Use PKCE. Never log access_token or id_token.',
+    tokens: 800,
+    preview: 'Never log a phone number. Texts go out between 9:00 and 20:00 and say how to cancel.',
   },
-  'react-components.md': {
+  'lesson-phone-first.md': {
     kind: 'skill',
-    what: 'Our component patterns for buttons, forms and errors',
-    owner: 'Web team, used in 11 past runs',
-    updated: 'Oct 20',
-    tokens: 1_400,
-    preview: 'Use <Button variant="provider"> for third-party sign-in. Errors go in <FieldError> under the control.',
-  },
-  'lesson-check-changelogs.md': {
-    kind: 'skill',
-    what: 'Read a project’s changelog before calling its API',
+    what: 'Design booking pages for phones first',
     owner: 'Saved from your last harvest',
     updated: 'Nov 2',
     tokens: 300,
-    preview: 'Before a task calls another team’s API, attach that project’s changelog.',
+    preview: 'Most owners book from a phone. Check every page at phone width before the review.',
   },
   GitHub: {
     kind: 'tool',
@@ -86,7 +78,7 @@ export const LIBRARY: Record<string, LibItem> = {
     preview: 'get_file_contents\nlist_pull_requests\ncreate_pull_request\nmerge_pull_request',
     access: [
       { label: 'Read code, issues and pull requests', kind: 'read', on: true },
-      { label: 'Open a pull request on web-app', kind: 'write', on: true },
+      { label: 'Open a pull request on willow-lane-booking', kind: 'write', on: true },
       { label: 'Merge a pull request', kind: 'write', on: false },
     ],
   },
@@ -98,14 +90,14 @@ export const LIBRARY: Record<string, LibItem> = {
     tokens: 1_900,
     preview: 'browser_navigate\nbrowser_click\nbrowser_type\nbrowser_take_screenshot',
     access: [
-      { label: 'Open staging.web-app.dev', kind: 'read', on: true },
+      { label: 'Open staging.willowlanevets.co.uk', kind: 'read', on: true },
       { label: 'Click, type and take screenshots', kind: 'write', on: true },
       { label: 'Open any other site', kind: 'write', on: false },
     ],
   },
   Sentry: {
     kind: 'tool',
-    what: 'Read errors and health checks for the web app in production',
+    what: 'Read errors and health checks for online booking in production',
     owner: 'MCP server, read only',
     updated: '',
     tokens: 1_200,
@@ -113,6 +105,19 @@ export const LIBRARY: Record<string, LibItem> = {
     access: [
       { label: 'Read issues and stack traces', kind: 'read', on: true },
       { label: 'Resolve or mute issues', kind: 'write', on: false },
+    ],
+  },
+  Twilio: {
+    kind: 'tool',
+    what: 'Send text messages to pet owners from WillowVets',
+    owner: 'MCP server, signed in as Willow Lane Vets',
+    updated: '',
+    tokens: 700,
+    preview: 'send_message\nsend_bulk\nget_delivery_status',
+    access: [
+      { label: 'Read delivery status', kind: 'read', on: true },
+      { label: 'Text one pet owner', kind: 'write', on: true },
+      { label: 'Text every pet owner, after you approve', kind: 'write', on: true },
     ],
   },
   'GitHub Actions': {
@@ -135,15 +140,14 @@ export const KIND_NAME: Record<LibKind, string> = { file: 'File', skill: 'Skill'
 // What each task reads, uses and can call, as the head farmer proposes it at Plan
 // (files, then skills, then tools).
 export const TASK_CONTEXT: Record<string, string[]> = {
-  backend: ['web-app/src/', 'auth-spec.md', 'oauth-security.md', 'GitHub'],
-  frontend: ['web-app/src/', 'auth-spec.md', 'react-components.md', 'GitHub', 'Playwright'],
-  tests: ['e2e-tests/', 'Playwright'],
-  docs: ['auth-spec.md', 'GitHub'],
+  frontend: ['vets.md', 'brand-style.md', 'GitHub', 'Playwright'],
+  backend: ['front-desk-hours.csv', 'vets.md', 'owner-data.md', 'GitHub'],
+  messaging: ['owner-data.md', 'Twilio', 'GitHub'],
 }
 
 // The head farmer points out a file a task is missing, and says why.
 export const SUGGESTIONS: { taskIds: string[]; name: string; why: string }[] = [
-  { taskIds: ['frontend', 'backend'], name: 'session-api-v2/CHANGELOG.md', why: 'It changes the session endpoint this task calls, and it was updated yesterday.' },
+  { taskIds: ['backend'], name: 'staff-rota/rota.md', why: 'It says which vets work when, and it changed last week. The hours sheet was last edited in August.' },
 ]
 
 export function libItem(name: string, seeds: { file: string; title: string; from: string }[] = []): LibItem {

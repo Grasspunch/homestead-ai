@@ -2,92 +2,60 @@
 // the model is supposed to reach. Shared by the browser (for display) and the API (as model input).
 
 export const DOCS: Record<string, string> = {
-  'web-app/src/api/session.ts': `// Starts a signed-in session after any login method succeeds.
-import { post } from './http'
+  'front-desk-hours.csv': `# Opening hours. Kept by the front desk. Last edited 14 August.
+day,opens,closes
+Monday,8:00,19:00
+Tuesday,8:00,19:00
+Wednesday,8:00,19:00
+Thursday,8:00,19:00
+Friday,8:00,19:00
+Saturday,9:00,13:00
+Sunday,closed,closed`,
 
-export const startSession = (token: string) =>
-  post("/v1/session", { token })
+  'vets.md': `# Our vets (Willow Lane Vets)
 
-export const endSession = () => post("/v1/session/end", {})`,
+- Dr Priya Patel: dogs and cats. Checkups, vaccinations, surgery on Tuesdays and Thursdays.
+- Dr Tom Okafor: rabbits, guinea pigs and other small pets. Checkups and vaccinations.
+- Dr Ellen Hughes: cats and dogs. Checkups, vaccinations, dental.
 
-  'web-app/src/auth/password.ts': `// Email and password login. Must keep working after Google sign-in ships.
-import { startSession } from '../api/session'
+A checkup or a vaccination takes 15 minutes. Surgery always starts with a call from a vet.
+Which vet works which day is set by the staff rota, not here.`,
 
-export async function loginWithPassword(email: string, password: string) {
-  const { token } = await post('/auth/password', { email, password })
-  return startSession(token)
-}`,
+  'brand-style.md': `# How Willow Lane Vets looks and sounds (Design skill)
+- Warm green (#2f6b4f) for actions, cream (#fbf7ef) behind pages.
+- Plain words. "Book a visit", never "Schedule an appointment".
+- One question per screen on a phone. Big tap targets, at least 44 px.
+- Use the pet's name once we know it.`,
 
-  'web-app/src/pages/SignIn.tsx': `// The sign-in page: email field, password field, Sign in button.
-export function SignIn() {
-  return (
-    <Form onSubmit={loginWithPassword}>
-      <EmailField />
-      <PasswordField />
-      <Button type="submit">Sign in</Button>
-    </Form>
-  )
-}`,
+  'owner-data.md': `# Owners' data (Practice team skill)
+- Collect a phone number only to send the reminder the owner asked for.
+- Never write a phone number or a pet's medical notes to the logs.
+- Texts go out between 9:00 and 20:00, and every text says how to cancel.
+- Outside production, texts go to staging phones only.`,
 
-  'auth-spec.md': `# Google sign-in: design spec (Design team, Nov 4)
+  'lesson-phone-first.md': `# Lesson: design for phones first (saved from a past harvest)
+Most owners book from a phone. Check every page at phone width before the review.`,
 
-Frame 1: today's sign-in page, unchanged for email and password.
-Frame 2: "Continue with Google" sits above the email field, full width, with an "or" divider below it.
-Frame 3: errors show under the button, for example "Google sign-in was cancelled. Try again."
+  'staff-rota/rota.md': `# Staff rota (Practice team)
 
-Both login methods stay. Ships with Friday's deploy, Nov 13.`,
+Updated 3 November. Which vet works when, week by week.
 
-  'e2e-tests/email-login.spec.ts': `test('email login', async ({ page }) => {
-  await page.goto('/sign-in')
-  await page.fill('[name=email]', 'qa@example.com')
-  await page.fill('[name=password]', process.env.QA_PASSWORD)
-  await page.click('text=Sign in')
-  await expect(page).toHaveURL('/home')
-})`,
+Weekdays: 8:00 to 19:00, two vets on every day.
+Saturdays: no vet works Saturdays from 1 December. The clinic is closed on Saturdays from that date.
+Dr Patel: Monday to Thursday. Dr Okafor: Tuesday to Friday. Dr Hughes: Monday, Wednesday, Friday.`,
 
-  'e2e-tests/signup.spec.ts': `test('sign up', async ({ page }) => {
-  await page.goto('/sign-up')
-  // creates a user, then lands on /home
-})`,
+  'staff-rota/CHANGELOG.md': `# Staff rota: changelog (Practice team)
 
-  'e2e-tests/reset-password.spec.ts': `test('reset password', async ({ page }) => {
-  await page.goto('/reset')
-  // sends a reset email through the staging mailbox
-})`,
+## 3 November
+- Winter rota published. No vet works Saturdays from 1 December.
+- Saturday visits already booked after 1 December move to weekdays. The front desk is calling owners.
 
-  'session-api-v2/CHANGELOG.md': `# Session API v2: changelog (Platform team)
-
-## Nov 8
-- /v1/session removed from staging. Removed from production Nov 12.
-- Use POST /v2/session. It takes { token, provider } and returns the same session cookie.
-
-## Oct 27
-- POST /v2/session available on staging and production.
-- /v1/session deprecated.`,
-
-  'session-api-v2/README.md': `# Session API v2 (Platform team)
-
-One endpoint for every login method: POST /v2/session with { token, provider }.
-provider is "password", "google" or "sso".
-Questions: #platform-sessions.`,
-
-  'oauth-security.md': `# OAuth, done safely (Security team skill)
-- Always send a state parameter and check it on the callback.
-- Use PKCE for every authorization code flow.
-- Never log access_token or id_token, not even at debug level.
-- Store client secrets only in the secret manager.`,
-
-  'react-components.md': `# Component patterns (Web team skill)
-- Use <Button variant="provider"> for third-party sign-in.
-- Errors go in <FieldError> under the control they belong to.
-- Full-width buttons in auth forms.`,
-
-  'lesson-check-changelogs.md': `# Lesson: check changelogs (saved from your last harvest)
-Before a task calls another team's API, attach that project's changelog.`,
+## 6 October
+- Dr Hughes moves to Monday, Wednesday and Friday.`,
 }
 
-// What the neighbouring project (Session API v2) shares with other farms.
-export const NEIGHBOUR_DOCS = ['session-api-v2/CHANGELOG.md', 'session-api-v2/README.md']
+// What the neighbouring project (Staff rota) shares with other farms.
+export const NEIGHBOUR_DOCS = ['staff-rota/rota.md', 'staff-rota/CHANGELOG.md']
 
 // A signpost can be a single file or a folder; a folder expands to every document inside it.
 export function expandSignposts(names: string[]) {

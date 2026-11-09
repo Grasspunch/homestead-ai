@@ -447,43 +447,9 @@ button {
   background: var(--card);
 }
 
-.trail {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  font-size: 13px;
-  color: var(--ink-faint);
-  margin-bottom: 4px;
-  min-width: 0;
-}
-
-.trail > span {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.trail button {
-  border: 0;
-  background: transparent;
-  padding: 1px 2px;
-  color: var(--ink-soft);
-  max-width: 170px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-radius: 3px;
-}
-
-.trail button:hover {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.trail .sep {
-  margin: 0 4px;
-  color: var(--rule-strong);
+.title-row .back {
+  margin-left: -6px;
+  margin-top: 1px;
 }
 
 .title-row {
@@ -794,20 +760,6 @@ button.row:hover .chev {
   text-wrap: pretty;
 }
 
-.who {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--ink-soft);
-}
-
-.who strong {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--needs);
-}
-
 .out-line {
   display: flex;
   align-items: center;
@@ -897,15 +849,6 @@ button.row:hover .chev {
   text-align: right;
 }
 
-.tip {
-  margin: 0 0 8px;
-  font-size: 13px;
-  color: var(--sprout-deep);
-  background: var(--sprout-wash);
-  border-radius: 6px;
-  padding: 6px 10px;
-}
-
 .linkish {
   border: 0;
   background: transparent;
@@ -947,13 +890,6 @@ button.row:hover .chev {
   font-weight: 700;
   line-height: 1.35;
   text-wrap: pretty;
-}
-
-.group {
-  margin: 8px 0 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
 }
 
 .fine {
@@ -1323,32 +1259,14 @@ textarea.goal:focus {
   margin: 0 0 18px;
 }
 
-.section h4 {
-  margin: 0 0 6px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.section h4 .soft {
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 400;
+/* No labels over sections: a rule between them does the separating. */
+.section + .section {
+  border-top: 1px solid var(--rule);
+  padding-top: 14px;
 }
 
 .section > p {
   margin: 0;
-}
-
-.sublabel {
-  margin: 10px 0 2px;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--ink-soft);
 }
 
 .files {
@@ -1776,16 +1694,7 @@ textarea.goal:focus {
   font-size: 13.5px;
 }
 
-.help h4 {
-  grid-row: 1;
-  margin: 0 0 4px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
 .help dl {
-  grid-row: 2;
   margin: 0;
   display: grid;
   grid-template-columns: auto 1fr;

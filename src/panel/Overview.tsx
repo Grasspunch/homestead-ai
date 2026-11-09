@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Task } from '../sim/types'
 import { FARM } from '../sim/scenario'
 import { stepOf } from '../sim/steps'
-import { CHECKS, GATE_ORDER, GATES, OUTPUT } from '../sim/review'
+import { CHECKS, GATE_ORDER, GATES, HARVEST_FAIL, OUTPUT } from '../sim/review'
 import { fmtK, Sprite, useEngine } from '../ui'
 import { NeedsYou } from './Cards'
 import { GateMark } from './Detail'
@@ -95,11 +95,9 @@ function PlantNow() {
           {n} files, skills and tools, {fmtK(e.budget)} energy
         </p>
       </div>
-      <h4 className="group">Questions</h4>
       <ClarifyNow />
       {e.phase === 'plan' && (
         <>
-          <h4 className="group">Plan</h4>
           <PlanNow />
         </>
       )}
@@ -240,7 +238,7 @@ function PlanNow() {
               <Row
                 mark={<Crop t={t} />}
                 label={t.name}
-                sub={changed ? 'Changed by you' : t.proposalNote}
+                sub={changed ? 'Changed by you' : undefined}
                 end={e.farmhands[t.assignee].role}
                 onClick={() => e.openTask(t.id)}
                 taskId={t.id}
@@ -251,7 +249,6 @@ function PlanNow() {
         })}
       </ul>
       <Slow />
-      {e.showHint('plot') && <p className="tip">Each plot is a task. Click one to see who’s on it and the gates it must pass.</p>}
       <button className="btn primary full" disabled={!e.planReady} onClick={() => e.approvePlan()} data-testid="approve">
         Approve and start
       </button>
@@ -283,17 +280,7 @@ function GrowNow() {
       <p className="grow-line" data-testid="grow-line">
         {parts ? `${parts.charAt(0).toUpperCase()}${parts.slice(1)}. ` : ''}Nothing needs you.
       </p>
-      {e.showHint('plot') && <p className="tip">Each plot is a task. Click one, or press Tab, to see who’s on it.</p>}
     </>
-  )
-}
-
-export function OutboxHead() {
-  const e = useEngine()
-  return (
-    <div className="merge-line">
-      <span>{e.gateFailed ? 'Blocked. Nothing merges until every gate passes.' : `Merges into ${OUTPUT.base}. Nothing reaches users until you deploy.`}</span>
-    </div>
   )
 }
 
@@ -314,14 +301,12 @@ function HarvestNow() {
         {e.harvestHeadline}
       </p>
       <div className={`outbox mergebox ${e.sendState === 'sent' ? 'sent' : ''}`}>
-        <OutboxHead />
         <ul className="rows">
           <li>
             <Row mark={<span className="kind pr">PR</span>} label={`Pull request #${OUTPUT.pr}`} sub={`${OUTPUT.files} files, +${OUTPUT.added} −${OUTPUT.removed}`} onClick={() => e.go({ kind: 'out', id: 'pr' })} testId="out-pr" />
           </li>
         </ul>
         {e.gateFailed && <MergeControls />}
-        <p className="sublabel">Done when</p>
         <ul className="rows">
           {GATE_ORDER.map((g) => {
             const r = e.harvestGates[g]
@@ -347,15 +332,12 @@ function HarvestNow() {
   )
 }
 
-// What stays after the run: the guide, your decisions, lessons and the energy used.
+// What stays after the run: your decisions, lessons and the energy used.
 export function StaysWithYou() {
   const e = useEngine()
   return (
     <>
     <ul className="rows">
-      <li>
-        <Row label={OUTPUT.guide.title} sub={<span className="mono">{OUTPUT.guide.file}</span>} onClick={() => e.go({ kind: 'out', id: 'guide' })} />
-      </li>
       <li>
         <Row label="Your decisions" end={String(e.decisions.length)} onClick={() => e.go({ kind: 'out', id: 'decisions' })} />
       </li>
@@ -382,14 +364,13 @@ export function StaysWithYou() {
 export function MergeControls() {
   const e = useEngine()
   const left = CHECKS.filter((c) => !e.ticked.has(c.id)).length
-  const who = e.farmhands[e.task('backend').assignee].role
+  const who = e.farmhands[e.task(HARVEST_FAIL.taskId).assignee].role
   if (e.gateFailed)
     return (
       <div className="send">
-        <button className="btn primary full" onClick={() => e.sendBack()} data-testid="send-back">
-          Send back to {who}
-        </button>
-        <p className="quiet">Approve stays locked until every gate passes.</p>
+        <p className="quiet" data-testid="gate-failed-note">
+          {e.asks.some((a) => a.id === 'hold' && a.status !== 'resolved') ? `${who} needs your answer above. Nothing merges until every gate passes.` : 'Nothing merges until every gate passes.'}
+        </p>
       </div>
     )
   if (e.gatesRunning)
@@ -398,7 +379,6 @@ export function MergeControls() {
         <button className="btn primary full" disabled>
           Approve
         </button>
-        <p className="quiet">Gates are running. Approve unlocks when they pass.</p>
       </div>
     )
   if (e.sendState === 'sent') return <p className="out-done">Merged into {OUTPUT.base}.</p>
@@ -408,7 +388,7 @@ export function MergeControls() {
         <button className="btn primary full" disabled={!e.canApprove} onClick={() => e.approveHarvest()} data-testid="approve-harvest">
           Approve
         </button>
-        <p className="quiet">{left ? `Every gate passes. Unlocks after ${left} more check${left > 1 ? 's' : ''} by you.` : 'Every gate passes and you’ve looked. Approving merges nothing.'}</p>
+        {left > 0 && <p className="quiet">{left} more to look at</p>}
       </div>
     )
   return (
@@ -416,7 +396,6 @@ export function MergeControls() {
       <button className="btn primary full" onClick={() => e.merge()} data-testid="send">
         Merge PR #{OUTPUT.pr} into {OUTPUT.base}
       </button>
-      <p className="quiet">Squashes {e.tasks.length} commits into 1. CI runs on {OUTPUT.base} next, and nothing reaches users until you approve the deploy.</p>
     </div>
   )
 }

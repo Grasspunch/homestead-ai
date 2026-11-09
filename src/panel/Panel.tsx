@@ -1,4 +1,4 @@
-// The owner's side of the screen: the step bar, what needs you now, and a trail for drill-down.
+// The owner's side of the screen: the step bar, what needs you now, and a back arrow for drill-down.
 import { FARM } from '../sim/scenario'
 import './steps.css'
 import { STEP_LABEL, STEPS, stepOf } from '../sim/steps'
@@ -42,12 +42,14 @@ function OverviewStatus() {
     )
   if (e.phase === 'ship') {
     const times = `Needed you ${e.neededYou} ${e.neededYou === 1 ? 'time' : 'times'}.`
-    if (e.shipStage === 'live') return <>Live for 12,400 users. {times}</>
+    if (e.shipStage === 'announced') return <>Willow Lane Vets is taking bookings online. {times}</>
+    if (e.shipStage === 'live') return <>Live for everyone at Willow Lane Vets. {times}</>
     if (e.shipStage === 'ci') return <>Merged. CI is running on main.</>
     if (e.shipStage === 'cifailed') return <>CI failed on main.</>
-    if (e.shipStage === 'rollback' || e.shipStage === 'rolledback') return <>Rolled back to v4.17.3. {times}</>
-    if (e.shipStage === 'canary' || e.shipStage === 'canary2') return <>Canary live for 5% of users.</>
-    if (e.shipStage === 'rollout') return <>Rolling out, {e.rollout}% of users.</>
+    if (e.shipStage === 'rollback' || e.shipStage === 'rolledback') return <>Rolled back to “Call us to book”. {times}</>
+    if (e.shipStage === 'fixing') return <>Fixing availability search. {times}</>
+    if (e.shipStage === 'canary' || e.shipStage === 'canary2') return <>Canary live for 5% of visitors.</>
+    if (e.shipStage === 'rollout') return <>Rolling out, {e.rollout}% of visitors.</>
     return <>Merged, not deployed. {times}</>
   }
   if (e.gateFailed) return <>Blocked. 1 gate failed.</>
@@ -151,17 +153,15 @@ export function Panel() {
     <aside className="panel" aria-label={FARM.name}>
       <header className="panel-head">
         {!valleys && !farm && <StepBar />}
-        {e.nav.length > 1 && (
-          <nav className="trail" aria-label="Where you are">
-            {e.nav.slice(0, -1).map((n, i) => (
-              <span key={i}>
-                {i > 0 && <span className="sep">/</span>}
-                <button onClick={() => e.goTo(i + 1)}>{navName(n, e)}</button>
-              </span>
-            ))}
-          </nav>
-        )}
         <div className="title-row">
+          {/* No label over the title: a back arrow names the parent in its tooltip. */}
+          {e.nav.length > 1 && (
+            <button className="icon-btn back" onClick={() => e.goTo(e.nav.length - 1)} aria-label={`Back to ${navName(e.nav[e.nav.length - 2], e)}`} title={`Back to ${navName(e.nav[e.nav.length - 2], e)} (Esc)`} data-testid="back">
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
+                <path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
           <h1>{title}</h1>
           {top?.kind !== 'settings' && (
             <button className="icon-btn" onClick={() => e.go({ kind: 'settings' })} aria-label="Settings" title="Settings" data-testid="settings">

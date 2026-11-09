@@ -2,15 +2,15 @@
 import './review.css'
 import { useState, type ReactNode } from 'react'
 import type { Nav, OutId } from '../sim/engine'
-import { CLASH, FARM, LESSON_TRACE, MISSING, BUILDERS } from '../sim/scenario'
+import { CLASH, LESSON_TRACE, MISSING, BUILDERS } from '../sim/scenario'
 import { DOCS } from '../sim/docs'
 import { KIND_NAME } from '../sim/library'
-import { CHECKS, COMMIT_STATS, COMMITS, GATE_DETAIL, GATE_ORDER, GATES, OUTPUT, TASK_GATES, type GateId, type GateState } from '../sim/review'
+import { CHECKS, COMMIT_STATS, COMMITS, GATE_DETAIL, GATE_ORDER, GATES, HARVEST_FAIL, OUTPUT, TASK_GATES, type GateId, type GateState } from '../sim/review'
 import type { LogEntry, RoleId, Task } from '../sim/types'
 import { fmtK, fmtT, Portrait, useEngine } from '../ui'
-import { GUIDE_STEPS } from '../sim/ship'
 import './ship.css'
 import { AskOptions, PROV, ReplyBox } from './Cards'
+import { BookingShot, BookingStrip } from './BookingShots'
 import { Context, LibraryView, LibView, PickView } from './Library'
 import { Crop, Mark, Row } from './Overview'
 import { settingsName, settingsStatus, SettingsView } from './Settings'
@@ -22,19 +22,17 @@ export interface ViewSpec {
   body: ReactNode
 }
 
-export function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+// A block of content. No label above it: the name is only for screen readers, and a rule
+// separates one section from the next.
+export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="section">
-      <h4>
-        {title}
-        {aside && <span className="soft">{aside}</span>}
-      </h4>
+    <section className="section" aria-label={title}>
       {children}
     </section>
   )
 }
 
-const OUT_NAME: Record<string, string> = { pr: `Pull request #${OUTPUT.pr}`, guide: OUTPUT.guide.title, decisions: 'Your decisions', lessons: 'Lessons saved' }
+const OUT_NAME: Record<string, string> = { pr: `Pull request #${OUTPUT.pr}`, decisions: 'Your decisions', lessons: 'Lessons saved' }
 
 // ---- trail names --------------------------------------------------------------
 
@@ -66,7 +64,7 @@ export function navName(n: Nav, e: ReturnType<typeof useEngine>): string {
 function gateStatus(g: GateId, e: ReturnType<typeof useEngine>) {
   const r = e.harvestGates[g]
   const word = r.state === 'fail' ? 'Failed' : r.state === 'run' ? 'Running' : r.state === 'wait' ? 'Not run yet' : 'Passed'
-  return `${word}. ${g === 'review' ? 'The Reviewer read the whole diff and wrote none of it.' : g === 'shots' ? 'Captured on staging by Tests, with the Playwright MCP.' : GATE_DETAIL[g]?.status ?? ''}`
+  return word
 }
 
 export function viewFor(n: Nav, e: ReturnType<typeof useEngine>): ViewSpec {
@@ -91,17 +89,16 @@ export function viewFor(n: Nav, e: ReturnType<typeof useEngine>): ViewSpec {
     case 'out':
       if (n.id === 'decisions') return { title, body: <DecisionsView /> }
       if (n.id === 'lessons') return { title, body: <LessonsView /> }
-      if (n.id === 'guide') return { title, status: `Stays with you. ${OUTPUT.guide.file}.`, body: <GuideView /> }
-      if (n.id === 'pr') return { title, status: `${FARM.repo}. Opened by Homestead. Its CI checks are the gates.`, body: <PrView /> }
+      if (n.id === 'pr') return { title, body: <PrView /> }
       return { title, status: gateStatus(n.id, e), body: <GateView g={n.id} /> }
     case 'lib': {
       const L = e.lib(n.id)
       return { title, status: L.kind === 'tool' ? `${L.owner}.` : `${KIND_NAME[L.kind]}. ${L.owner}${L.updated ? `, updated ${L.updated}` : ''}.`, body: <LibView name={n.id} /> }
     }
     case 'pick':
-      return { title, status: 'Files are facts. Skills are how to do the job. Tools are what it can act on.', body: <PickView taskId={n.id} /> }
+      return { title, body: <PickView taskId={n.id} /> }
     case 'library':
-      return { title, status: 'Everything your crew can read, use or call.', body: <LibraryView /> }
+      return { title, body: <LibraryView /> }
     case 'settings':
       return { title, status: settingsStatus(n.id, e), body: <SettingsView id={n.id} /> }
   }
@@ -116,49 +113,35 @@ function StepView({ id }: { id: string }) {
     return (
       <>
         <StepView id="brief" />
-        <h4 className="group">Your answers</h4>
         <StepView id="clarify" />
-        <h4 className="group">The plan</h4>
         <StepView id="plan" />
       </>
     )
   if (id === 'brief') {
     const names = e.attachments.filter((a) => a.selected).map((a) => a.name)
-    const group = (kind: 'file' | 'skill' | 'tool', label: string) => {
-      const list = names.filter((n) => e.lib(n).kind === kind)
-      return (
-        <Section title={label}>
-          {list.length ? (
-            <ul className="rows">
-              {list.map((n) => (
-                <li key={n}>
-                  <Row mark={<span className={`kind ${kind}`}>{kind === 'skill' ? 'S' : kind === 'tool' ? 'T' : 'F'}</span>} label={<span className="mono">{n}</span>} sub={e.lib(n).what} onClick={() => e.go({ kind: 'lib', id: n })} />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="soft">None</p>
-          )}
-        </Section>
-      )
-    }
+    // Files, skills and tools in one list; the F, S and T marks tell them apart.
+    const order = { file: 0, skill: 1, tool: 2 } as const
+    const attached = [...names].sort((a, b) => order[e.lib(a).kind] - order[e.lib(b).kind])
     return (
       <>
         <Section title="Goal">
           <p>{e.goal}</p>
         </Section>
-        <Section title="Crew">
+        <Section title="Crew and attachments">
           <ul className="rows">
             <li>
-              <Row label={e.team.name} sub={e.team.line} end={String(e.team.members.length)} onClick={() => e.go({ kind: 'settings', id: `templates:team:${e.crew}` })} />
+              <Row label={e.team.name} end={`${e.team.members.length} agents`} onClick={() => e.go({ kind: 'settings', id: `templates:team:${e.crew}` })} />
             </li>
+            {attached.map((n) => {
+              const kind = e.lib(n).kind
+              return (
+                <li key={n}>
+                  <Row mark={<span className={`kind ${kind}`}>{kind === 'skill' ? 'S' : kind === 'tool' ? 'T' : 'F'}</span>} label={<span className="mono">{n}</span>} onClick={() => e.go({ kind: 'lib', id: n })} />
+                </li>
+              )
+            })}
           </ul>
-        </Section>
-        {group('file', 'Files the crew may read')}
-        {group('skill', 'Skills')}
-        {group('tool', 'Tools (MCP servers)')}
-        <Section title="Energy budget">
-          <p className="num">{fmtK(e.budget)}</p>
+          <p className="soft">{fmtK(e.budget)} energy budget</p>
         </Section>
       </>
     )
@@ -166,11 +149,15 @@ function StepView({ id }: { id: string }) {
   if (id === 'clarify')
     return (
       <>
-        {e.questions.map((q) => (
-          <Section key={q.id} title={q.q}>
-            <p>{e.clarifyAnswers[q.id] ?? q.options[0]}</p>
-          </Section>
-        ))}
+        <Section title="Your answers">
+          <ul className="rows">
+            {e.questions.map((q) => (
+              <li key={q.id}>
+                <Row label={q.q} sub={e.clarifyAnswers[q.id] ?? q.options[0]} />
+              </li>
+            ))}
+          </ul>
+        </Section>
       </>
     )
   if (id === 'plan') {
@@ -182,11 +169,10 @@ function StepView({ id }: { id: string }) {
           Approved at {fmtT(approval?.t ?? 0)}. {approval?.reason ? `${approval.reason}.` : 'No changes.'}
         </p>
         {replan && <p className="quiet">Changed at {fmtT(replan.t)} by the re-plan: {e.task(MISSING.taskId).name} now reads {MISSING.file}.</p>}
-        <p className="quiet">Staffed from {e.team.name}.</p>
         <ul className="rows">
           {e.tasks.map((t) => (
             <li key={t.id}>
-              <Row mark={<Crop t={t} />} label={t.name} sub={`${staffName(e.team, t.assignee, e.farmhands[t.assignee].role)}, ${t.signposts.length} files, skills and tools`} end={fmtK(t.budget)} onClick={() => e.go({ kind: 'task', id: t.id })} taskId={t.id} />
+              <Row mark={<Crop t={t} />} label={t.name} sub={staffName(e.team, t.assignee, e.farmhands[t.assignee].role)} end={fmtK(t.budget)} onClick={() => e.go({ kind: 'task', id: t.id })} taskId={t.id} />
             </li>
           ))}
         </ul>
@@ -273,7 +259,6 @@ function TaskView({ t }: { t: Task }) {
             </button>
           )}
         </div>
-        {planning && t.proposalNote && t.assignee === t.proposedAssignee && <p className="quiet">{t.proposalNote}</p>}
       </Section>
 
       <Section title="Steps">
@@ -298,7 +283,7 @@ function TaskView({ t }: { t: Task }) {
         </ul>
       </Section>
 
-      <Section title="Done when" aside={planning ? 'The crop ripens only when these pass' : undefined}>
+      <Section title="Done when">
         {planning ? (
           <ul className="checks">
             {GATE_ORDER.map((g) => (
@@ -320,15 +305,12 @@ function TaskView({ t }: { t: Task }) {
               return (
                 <li key={g}>
                   <GateMark s={r.state} />
-                  <span>
-                    {GATES[g].name}
-                    <span className="soft"> {what(g)}</span>
-                  </span>
+                  <span>{GATES[g].name}</span>
                   <span className={r.state === 'fail' ? 'end fail' : 'soft'}>{r.text}</span>
                 </li>
               )
             })}
-            {!have.length && <li className="soft">No gates. The crop ripens when the steps are done.</li>}
+            {!have.length && <li className="soft">No gates</li>}
           </ul>
         )}
       </Section>
@@ -450,11 +432,11 @@ function TraceView() {
   const t = e.task(MISSING.taskId)
   const fh = e.farmhands[t.assignee]
   const seen = t.signposts.filter((s) => s !== MISSING.file && e.lib(s).kind !== 'tool')
-  const line = (DOCS['web-app/src/api/session.ts'] ?? '').split('\n').find((l) => l.includes(CLASH.ours))?.trim()
+  const line = (DOCS['front-desk-hours.csv'] ?? '').split('\n').find((l) => l.startsWith('Saturday'))?.trim()
   return (
     <>
       <p className="headline">
-        {MISSING.file} was never attached to {t.name}, so {fh.role} couldn’t see that {CLASH.ours} was retired.
+        {MISSING.file} was never attached to {t.name}, so {fh.role} couldn’t see that {CLASH.change.charAt(0).toLowerCase() + CLASH.change.slice(1)}.
       </p>
       <details className="fine">
         <summary>The full trace</summary>
@@ -463,18 +445,16 @@ function TraceView() {
             {fh.role} could read <span className="mono">{seen.join(', ')}</span>.
           </li>
           <li>
-            The only session call in them was <span className="mono">{line}</span> in src/api/session.ts.
+            The only opening hours in them were in front-desk-hours.csv, last edited in August: <span className="mono">{line}</span>.
           </li>
-          <li>It reused that call for Google sign-in, and staging returned 404.</li>
-          <li>
-            <span className="mono">lesson-check-changelogs.md</span> says to attach a project’s changelog, but it names no project, so nothing tied it to this task.
-          </li>
+          <li>vets.md says the staff rota sets which vet works which day, but the rota wasn’t attached, so {fh.role} had nothing to check against.</li>
+          <li>The availability search offered Saturday slots from 1 December, and staging found no vet for them.</li>
         </ol>
       </details>
       <div className="seed-card">
-        <div className="mono soft">{LESSON_TRACE.file}</div>
         <b>{LESSON_TRACE.title}</b>
         <p>{LESSON_TRACE.body}</p>
+        <div className="mono soft">{LESSON_TRACE.file}</div>
       </div>
       <button className="btn primary full" onClick={() => e.saveSeed()} data-testid="save-seed">
         Save as a skill
@@ -492,7 +472,7 @@ function Checks({ g }: { g: GateId }) {
   if (!list.length) return null
   const state = e.harvestGates[g].state
   return (
-    <Section title="Needs your eyes" aside={`${list.filter((c) => e.ticked.has(c.id)).length} of ${list.length}`}>
+    <Section title="Needs your eyes">
       <ul className="checks">
         {list.map((c) => (
           <li key={c.id} className={state === 'fail' ? 'fail' : state === 'run' ? 'blocked' : ''}>
@@ -506,22 +486,8 @@ function Checks({ g }: { g: GateId }) {
           </li>
         ))}
       </ul>
-      {state === 'fail' && <p className="quiet">Can’t be ticked while this gate fails.</p>}
-      {state === 'run' && <p className="quiet">Running again. Tick these when it passes.</p>}
+      {state === 'fail' && <p className="quiet">Locked while this gate fails</p>}
     </Section>
-  )
-}
-
-export function LoginShot({ after, err }: { after?: boolean; err?: boolean }) {
-  return (
-    <div className="shot" role="img" aria-label={err ? 'Sign-in page showing an error' : after ? 'Sign-in page after the change' : 'Sign-in page before the change'}>
-      <div className="shot-t">Sign in</div>
-      {after && <div className="shot-g">Continue with Google</div>}
-      {err ? <div className="shot-err">Google sign-in was cancelled. Try again.</div> : after ? <div className="shot-or">or</div> : null}
-      <div className="shot-f" />
-      <div className="shot-f" />
-      <div className="shot-b">Sign in</div>
-    </div>
   )
 }
 
@@ -537,13 +503,28 @@ function ResultRows({ rows }: { rows: [string, string, string][] }) {
   )
 }
 
-function SendBackButton() {
+// The failed gate at the harvest, with the ask it raised. Answer it here or on the overview.
+function FailedGate() {
   const e = useEngine()
-  const who = e.farmhands[e.task('backend').assignee].role
+  const ask = e.asks.find((a) => a.id === 'hold' && a.status !== 'resolved')
   return (
-    <button className="btn primary" onClick={() => e.sendBack()} data-testid="send-back">
-      Send back to {who}
-    </button>
+    <div className="blocking" data-testid="blocking">
+      <h3>{HARVEST_FAIL.detail}</h3>
+      <pre className="excerpt">
+        src/api/bookings.ts, line 13{'\n'}
+        const slot = await db.slots.find(slotId){'\n'}
+        <span className="bad">if (slot.taken) return conflict()</span>
+      </pre>
+      <BookingShot screen="double-booked" err />
+      {ask && (
+        <>
+          <p>
+            <b>{ask.question.split('. ').slice(-1)[0]}</b>
+          </p>
+          <AskOptions ask={ask} />
+        </>
+      )}
+    </div>
   )
 }
 
@@ -554,29 +535,7 @@ function GateView({ g }: { g: GateId }) {
   if (g === 'shots')
     return (
       <>
-        <div className="ba">
-          <figure>
-            <figcaption>Before</figcaption>
-            <LoginShot />
-          </figure>
-          <figure>
-            <figcaption>After</figcaption>
-            <LoginShot after />
-          </figure>
-        </div>
-        <div className="ba">
-          <figure>
-            <figcaption>After, Google cancelled</figcaption>
-            <LoginShot after err />
-          </figure>
-          <figure>
-            <figcaption>Email form, pixel diff</figcaption>
-            <div className="shot diff">
-              <span className="big">0</span>
-              <span className="soft">pixels changed</span>
-            </div>
-          </figure>
-        </div>
+        <BookingStrip />
         <Checks g="shots" />
       </>
     )
@@ -587,10 +546,6 @@ function GateView({ g }: { g: GateId }) {
       <>
         {r.state === 'fail' && b ? (
           <div className="blocking" data-testid="blocking">
-            <div className="who">
-              <strong>Blocking</strong>
-              <span>{e.farmhands[e.task('backend').assignee].role}’s code</span>
-            </div>
             <h3>{b.problem}</h3>
             <pre className="excerpt">
               {b.file}, line {b.line}
@@ -598,30 +553,28 @@ function GateView({ g }: { g: GateId }) {
               <span className="bad">{b.code}</span>
             </pre>
             <p className="quiet">Breaks {b.rule}</p>
-            <div className="opts">
-              <SendBackButton />
-            </div>
           </div>
         ) : (
           <Section title="Blocking">
-            <p>{r.state === 'run' ? 'Reviewing.' : 'None'}</p>
+            <p>{r.state === 'run' ? 'Reviewing.' : 'Nothing blocking'}</p>
           </Section>
         )}
         <Section title="Notes">
           <ul className="rows flat">
             {(rev?.notes ?? []).map((n) => (
               <li key={n.title}>
-                <Row label={n.title} sub={n.where} />
+                <Row label={n.title} sub={n.where} end="Note" />
               </li>
             ))}
           </ul>
         </Section>
         <Section title="The change that matters">
           <pre className="excerpt">
-            src/api/session.ts{'\n'}
-            <del>- post("{CLASH.ours}", {'{ token }'})</del>
-            {'\n'}
-            <ins>+ post("{e.endpoint ?? CLASH.theirs}", {'{ token }'})</ins>
+            src/api/availability.ts{'\n'}
+            {e.hoursFrom === MISSING.file ? <ins>+ const hours = await rota.hours(from, to)</ins> : <span>+ const hours = sheet.hours('front-desk-hours.csv')</span>}
+            {'\n\n'}
+            src/api/bookings.ts{'\n'}
+            {e.fixSent ? <ins>+ const held = await db.slots.hold(slotId, owner, {'{ minutes: 5 }'}){'\n'}+ if (!held) return taken()</ins> : <span>+ if (slot.taken) return conflict()</span>}
           </pre>
           <p className="quiet">
             {OUTPUT.files} files, +{OUTPUT.added} −{OUTPUT.removed}.
@@ -629,9 +582,9 @@ function GateView({ g }: { g: GateId }) {
         </Section>
         <Section title="Checked against">
           <ul className="rows">
-            {['oauth-security.md', 'react-components.md', 'auth-spec.md'].map((f) => (
+            {['owner-data.md', 'brand-style.md', 'vets.md'].map((f) => (
               <li key={f}>
-                <Row mark={<span className={`kind ${e.lib(f).kind}`}>{e.lib(f).kind === 'skill' ? 'S' : 'F'}</span>} label={<span className="mono">{f}</span>} sub={e.lib(f).what} onClick={() => e.go({ kind: 'lib', id: f })} />
+                <Row mark={<span className={`kind ${e.lib(f).kind}`}>{e.lib(f).kind === 'skill' ? 'S' : 'F'}</span>} label={<span className="mono">{f}</span>} end="Checked against" onClick={() => e.go({ kind: 'lib', id: f })} />
               </li>
             ))}
           </ul>
@@ -642,14 +595,15 @@ function GateView({ g }: { g: GateId }) {
   }
   return (
     <>
-      {d && <Section title="Suites">{r.state === 'run' ? <p className="quiet">Running again.</p> : <ResultRows rows={d.rows} />}</Section>}
+      {r.state === 'fail' && g === HARVEST_FAIL.gate && <FailedGate />}
+      {d && r.state !== 'fail' && <Section title="Suites">{r.state === 'run' ? <p className="quiet">Running again.</p> : <ResultRows rows={d.rows} />}</Section>}
       {g === 'unit' && (
         <Section title="Changed lines covered">
           <p className="coverage">
             <span className="bar">
               <i style={{ width: '94%' }} />
             </span>
-            <span className="num">94%</span>
+            <span className="num">94%</span> of changed lines covered
           </p>
         </Section>
       )}
@@ -658,7 +612,7 @@ function GateView({ g }: { g: GateId }) {
           <pre className="excerpt">{d.output}</pre>
         </Section>
       )}
-      {d?.steps && (
+      {d?.steps && r.state !== 'fail' && (
         <Section title="Recording">
           <ol className="recording">
             {d.steps.map((s) => (
@@ -681,6 +635,9 @@ function PrView() {
   const e = useEngine()
   return (
     <>
+      <Section title="Why">
+        <p>{OUTPUT.why}</p>
+      </Section>
       <Section title="Check it out yourself">
         <div className="cmd">
           <code>{OUTPUT.checkout}</code>
@@ -719,27 +676,6 @@ function PrView() {
   )
 }
 
-function GuideView() {
-  const e = useEngine()
-  // While the redirect URI ask is open, its step is the one in focus.
-  const focus = e.asks.some((a) => a.id === 'redirect')
-  return (
-    <div className="doc">
-      <b>Google sign-in</b>
-      <ol className="guide-steps">
-        {GUIDE_STEPS.map((s, i) => (
-          <li key={s.id} id={`guide-${s.id}`} className={focus && s.id === 'redirect' ? 'focus' : ''} data-testid={`guide-${s.id}`}>
-            <b>
-              {i + 1}. {s.text}
-            </b>
-            {focus && s.id === 'redirect' && <span>{s.who}</span>}
-          </li>
-        ))}
-      </ol>
-    </div>
-  )
-}
-
 function DecisionsView() {
   const e = useEngine()
   return (
@@ -758,7 +694,6 @@ function LessonsView() {
   const saved = e.seeds.filter((s) => s.isNew)
   return (
     <>
-      <p className="quiet">Lessons join Files and skills. The head farmer offers them on the next run.</p>
       <ul className="rows">
         {saved.map((s) => (
           <li key={s.file}>

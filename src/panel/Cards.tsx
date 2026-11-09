@@ -1,6 +1,7 @@
 // The one raised object on the panel: whatever needs you right now.
 import { useState } from 'react'
 import { REASON_WORD, type OutId } from '../sim/engine'
+import { Glyph } from './AgentTree'
 import { CLASH, MISSING } from '../sim/scenario'
 import type { Ask } from '../sim/types'
 import { Kbd, useEngine } from '../ui'
@@ -68,18 +69,11 @@ export function AskCard({ ask }: { ask: Ask }) {
   const rec = ask.options.find((o) => o.recommended)
   return (
     <div className={`card ask ${out ? 'outbound' : ''}`} data-testid={`ask-${ask.id}`}>
-      {out ? (
-        <div className="who out-line">
-          <Envelope />
-          <span>{ask.impact[0]}</span>
-        </div>
-      ) : (
-        <div className="who">
-          <strong>{REASON_WORD[ask.label] ?? ask.label}</strong>
-          <span>{ask.fromName} asks</span>
-        </div>
-      )}
-      <h3>{ask.question}</h3>
+      {/* The reason is the glyph's shape, the same one that floats over the farmhand. */}
+      <h3 aria-label={`${REASON_WORD[ask.label] ?? ask.label}. ${ask.fromName} asks: ${ask.question}`}>
+        <Glyph g={{ kind: 'ask', reason: ask.label }} />
+        {ask.question}
+      </h3>
       {ask.sides && ask.status === 'open' && (
         <div className="sides">
           {ask.sides.map((s, i) => {
@@ -93,7 +87,7 @@ export function AskCard({ ask }: { ask: Ask }) {
           })}
         </div>
       )}
-      {ask.status === 'open' && (out ? ask.impact[1] : ask.impact[0]) && <p className="consequence">{out ? ask.impact[1] : ask.impact[0]}</p>}
+      {ask.status === 'open' && ask.impact[0] && <p className="consequence">{ask.impact[0]}</p>}
       {ask.link && ask.status === 'open' && (
         <button className="linkish" onClick={() => e.go({ kind: 'out', id: ask.link!.out as OutId })} data-testid={`ask-link-${ask.id}`}>
           {ask.link.label}
@@ -112,10 +106,6 @@ export function ReplanCard() {
   const r = e.replan!
   return (
     <div className="card" data-testid="replan">
-      <div className="who">
-        <strong>Re-plan</strong>
-        <span>Nothing changes until you apply it</span>
-      </div>
       <h3>{r.title}</h3>
       <div className="diff">
         {r.lines.map((l) => (
@@ -142,7 +132,6 @@ export function NeedsYou() {
   if (ask)
     return (
       <>
-        {e.showHint('ask') && <p className="tip">Your crew stops here when a step needs you.</p>}
         <AskCard ask={ask} key={ask.id} />
         {queued > 0 && <p className="queue-note">{queued} more waiting</p>}
       </>
@@ -166,7 +155,6 @@ export function NeedsYou() {
     return (
       <div className="card">
         <h3>Every crop is ripe.</h3>
-        <p className="consequence">Every gate so far passed. The agentic review runs at the harvest, then you look before anything merges.</p>
         <div className="opts">
           <button className="btn primary" onClick={() => e.openHarvest()} data-testid="open-harvest">
             Harvest <Kbd>⏎</Kbd>

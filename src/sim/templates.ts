@@ -1,6 +1,6 @@
 // Agent and team templates. An agent template is a farmhand you can reuse; a team template is a crew.
 // In the repo each agent is .homestead/agents/<file>.md and each team is .homestead/teams/<file>.toml.
-import type { CropKind, RoleId } from './types'
+import type { CropKind } from './types'
 
 export type Step = 'brief' | 'clarify' | 'plan' | 'grow' | 'harvest' | 'ship'
 export type GateKey = 'shots' | 'unit' | 'integration' | 'e2e' | 'review' | 'security'
@@ -51,7 +51,7 @@ export interface TeamTemplate {
   gates: GateKey[]
   budget: number
   sandbox?: string[] // guardrail skills that switch the Sandbox rules on
-  staffs: Record<RoleId, string> // which agent template takes each of the plan's builder roles
+  staffs: Record<string, string> // which agent template takes each of the plan's roles, by role id
   upstream?: boolean
   custom?: boolean
 }
@@ -160,6 +160,7 @@ const BASE: Omit<AgentTemplate, 'style'>[] = [
   {
     id: 'ceo',
     file: 'ceo',
+    farmstead: true,
     name: 'CEO',
     does: 'Challenges the scope before you approve',
     steps: ['clarify', 'plan'],
@@ -175,6 +176,7 @@ const BASE: Omit<AgentTemplate, 'style'>[] = [
   {
     id: 'eng-manager',
     file: 'eng-manager',
+    farmstead: true,
     name: 'Eng manager',
     does: 'Locks the architecture and the test plan',
     steps: ['plan'],
@@ -190,6 +192,7 @@ const BASE: Omit<AgentTemplate, 'style'>[] = [
   {
     id: 'designer',
     file: 'designer',
+    farmstead: true,
     name: 'Designer',
     does: 'Rates the design plan, UI tasks only',
     steps: ['plan'],
@@ -205,6 +208,7 @@ const BASE: Omit<AgentTemplate, 'style'>[] = [
   {
     id: 'staff-engineer',
     file: 'staff-engineer',
+    farmstead: true,
     name: 'Staff engineer',
     does: 'Is the Agentic review gate',
     steps: ['harvest'],
@@ -220,6 +224,7 @@ const BASE: Omit<AgentTemplate, 'style'>[] = [
   {
     id: 'security-officer',
     file: 'security-officer',
+    farmstead: true,
     name: 'Security officer',
     does: 'Adds a Security review gate',
     steps: ['harvest'],
@@ -235,6 +240,7 @@ const BASE: Omit<AgentTemplate, 'style'>[] = [
   {
     id: 'qa',
     file: 'qa',
+    farmstead: true,
     name: 'QA',
     does: 'Produces the Screenshots and End-to-end gates',
     steps: ['grow', 'harvest'],
@@ -250,6 +256,7 @@ const BASE: Omit<AgentTemplate, 'style'>[] = [
   {
     id: 'release-manager',
     file: 'release-manager',
+    farmstead: true,
     name: 'Release manager',
     does: 'Runs merge, deploy, the canary and the rollback',
     steps: ['ship'],
@@ -295,6 +302,23 @@ const BASE: Omit<AgentTemplate, 'style'>[] = [
     asks: 'Never.',
     instructions: 'After Ship, run the retro on the run and save what the crew learned as lessons.',
     upstream: true,
+  },
+  {
+    id: 'messaging',
+    file: 'messaging',
+    name: 'Messaging',
+    does: 'Reminder texts and emails',
+    steps: ['grow'],
+    harness: 'claude-code',
+    model: SONNET,
+    skills: ['message-templates'],
+    mcp: [
+      { server: 'sms-provider', perm: 'run' },
+      { server: 'github', perm: 'write' },
+    ],
+    gates: ['unit', 'integration'],
+    asks: 'Before it texts a real phone number outside staging.',
+    instructions: 'Build the reminder texts and emails. Send through the SMS provider tool, only to test numbers on staging. Every message says how to cancel or reply stop.',
   },
   // ---- Bug fix ------------------------------------------------------------------
   {
@@ -362,6 +386,7 @@ const BASE: Omit<AgentTemplate, 'style'>[] = [
 // One style per agent template. Fences stay in wood and muted tones: red is kept for failure, blue for outbound.
 const STYLE: Record<string, FieldStyle> = {
   'head-farmer': { fence: '#a8774a', body: '#f3f2c0', shade: '#ddd5de', crop: 'pumpkin' },
+  messaging: { fence: '#7d9a62', body: '#d3e8b6', shade: '#98b679', crop: 'tulip' },
   backend: { fence: '#6f9e8f', body: '#9fd8c5', shade: '#5fa894', crop: 'wheat' },
   frontend: { fence: '#b97f9f', body: '#f2c6de', shade: '#c98bb0', crop: 'carrot' },
   tests: { fence: '#7f8fb5', body: '#b9cdf5', shade: '#7d93c9', crop: 'cabbage' },
@@ -385,7 +410,7 @@ const PLAIN: FieldStyle = { fence: '#a8774a', body: '#f3f2c0', shade: '#ddd5de',
 
 export const AGENT_TEMPLATES: AgentTemplate[] = BASE.map((a) => ({ ...a, style: STYLE[a.id] ?? PLAIN }))
 
-const FEATURE_STAFF: Record<RoleId, string> = { backend: 'backend', frontend: 'frontend', tests: 'tests', docs: 'docs', reviewer: 'reviewer' }
+const FEATURE_STAFF: Record<string, string> = { backend: 'backend', frontend: 'frontend', messaging: 'backend', tests: 'tests', docs: 'docs', reviewer: 'reviewer' }
 
 export const TEAM_TEMPLATES: TeamTemplate[] = [
   {
@@ -406,7 +431,7 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
     staffs: FEATURE_STAFF,
   },
   {
-    id: 'full-cycle',
+    id: 'gstack',
     file: 'gstack',
     name: 'Full-cycle crew',
     line: 'Reviews from a CEO, eng manager, designer, security and QA at every step. Based on gstack.',
@@ -415,10 +440,10 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
       { agent: 'ceo', steps: ['clarify', 'plan'] },
       { agent: 'eng-manager', steps: ['plan'] },
       { agent: 'designer', steps: ['plan'] },
-      { agent: 'backend', steps: ['grow'] },
       { agent: 'frontend', steps: ['grow'] },
+      { agent: 'backend', steps: ['grow'] },
+      { agent: 'messaging', steps: ['grow'] },
       { agent: 'qa', steps: ['grow', 'harvest'] },
-      { agent: 'tech-writer', steps: ['grow'] },
       { agent: 'staff-engineer', steps: ['harvest'] },
       { agent: 'security-officer', steps: ['harvest'] },
       { agent: 'release-manager', steps: ['ship'] },
@@ -427,7 +452,7 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
     gates: ['shots', 'unit', 'integration', 'e2e', 'review', 'security'],
     budget: 180_000,
     sandbox: ['/careful', '/guard'],
-    staffs: { backend: 'backend', frontend: 'frontend', tests: 'qa', docs: 'tech-writer', reviewer: 'staff-engineer' },
+    staffs: { frontend: 'frontend', backend: 'backend', messaging: 'messaging', tests: 'qa', docs: 'tech-writer', reviewer: 'staff-engineer' },
     upstream: true,
   },
   {
@@ -444,7 +469,7 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
     ],
     gates: ['unit', 'integration', 'review'],
     budget: 60_000,
-    staffs: { backend: 'fixer', frontend: 'fixer', tests: 'tests', docs: 'investigator', reviewer: 'reviewer' },
+    staffs: { backend: 'fixer', frontend: 'fixer', messaging: 'fixer', tests: 'tests', docs: 'investigator', reviewer: 'reviewer' },
   },
   {
     id: 'design-pass',
@@ -459,18 +484,16 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
     ],
     gates: ['shots', 'unit', 'review'],
     budget: 80_000,
-    staffs: { backend: 'frontend', frontend: 'frontend', tests: 'ui-designer', docs: 'ui-designer', reviewer: 'design-reviewer' },
+    staffs: { backend: 'frontend', frontend: 'frontend', messaging: 'frontend', tests: 'ui-designer', docs: 'ui-designer', reviewer: 'design-reviewer' },
   },
 ]
 
-export const DEFAULT_TEAM = 'feature'
+// The demo runs on the Full-cycle crew: three fields (Frontend, Backend, Messaging), reviews from the farmstead.
+export const DEFAULT_TEAM = 'gstack'
 
-// The crews the other farms in the valley run.
-export const VALLEY_CREWS: Record<string, string> = {
-  'Session API v2': 'Feature crew',
-  'Billing webhooks': 'Bug fix',
-  'Mobile app 4.2': 'Design pass',
-}
+// The crews the neighbouring valleys run, in scenario order: the neighbour first, then the other projects.
+// By position, so it holds whatever the valleys are called.
+export const NEIGHBOUR_CREWS = ['Feature crew', 'Bug fix', 'Design pass']
 
 export function agentTemplate(id: string): AgentTemplate | undefined {
   return AGENT_TEMPLATES.find((a) => a.id === id)
@@ -551,12 +574,14 @@ export function teamSummary(t: TeamTemplate) {
 }
 
 // A new team template from the crew this run used.
-export function crewAsTemplate(base: TeamTemplate, name: string, assignees: RoleId[], budget: number, gates: GateKey[], n: number): TeamTemplate {
+export function crewAsTemplate(base: TeamTemplate, name: string, assignees: string[], budget: number, gates: GateKey[], n: number): TeamTemplate {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-  const used = new Set(['head-farmer', ...assignees.map((r) => base.staffs[r]), base.staffs.reviewer])
+  const used = new Set(['head-farmer', ...assignees.map((r) => base.staffs[r]), base.staffs.reviewer].filter(Boolean))
+  // Farmstead roles come along: they review every field.
+  for (const m of base.members) if (agentTemplate(m.agent)?.farmstead) used.add(m.agent)
   return {
     ...base,
     id: `custom-${n}`,

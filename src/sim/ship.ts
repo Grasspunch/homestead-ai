@@ -1,8 +1,9 @@
 // Ship: after the merge, CI runs on main, then a canary deploy to production that rolls back by itself
-// when a health check fails. Everything story-specific lives here as data, like review.ts.
+// when a health check fails, a fix and a redeploy, and the text that tells pet owners they can book.
+// Everything story-specific lives here as data, like review.ts.
 import * as scenario from './scenario'
 
-export type ShipStage = 'none' | 'ci' | 'deploy' | 'held' | 'canary' | 'rollback' | 'rolledback' | 'canary2' | 'rollout' | 'live' | 'cifailed'
+export type ShipStage = 'none' | 'ci' | 'deploy' | 'held' | 'canary' | 'rollback' | 'rolledback' | 'fixing' | 'canary2' | 'rollout' | 'live' | 'announced' | 'cifailed'
 
 export type CiState = 'wait' | 'run' | 'retry' | 'pass' | 'fail'
 
@@ -30,20 +31,31 @@ export const CI_JOBS: CiJob[] = [
     time: '3m 40s',
     secs: 1.3,
     outcome: 'flaky',
-    flaky: { test: 'email-login.spec.ts › remembers the session', why: 'A known flaky test: it failed 3 times in the last 50 runs on main, each time on a slow staging cookie.' },
+    flaky: { test: 'booking.spec.ts › picks a pet on a slow phone', why: 'A known flaky test: it failed 3 times in the last 50 runs on main, each time waiting for the staging date picker.' },
   },
   { id: 'staging', name: 'Deploy to staging', time: '1m 30s', secs: 1.0, outcome: 'pass' },
 ]
 
+// What goes out, and what comes back if it fails. A brand-new feature has no older version to return to,
+// so a rollback puts the old "Call us to book" page back.
 export const RELEASE = {
-  app: 'web-app',
-  version: 'v4.18.0',
-  previous: 'v4.17.3',
+  app: 'Online booking',
+  clinic: 'Willow Lane Vets',
+  site: 'willowlanevets.co.uk/book',
   env: 'production',
-  users: '12,400',
   canary: '5% canary for 10 minutes, then everyone',
-  rule: 'If a health check fails, roll back to v4.17.3 on its own',
-  exposure: '5% of users for 6 minutes',
+  previous: 'the “Call us to book” page',
+  rule: 'If a health check fails, put the “Call us to book” page back on its own',
+  exposure: '5% of visitors for 6 minutes',
+}
+
+// The text that tells pet owners. Irreversible, and it costs money: about 3p a text.
+export const ANNOUNCE = {
+  audience: '3,000 pet owners',
+  message: 'You can now book online.',
+  cost: 'About £95',
+  provider: 'Twilio',
+  from: 'WillowVets',
 }
 
 // Health checks the canary is held to. `bad` is what the first canary reads once the failure shows.
@@ -53,16 +65,19 @@ export interface HealthCheck {
   threshold: string
   good: number
   bad: number
-  unit: '%' | 'ms'
+  unit: '%' | 's'
   min?: number // passes at or above
   max?: number // passes at or below
 }
 
 export const HEALTH: HealthCheck[] = [
-  { id: 'signin', name: 'Google sign-in success', threshold: 'At least 99%', good: 99.6, bad: 71, unit: '%', min: 99 },
-  { id: '5xx', name: '5xx rate', threshold: 'Under 0.5%', good: 0.08, bad: 0.11, unit: '%', max: 0.5 },
-  { id: 'p95', name: 'p95 latency', threshold: 'Under 800 ms', good: 412, bad: 431, unit: 'ms', max: 800 },
+  { id: 'booking', name: 'Booking success', threshold: 'At least 98%', good: 99.4, bad: 99.1, unit: '%', min: 98 },
+  { id: '5xx', name: '5xx rate', threshold: 'Under 0.5%', good: 0.08, bad: 0.12, unit: '%', max: 0.5 },
+  { id: 'search', name: 'Availability search p95', threshold: 'Under 1 s', good: 0.3, bad: 4.2, unit: 's', max: 1 },
 ]
+
+// The check that breaks on the first canary.
+export const BREACH = 'search'
 
 export function healthOk(h: HealthCheck, v: number) {
   if (h.min !== undefined && v < h.min) return false
@@ -71,40 +86,42 @@ export function healthOk(h: HealthCheck, v: number) {
 }
 
 export function fmtHealth(h: HealthCheck, v: number) {
-  if (h.unit === 'ms') return `${Math.round(v)} ms`
+  if (h.unit === 's') return `${v.toFixed(1)} s`
   return `${v < 1 ? v.toFixed(2) : v < 98 ? Math.round(v) : v.toFixed(1)}%`
 }
 
-// Demo seconds for each part of the deploy.
-export const SHIP_TIMES = { canary: 4.2, breach: 2.4, rollback: 1.6, canary2: 3.0, rollout: 2.4 }
+// What a failing reading says, e.g. "Availability search p95 rose to 4.2 s on the canary (limit 1 s)".
+export function breachText(h: HealthCheck, v: number) {
+  const limit = h.max !== undefined ? `limit ${fmtHealth(h, h.max).replace(/\.0 s$/, ' s')}` : `needs ${h.min}%`
+  return `${h.name} ${h.max !== undefined ? 'rose' : 'fell'} to ${fmtHealth(h, v)} on the canary (${limit})`
+}
 
-// The setup guide, as steps. The redirect URI step is the one nobody did for production.
-export const GUIDE_STEPS: { id: string; text: string; who: string }[] = [
-  { id: 'env', text: 'Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET for each environment.', who: 'Done by the deploy pipeline' },
-  { id: 'staging-uri', text: 'Add https://staging.web-app.dev/auth/google/callback as a redirect URI in the Google console.', who: 'Done on Nov 9' },
-  { id: 'redirect', text: 'Add https://app.example.com/auth/google/callback as a redirect URI in the Google console.', who: 'Needs a person with access to the Google console' },
-  { id: 'consent', text: 'Check the consent screen shows the web app’s name and logo.', who: 'Done on Nov 9' },
-]
+// Demo seconds for each part of the deploy.
+export const SHIP_TIMES = { canary: 4.2, breach: 2.4, rollback: 1.6, fix: 2.2, canary2: 3.0, rollout: 2.4 }
 
 export const SHIP_TEXT = {
   ciRunning: 'CI is running on main.',
   ciPassed: 'CI passed on main. Ready to deploy.',
   ciFailed: 'CI failed on main. Nothing was deployed.',
   held: 'Deploy held. Nothing reached production.',
-  canary: 'The canary is live for 5% of users.',
-  rollback: 'Rolling back to v4.17.3.',
-  rolledback: 'Rolled back. Sign-in failed for 5% of users for 6 minutes.',
-  canary2: 'The canary is live again for 5% of users.',
+  canary: 'Online booking is live for 5% of visitors.',
+  rollback: 'Putting the “Call us to book” page back.',
+  rolledback: 'Rolled back. Availability search was slow for 5% of visitors for 6 minutes.',
+  fixing: 'The Backend agent is loading all 8 weeks of diaries in one query.',
+  canary2: 'Online booking is live again for 5% of visitors.',
   rollout: 'Rolling out to everyone.',
-  live: 'Live for 12,400 users. Two catches: the retired /v1 session before review, and the missing redirect URI after deploy, which hit 5% of users for 6 minutes.',
-  cause: 'Google rejects the sign-in with redirect_uri_mismatch: the production redirect URI was never added in the Google console. Step 3 of the setup guide asks for it.',
-  sentry: 'Sentry: 212 redirect_uri_mismatch errors on app.example.com/login since the canary started.',
+  live: 'Online booking is live for everyone.',
+  announced: 'Saturday bookings at a closed clinic were caught before they reached 3,000 pet owners.',
+  notSent: 'Online booking is live. The text to pet owners wasn’t sent.',
+  cause: 'Availability search reads each vet’s diary one day at a time: 3 vets and 8 weeks is 168 reads for every search. With real visitors its p95 went from 0.3 s to 4.2 s.',
+  fix: 'Load all 8 weeks of diaries in one query, then redeploy?',
+  sentry: 'Sentry: GET /api/availability p95 4.2 s on the canary, 168 diary queries per request.',
 }
 
-export const LESSON_REDIRECT = {
-  file: 'lesson-redirect-uri.md',
-  title: 'Check the production redirect URI before an OAuth deploy',
-  body: 'Before deploying a sign-in change, ask the owner to confirm every redirect URI in the provider console. An agent cannot reach the Google console.',
+export const LESSON_QUERY = {
+  file: 'lesson-one-query-per-search.md',
+  title: 'Load a date range in one query',
+  body: 'When a search covers many days, read the whole range in one query, and time it on staging with full-size diaries before deploying.',
   from: 'Saved from this ship',
   isNew: true,
 }

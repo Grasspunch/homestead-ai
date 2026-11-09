@@ -29,24 +29,8 @@ export function settingsName(id?: string): string {
 
 export function settingsStatus(id: string | undefined, _e: E): string | undefined {
   if (id?.startsWith('templates')) return templatesStatus(id, _e)
-  switch (id) {
-    case undefined:
-      return 'Saved to homestead.toml in web-app. Every run reads it.'
-    case 'agents':
-      return 'Each agent is a lane. A new harness is a new lane, not a new app.'
-    case 'gates':
-      return 'Plan sets which gates each task needs. These are the commands behind them.'
-    case 'mcp':
-      return 'Agents only get a server when a task attaches it.'
-    case 'sandbox':
-      return 'Production secrets never reach an agent.'
-    case 'ask':
-      return 'Everything else, agents decide and log under Decided without you.'
-    case 'config':
-      return 'Changes here open a pull request on the file.'
-    default:
-      return undefined
-  }
+  // No captions under the page titles: each page speaks for itself.
+  return undefined
 }
 
 const tools = (e: E) => e.library.filter((x) => x.kind === 'tool')
@@ -97,32 +81,26 @@ function Root() {
   const S = e.settings
   const live = e.liveAI
   const agents = Object.values(S.agents)
-  const harn = [...new Set(agents.map((a) => HARNESSES.find((h) => h[0] === a.harness)?.[1] ?? a.harness))].join(', ')
-  const liveEv =
-    e.live === false
-      ? 'Needs ANTHROPIC_API_KEY on the server.'
-      : live
-        ? `Calls the models under Agents. Each run can use up to ${k(S.run.budget_tokens)} tokens, about $${S.run.budget_usd}.`
-        : 'Calls the models under Agents and uses tokens.'
-  const rows: { id: string; label: string; sub: string; end?: string }[] = [
-    { id: 'agents', label: 'Agents', sub: `Model and harness per agent. ${harn}`, end: String(agents.length) },
-    { id: 'gates', label: 'Done-when gates', sub: 'The command behind each gate', end: `${GATE_ORDER.filter((g) => S.gates[g].required).length} required` },
-    { id: 'mcp', label: 'MCP servers', sub: 'What agents may do with each', end: String(tools(e).length) },
-    { id: 'sandbox', label: 'Sandbox', sub: 'Where agents run, network, secrets' },
+  // Only the missing key needs saying; everything else is in the labels.
+  const liveEv = e.live === false ? 'Needs ANTHROPIC_API_KEY on the server.' : undefined
+  const rows: { id: string; label: string; sub?: string; end?: string }[] = [
+    { id: 'agents', label: 'Agents', end: String(agents.length) },
+    { id: 'gates', label: 'Done-when gates', end: `${GATE_ORDER.filter((g) => S.gates[g].required).length} required` },
+    { id: 'mcp', label: 'MCP servers', end: String(tools(e).length) },
+    { id: 'sandbox', label: 'Sandbox', end: S.sandbox.where === 'container' ? 'Container' : S.sandbox.where === 'ci' ? 'CI runners' : 'Worktree' },
     { id: 'limits', label: 'Limits', sub: `${k(S.run.budget_tokens)} tokens, $${S.run.budget_usd}, ${S.run.timeout_min} min per run` },
-    { id: 'ask', label: 'When agents ask you', sub: 'Rules for interrupting, and where' },
-    { id: 'deploy', label: 'Deploy', sub: '', end: S.deploy.auto_rollback ? 'Rolls back on its own' : 'Asks before rolling back' },
-    { id: 'templates', label: 'Templates', sub: `Agent and team templates. This valley uses ${e.team.name}`, end: String(e.customTeams.length + 4) },
-    { id: 'keys', label: 'Keyboard', sub: 'J and K to move, Enter to open' },
-    { id: 'config', label: 'homestead.toml', sub: 'All of this as a file, and the CLI' },
+    { id: 'ask', label: 'When agents ask you' },
+    { id: 'deploy', label: 'Deploy', end: S.deploy.auto_rollback ? 'Rolls back on its own' : 'Asks before rolling back' },
+    { id: 'templates', label: 'Templates', end: e.team.name },
+    { id: 'keys', label: 'Keyboard' },
+    { id: 'config', label: 'homestead.toml' },
   ]
   return (
     <div className="settings">
       <section className="section">
-        <h4>Responses</h4>
         <ul className="opt-list">
-          <Opt type="radio" name="mode" checked={!live} onChange={() => e.setLiveAIOn(false)} label="Simulated" ev="Uses recorded agent responses. Uses no tokens. Good for trying things out." testId="settings-mode-simulated" />
-          <Opt type="radio" name="mode" checked={live} onChange={() => e.setLiveAIOn(true)} label="Live AI" ev={liveEv} testId="settings-mode-live" />
+          <Opt type="radio" name="mode" checked={!live} onChange={() => e.setLiveAIOn(false)} label="Simulated responses" testId="settings-mode-simulated" />
+          <Opt type="radio" name="mode" checked={live} onChange={() => e.setLiveAIOn(true)} label="Live AI responses" ev={liveEv} testId="settings-mode-live" />
         </ul>
       </section>
       <ul className="rows flat">
@@ -174,10 +152,8 @@ function Agents() {
               <input className="mono" value={a.command ?? './scripts/agent --prompt {prompt} --cwd {worktree}'} onChange={(x) => e.setSetting(`agents.${key}`, 'command', x.target.value)} />
             </label>
           )}
-          {key === 'reviewer' && <p className="note">Use a different model from the builders so it doesn’t grade its own work.</p>}
         </div>
       ))}
-      <p className="note">Custom takes any CLI that runs headless with a prompt and a working directory.</p>
     </div>
   )
 }
@@ -200,7 +176,7 @@ function Gates() {
         </div>
       ))}
       <ul className="opt-list">
-        <Opt checked={S.ci_checks} onChange={(on) => e.setSetting('', 'ci_checks', on)} label="Also run them as CI checks on the pull request" ev="They show as homestead/unit, homestead/e2e and so on." />
+        <Opt checked={S.ci_checks} onChange={(on) => e.setSetting('', 'ci_checks', on)} label="Also run them as CI checks on the pull request" />
       </ul>
     </div>
   )
@@ -215,7 +191,7 @@ function Mcp() {
           const access = t.access ?? []
           return (
             <li key={t.name}>
-              <Row mark={<span className="kind tool">T</span>} label={t.name} sub={t.what} end={`${access.filter((a) => a.on).length} of ${access.length} allowed`} onClick={() => e.go({ kind: 'lib', id: t.name })} />
+              <Row mark={<span className="kind tool">T</span>} label={t.name} end={`${access.filter((a) => a.on).length} of ${access.length} allowed`} onClick={() => e.go({ kind: 'lib', id: t.name })} />
             </li>
           )
         })}
@@ -234,10 +210,10 @@ export function ConnectMcp() {
   )
 }
 
-const WHERE: [Settings['sandbox']['where'], string, string][] = [
-  ['worktree', 'A git worktree on your machine', 'Fast, uses your toolchain'],
-  ['container', 'A container in the cloud', 'Runs while your laptop is closed'],
-  ['ci', 'Your CI runners', 'Same images as your builds'],
+const WHERE: [Settings['sandbox']['where'], string][] = [
+  ['worktree', 'Run agents in a git worktree on your machine'],
+  ['container', 'Run agents in a container in the cloud'],
+  ['ci', 'Run agents on your CI runners'],
 ]
 
 function Sandbox() {
@@ -246,30 +222,29 @@ function Sandbox() {
   return (
     <div className="settings">
       <section className="section">
-        <h4>Where agents run</h4>
         <ul className="opt-list">
-          {WHERE.map(([v, l, ev]) => (
-            <Opt key={v} type="radio" name="where" checked={S.where === v} onChange={() => e.setSetting('sandbox', 'where', v)} label={l} ev={ev} />
+          {WHERE.map(([v, l]) => (
+            <Opt key={v} type="radio" name="where" checked={S.where === v} onChange={() => e.setSetting('sandbox', 'where', v)} label={l} />
           ))}
         </ul>
       </section>
       <section className="section">
-        <h4>Branches</h4>
         <label className="field">
-          <input className="mono" value={S.branch} onChange={(x) => e.setSetting('sandbox', 'branch', x.target.value)} aria-label="Branch name pattern" />
+          Branch per task
+          <input className="mono" value={S.branch} onChange={(x) => e.setSetting('sandbox', 'branch', x.target.value)} />
         </label>
       </section>
       <section className="section">
-        <h4>Network allowlist</h4>
-        <div className="chips">
+        <div className="chips" aria-label="Network allowlist">
+          <span className="chip-name">Network allowlist</span>
           {S.network.map((h) => (
             <span key={h}>{h}</span>
           ))}
         </div>
       </section>
       <section className="section">
-        <h4>Secrets agents can use</h4>
-        <div className="chips">
+        <div className="chips" aria-label="Secrets agents can use">
+          <span className="chip-name">Secrets agents can use</span>
           {S.secrets.map((h) => (
             <span key={h}>{h}</span>
           ))}
@@ -310,7 +285,6 @@ function Deploy() {
   const e = useEngine()
   const D = e.settings.deploy
   const monitors = tools(e).filter((t) => t.name === 'Sentry' || t.name === 'GitHub Actions')
-  const cap = (n: string) => n.charAt(0).toUpperCase() + n.slice(1)
   return (
     <div className="settings">
       <ul className="rows">
@@ -319,7 +293,7 @@ function Deploy() {
         </li>
         {D.environments.map((x) => (
           <li key={x.name}>
-            <Row label={`${cap(x.name)}: ${x.url}`} end={x.name === 'production' ? 'After you approve' : 'On every merge'} />
+            <Row label={x.name === 'production' ? 'Production' : 'Staging'} end={x.name === 'production' ? 'After you approve' : 'On every merge'} />
           </li>
         ))}
       </ul>
@@ -328,7 +302,7 @@ function Deploy() {
           <label>
             Canary
             <span className="unit-input">
-              <input className="mono" value={D.canary_pct} onChange={(x) => e.setSetting('deploy', 'canary_pct', x.target.value)} aria-label="Canary percent" />% of users
+              <input className="mono" value={D.canary_pct} onChange={(x) => e.setSetting('deploy', 'canary_pct', x.target.value)} aria-label="Canary percent" />% of visitors
             </span>
           </label>
           <label>
@@ -367,25 +341,23 @@ function Ask() {
   const e = useEngine()
   const A = e.settings.ask
   const N = e.settings.notify
-  const rule = (key: string, label: string, ev?: string) => <Opt key={key} checked={!!A[key]} onChange={(on) => e.setSetting('ask', key, on)} label={label} ev={ev} />
+  const rule = (key: string, label: string) => <Opt key={key} checked={!!A[key]} onChange={(on) => e.setSetting('ask', key, on)} label={label} />
   return (
     <div className="settings">
       <section className="section">
-        <h4>Ask me when</h4>
         <ul className="opt-list">
-          {rule('gate_fails_twice', 'A gate fails twice in a row')}
-          {rule('needs_new_permission', 'An agent needs an MCP permission it doesn’t have')}
-          {rule('other_team', 'A choice depends on another team’s project', 'This is how the /v1/session question reached you.')}
-          {rule('spend_80', 'Spend passes 80% of the limit')}
-          {rule('never_for_style', 'Never for naming or style', 'Agents follow your skills and move on.')}
+          {rule('gate_fails_twice', 'Ask when a gate fails twice in a row')}
+          {rule('needs_new_permission', 'Ask when an agent needs an MCP permission it doesn’t have')}
+          {rule('other_team', 'Ask when a choice depends on another team’s project')}
+          {rule('spend_80', 'Ask when spend passes 80% of the limit')}
+          {rule('never_for_style', 'Never ask about naming or style')}
         </ul>
       </section>
       <section className="section">
-        <h4>Tell me in</h4>
         <ul className="opt-list">
-          <Opt checked={N.slack} onChange={(on) => e.setSetting('notify', 'slack', on)} label="Slack, as a DM" />
-          <Opt checked={N.email} onChange={(on) => e.setSetting('notify', 'email', on)} label="Email" />
-          <Opt checked={N.chime} onChange={(on) => e.setSetting('notify', 'chime', on)} label="Chime when an agent asks" ev="A soft sound in this tab. Nothing else makes a sound." testId="settings-chime" />
+          <Opt checked={N.slack} onChange={(on) => e.setSetting('notify', 'slack', on)} label="Tell me in Slack, as a DM" />
+          <Opt checked={N.email} onChange={(on) => e.setSetting('notify', 'email', on)} label="Tell me by email" />
+          <Opt checked={N.chime} onChange={(on) => e.setSetting('notify', 'chime', on)} label="Chime when an agent asks" testId="settings-chime" />
         </ul>
       </section>
     </div>
@@ -445,11 +417,9 @@ function Config() {
         </div>
       </section>
       <section className="section">
-        <h4>Run it from your terminal</h4>
         <div className="cmd">
-          <code>homestead run "Add Google sign-in" --config homestead.toml</code>
+          <code>homestead run "Build a vet clinic website for Willow Lane Vets." --config homestead.toml</code>
         </div>
-        <p className="note">The valley and the CLI read the same file and show the same run.</p>
       </section>
     </div>
   )

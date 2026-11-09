@@ -5,8 +5,8 @@ import { CLASH, CROW_SPOT, FARM, ROADS, type ValleyState, INTRO_SIGNS, MISSING, 
 import type { Dir, Farmhand, ReasonLabel, Rect, RoleId, Task } from '../sim/types'
 import { usd } from '../sim/settings'
 import type { FieldSlot } from '../sim/scenario'
-import { VALLEY_CREWS } from '../sim/templates'
-import { REVIEW_FAIL } from '../sim/review'
+import { NEIGHBOUR_CREWS } from '../sim/templates'
+import { HARVEST_FAIL } from '../sim/review'
 import { cartBack, cartBarn, cartGate, cartOut } from '../sim/ship'
 
 export interface Camera {
@@ -301,7 +301,7 @@ function extendRoads(ctx: CanvasRenderingContext2D, ground: HTMLCanvasElement, c
       ctx.drawImage(ground, 2 * T, sy + P, seg, sh, x, sy, seg, sh)
 }
 
-// Fields in the neighbouring valleys, in world tiles. The Session API v2 fields are drawn live
+// Fields in the neighbouring valleys, in world tiles. The Staff rota fields are drawn live
 // (one of them dries up in the story); the others are painted once.
 function regionFields() {
   const out: { plot: Rect; crop: string; stage: number; drawn: boolean }[] = []
@@ -565,7 +565,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
         const st = dry ? Math.max(0, np.stage - 1) : np.stage
         draw(ctx, `crop_${np.crop}_${st}`, (np.plot.x + i) * TILE, (np.plot.y + j) * TILE)
       }
-    hits.push({ kind: 'nplot', id: np.name, rect: px(np.plot), title: np.name, body: `${NEIGHBOUR.name}${dry ? ', retired /v1/session' : ''}` })
+    hits.push({ kind: 'nplot', id: np.name, rect: px(np.plot), title: np.name, body: `${NEIGHBOUR.name}${dry ? `. ${CLASH.change}` : ''}` })
   }
 
   // Two pages share this map. The valley page shows each field as its agent, one big character standing on it.
@@ -922,7 +922,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       const ox = CROW_SPOT.x * TILE
       const oy = CROW_SPOT.y * TILE - 8
       // One thread to the plot that asks (its right edge, next to the crow), one to the neighbour's plot.
-      const ours = e.task(e.activeAsk?.taskId ?? 'tests').plot
+      const ours = e.task(e.activeAsk?.taskId ?? MISSING.taskId).plot
       const theirs = NEIGHBOUR_PLOTS.find((p) => p.drought)?.plot ?? NEIGHBOUR_PLOTS[0].plot
       ctx.save()
       ctx.lineWidth = 1.5
@@ -998,6 +998,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       for (const f of e.fields) {
         const st = fieldState(e, f)
         const feet = toScreen(f.rect.x + f.rect.w / 2, f.rect.y + 4.7)
+        if (feet.x < -40 || feet.x > W + 40 || feet.y < 0 || feet.y > H + 300) continue
         const S = Math.max(4, Math.min(6, Math.round(cam.scale * 2.5)))
         const key = `${f.id}:${st.state}`
         const prev = bigSince.get(f.id)
@@ -1040,7 +1041,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       } else if (g && !e.carrying[fh.id]) glyph(ctx, feet.x, head - 2 * cam.scale, g, glyphPulse(fh.id, g, clock), clock, a)
       nameLine(ctx, feet.x, feet.y + 3, fh.role, stateLine(e, fh), a, placed, e.selected === fh.id)
     }
-    if (e.crow.state === 'landed' && (!farmPage || farmPage.roles.includes('tests'))) {
+    if (e.crow.state === 'landed' && (!farmPage || farmPage.roles.includes(e.task(MISSING.taskId).assignee))) {
       const p = toScreen(CROW_SPOT.x, CROW_SPOT.y - 1.2)
       glyph(ctx, p.x, p.y, { kind: 'ask', reason: 'Anomaly' }, glyphPulse('crow', { kind: 'ask', reason: 'Anomaly' }, clock), clock, 1)
     }
@@ -1082,7 +1083,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     ctx.restore()
     hits.push({ kind: 'farm', id: f.name, rect: px(f.rect), title: f.name, body: f.team })
   }
-  // Over the valleys' veils: the dependency between our project and Session API v2.
+  // Over the valleys' veils: the dependency between our project and the Staff rota.
   if (e.view === 'valley' && !e.intro) dependencyPath(ctx, e, toScreen, clock)
 
   // Opening beat 2: what each farm has promised.
@@ -1307,7 +1308,7 @@ function fieldState(e: Engine, f: FieldSlot): { state: ValleyState; reason?: Rea
   for (const fh of fhs) {
     const g = fhGlyph(e, fh)
     if (g?.kind !== 'ask') continue
-    if (g.reason === 'Failure' && e.phase === 'harvest') return { state: 'failed', words: 'Review failed' }
+    if (g.reason === 'Failure' && e.phase === 'harvest') return { state: 'failed', words: ts.map((t) => e.taskStatus(t)).find((x) => x.tone === 'fail')?.text ?? 'Gate failed' }
     return { state: 'needs', reason: g.reason, words: 'Needs you' }
   }
   if (focusOf(e) === f) return { state: 'needs', reason: e.activeAsk?.label ?? 'Anomaly', words: 'Needs you' }
@@ -1348,7 +1349,8 @@ export function drawBigChar(
   const age = opts.age ?? 99
   ctx.save()
   ctx.imageSmoothingEnabled = false
-  const anim = state === 'working' ? (opts.anim ?? 'till') : 'idle'
+  // Big characters water: the till and chop swings have a motion smear and a tool below the feet that read as glitches at this size.
+  const anim = state === 'working' ? 'water' : 'idle'
   let dy = 0
   let squash = 1
   if (state === 'needs' && !reduced && age < 0.6) dy = -Math.round(Math.sin((age / 0.6) * Math.PI) * S * 3)
@@ -1557,7 +1559,7 @@ function headStatus(e: Engine) {
 
 function statsFor(e: Engine, name: string) {
   // Each farm shows the crew it runs: ours is the team template picked in the Brief.
-  const s = { ...VALLEY_STATS[name], crew: name === FARM.name ? e.team.name : (VALLEY_CREWS[name] ?? '') }
+  const s = { ...VALLEY_STATS[name], crew: name === FARM.name ? e.team.name : (NEIGHBOUR_CREWS[[NEIGHBOUR.name, ...OTHER_FARMS.map((f) => f.name)].indexOf(name)] ?? '') }
   if (name === FARM.name) {
     s.energyWeek = e.energyUsed
     s.pests = e.tasks.reduce((n, t) => n + t.pests.length, 0)
@@ -1577,11 +1579,11 @@ type Box = { x: number; y: number; w: number; h: number }
 export type Glyph = { kind: 'work' } | { kind: 'done' } | { kind: 'ask'; reason: ReasonLabel }
 
 // The one glyph over a farmhand. The engine's glyph, with the harvest's own moments on top:
-// nothing while the crew carries crops in, a red cross on the farmhand whose code failed review.
+// nothing while the crew carries crops in, a red cross on the farmhand whose code failed a gate.
 function fhGlyph(e: Engine, fh: Farmhand): Glyph | null {
   if (e.phase === 'harvest') {
     if (e.harvestStage === 'map') return null
-    if (fh.id === e.task(REVIEW_FAIL.taskId).assignee) {
+    if (fh.id === e.task(HARVEST_FAIL.taskId).assignee) {
       const s = e.fhStatus(fh)
       if (s.startsWith('Waiting for you')) return { kind: 'ask', reason: 'Failure' }
       if (s.startsWith('Fixing')) return { kind: 'work' }
@@ -1589,14 +1591,14 @@ function fhGlyph(e: Engine, fh: Farmhand): Glyph | null {
     if (fh.id === 'reviewer' && e.harvestGates.review.state === 'run') return { kind: 'work' }
   }
   const g = e.glyphOf(fh)
-  return g ? (g.kind === 'ask' ? { kind: 'ask', reason: g.reason } : g.kind === 'sleep' ? { kind: 'done' } : { kind: 'work' }) : null
+  return g ? (g.kind === 'ask' ? { kind: 'ask', reason: g.reason } : g.kind === 'done' ? { kind: 'done' } : { kind: 'work' }) : null
 }
 
 // What the line under a farmhand says after its name: short, like the panel's rows.
 function stateLine(e: Engine, fh: Farmhand): string {
   if (fh.paused) return 'Paused'
   if (fh.status === 'asking') return 'Needs you'
-  if (e.phase === 'harvest' && fh.id === e.task(REVIEW_FAIL.taskId).assignee) {
+  if (e.phase === 'harvest' && fh.id === e.task(HARVEST_FAIL.taskId).assignee) {
     const s = e.fhStatus(fh)
     if (s.startsWith('Waiting for you')) return 'Waiting on you'
     if (s.startsWith('Fixing')) return s
@@ -1774,7 +1776,7 @@ function valleyState(e: Engine, name: string): { state: ValleyState; reason?: Re
   if (ask) return { state: 'needs', reason: ask.label }
   if (e.replan?.status === 'open') return { state: 'needs', reason: 'Anomaly' }
   const st = e.shipStage
-  if (st === 'live') return { state: 'done' }
+  if (st === 'live' || st === 'announced') return { state: 'done' }
   if (e.gateFailed || st === 'rollback' || st === 'rolledback' || st === 'cifailed') return { state: 'failed' }
   if (e.phase === 'grow' || e.phase === 'harvest' || e.phase === 'ship') return { state: 'working' }
   return { state: 'idle' }
@@ -1814,7 +1816,7 @@ function bigChar(ctx: CanvasRenderingContext2D, x: number, y: number, S: number,
   let anim = 'idle'
   let dy = 0
   let squash = 1
-  if (state === 'working') anim = 'till'
+  if (state === 'working') anim = 'water'
   if (state === 'needs' && !reduced && age < 0.6) dy = -Math.round(Math.sin((age / 0.6) * Math.PI) * S * 3)
   if (state === 'done' && !reduced) dy = Math.round(Math.sin(clock * 3.2) * S * 0.6)
   if (state === 'failed') squash = 0.84
@@ -1868,14 +1870,14 @@ function askBadge(ctx: CanvasRenderingContext2D, x: number, y: number, n: number
   ctx.restore()
 }
 
-// A dependency between projects: Google sign-in calls Session API v2. Dotted while ours still
-// calls the retired /v1/session, solid once the re-plan switches it to /v2/session.
+// A dependency between projects: Vet booking takes its opening hours from the Staff rota. Dotted while ours
+// still reads the out-of-date hours sheet, solid once the re-plan settles the hours.
 function dependencyPath(ctx: CanvasRenderingContext2D, e: Engine, toScreen: (x: number, y: number) => { x: number; y: number }, clock: number) {
   const ours = FARM.rect
   const theirs = NEIGHBOUR.rect
   const a = toScreen(ours.x + ours.w * 0.72, ours.y + ours.h * 0.2)
   const b = toScreen(theirs.x + theirs.w * 0.12, theirs.y + theirs.h * 0.2)
-  const fixed = e.flags.has('sessionV2')
+  const fixed = e.flags.has('hoursSettled')
   const mx = (a.x + b.x) / 2
   const my = Math.min(a.y, b.y) - 70
   ctx.save()
@@ -1896,7 +1898,7 @@ function dependencyPath(ctx: CanvasRenderingContext2D, e: Engine, toScreen: (x: 
   ctx.moveTo(a.x, a.y)
   ctx.quadraticCurveTo(mx, my, b.x, b.y)
   ctx.stroke()
-  // Arrowhead into Session API v2.
+  // Arrowhead into the Staff rota.
   ctx.setLineDash([])
   const ang = Math.atan2(b.y - my, b.x - mx)
   ctx.fillStyle = INK
@@ -1907,7 +1909,7 @@ function dependencyPath(ctx: CanvasRenderingContext2D, e: Engine, toScreen: (x: 
   ctx.closePath()
   ctx.fill()
   // What the dependency is, on a plate at the top of the curve.
-  const text = fixed ? 'Calls /v2/session' : 'Calls /v1/session, retired'
+  const text = fixed ? 'Reads its hours from the rota' : 'Hours sheet out of date'
   ctx.font = `700 13px ${SANS}`
   const w = Math.ceil(ctx.measureText(text).width) + 16
   const lx = Math.round(mx - w / 2)

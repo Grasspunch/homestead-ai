@@ -1,10 +1,5 @@
 /* Templates: team and agent previews, and the Brief's crew picker. */
 
-.templates .team-line {
-  margin: 12px 0 0;
-  color: var(--ink-soft);
-  font-size: 14px;
-}
 .templates .foot {
   align-items: center;
   gap: 10px;

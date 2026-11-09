@@ -2,7 +2,7 @@
 // Calls are simulated by default (a recorded response to the same prompt), so testing spends no tokens.
 // The Live AI switch in settings turns real calls on; a failed live call falls back to the simulated one.
 
-import type { AgentTask, ClarifyOut, ConflictOut, PlanOut, PlanTask, ReviewOut, SessionOut } from '../agent/agents'
+import type { AgentTask, ClarifyOut, ConflictOut, HoursOut, PlanOut, PlanTask, ReviewOut } from '../agent/agents'
 import { CLARIFY, FARM, NEIGHBOUR, TASKS } from './scenario'
 
 export type Provenance = 'live' | 'replay'
@@ -39,8 +39,8 @@ const fromTask = (id: string): PlanTask => {
 export const RECORDED: {
   clarify: ClarifyOut
   plan: PlanOut
-  session: SessionOut
-  sessionV2: SessionOut
+  hours: HoursOut
+  hoursRota: HoursOut
   review: ReviewOut
   conflict: ConflictOut
   noConflict: ConflictOut
@@ -49,57 +49,49 @@ export const RECORDED: {
   clarify: { questions: CLARIFY.map((q) => ({ ...q, options: [...q.options] })) },
   plan: {
     quest_title: FARM.name,
-    tasks: { backend: fromTask('backend'), frontend: fromTask('frontend'), tests: fromTask('tests'), docs: fromTask('docs') },
-    irreversible: { action: 'Merge PR #482', audience: 'users in Friday’s deploy', count: 12_400 },
+    tasks: { frontend: fromTask('frontend'), backend: fromTask('backend'), messaging: fromTask('messaging') },
+    irreversible: { action: 'Text every pet owner that booking is open', audience: 'pet owners on the clinic’s list', count: 3_000 },
   },
-  session: {
-    endpoint: '/v1/session',
-    source: 'web-app/src/api/session.ts',
-    code: 'const { token } = await google.signIn()\nawait startSession(token) // post("/v1/session")',
-    summary: 'Reuses startSession from src/api/session.ts, the same call email login makes.',
+  hours: {
+    weekdays: '8:00 to 19:00',
+    saturday: '9:00 to 13:00',
+    source: 'front-desk-hours.csv',
+    summary: 'Offers 15-minute slots Monday to Friday 8:00 to 19:00 and Saturday 9:00 to 13:00, from the front desk’s hours sheet.',
   },
-  sessionV2: {
-    endpoint: '/v2/session',
-    source: 'session-api-v2/CHANGELOG.md',
-    code: 'const { token } = await google.signIn()\nawait post("/v2/session", { token })',
-    summary: 'Calls POST /v2/session, since the changelog retires /v1/session on Nov 12.',
+  hoursRota: {
+    weekdays: '8:00 to 19:00',
+    saturday: 'closed from 1 December',
+    source: 'staff-rota/rota.md',
+    summary: 'Offers weekday slots only from 1 December, since the staff rota has no vet on Saturdays from then.',
   },
   review: {
-    blocking: [
-      {
-        file: 'src/auth/google.ts',
-        line: 48,
-        problem: 'The callback logs the id_token when Google returns an error.',
-        code: 'logger.error("google callback failed", { idToken })',
-        rule: 'oauth-security.md: never log access_token or id_token.',
-      },
-    ],
+    blocking: [],
     notes: [
-      { title: 'Rate-limit /auth/google/callback', where: 'src/auth/google.ts, line 22' },
-      { title: 'The guide uses app.example.com', where: 'docs/auth/google.md, line 6' },
+      { title: 'Rate-limit POST /bookings', where: 'src/api/bookings.ts, line 12' },
+      { title: 'Put the clinic’s phone number in the reminder', where: 'src/messaging/reminder.ts, line 9' },
     ],
   },
   conflict: {
     conflict: true,
-    endpoints: [
-      { endpoint: '/v1/session', farm: FARM.name, source: 'web-app/src/api/session.ts', quote: 'post("/v1/session", { token })' },
-      { endpoint: '/v2/session', farm: NEIGHBOUR.name, source: 'session-api-v2/CHANGELOG.md (Nov 8)', quote: '/v1/session removed from staging. Removed from production Nov 12. Use POST /v2/session.' },
+    claims: [
+      { claim: 'Saturdays 9:00 to 13:00', farm: FARM.name, source: 'front-desk-hours.csv (Aug 14)', quote: 'Saturday,9:00,13:00' },
+      { claim: 'Closed on Saturdays from 1 December', farm: NEIGHBOUR.name, source: 'staff-rota/rota.md (Nov 3)', quote: 'No vet works Saturdays from 1 December. The clinic is closed on Saturdays from that date.' },
     ],
-    recommended: '/v2/session',
-    why: 'The Platform team owns the session API and retired /v1 on staging yesterday; production follows on Nov 12, the day before your deploy.',
+    recommended: 'the staff rota',
+    why: 'The Practice team owns the rota and changed it last week; the hours sheet was last edited in August.',
     confidence: 'High',
   },
   noConflict: {
     conflict: false,
-    endpoints: [{ endpoint: '/v2/session', farm: FARM.name, source: 'session-api-v2/CHANGELOG.md', quote: 'Use POST /v2/session.' }],
-    recommended: '/v2/session',
-    why: 'Frontend already calls the endpoint the changelog names.',
+    claims: [{ claim: 'Closed on Saturdays from 1 December', farm: FARM.name, source: 'staff-rota/rota.md', quote: 'No vet works Saturdays from 1 December.' }],
+    recommended: 'the staff rota',
+    why: 'Backend already reads its hours from the staff rota.',
     confidence: 'High',
   },
-  tokens: { clarify: 1_940, plan: 4_610, session: 3_850, review: 5_420, conflict: 4_180 },
+  tokens: { clarify: 2_380, plan: 4_610, hours: 3_120, review: 5_420, conflict: 4_180 },
 }
 
-const PACE: Record<AgentTask, number> = { clarify: 2_600, plan: 3_000, session: 1_400, review: 2_200, conflict: 1_600 }
+const PACE: Record<AgentTask, number> = { clarify: 2_600, plan: 3_000, hours: 1_400, review: 2_200, conflict: 1_600 }
 
 // Simulated by default, so testing spends no tokens. The Live AI switch in settings turns real calls on.
 let liveAI = false
@@ -128,4 +120,4 @@ export async function callAgent<T>(task: AgentTask, input: Record<string, unknow
   }
 }
 
-export type { SessionOut, ReviewOut, ConflictOut, ClarifyOut, PlanOut }
+export type { HoursOut, ReviewOut, ConflictOut, ClarifyOut, PlanOut }

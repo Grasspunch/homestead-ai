@@ -9,6 +9,7 @@ import { Glyph } from './AgentTree'
 import { AskCard, ReplanCard } from './Cards'
 import { GateMark, LogLine, Section } from './Detail'
 import { Crop, Row } from './Overview'
+import './pages.css'
 
 type E = ReturnType<typeof useEngine>
 type Bucket = 'needs' | 'working' | 'done'
@@ -29,7 +30,7 @@ interface ValleyRow {
 function ourState(e: E): { bucket: Bucket; state: string } {
   const waiting = e.openAsks.length + (e.replan?.status === 'open' ? 1 : 0)
   if (waiting) return { bucket: 'needs', state: `${waiting} waiting for you` }
-  if (e.phase === 'ship' && e.shipStage === 'live') return { bucket: 'done', state: 'Live for 12,400 users' }
+  if (e.phase === 'ship' && (e.shipStage === 'live' || e.shipStage === 'announced')) return { bucket: 'done', state: 'Live for everyone' }
   if (e.phase === 'brief') return { bucket: 'needs', state: 'Waiting for your goal' }
   if (e.planReady) return { bucket: 'needs', state: 'Plan ready for you' }
   return { bucket: 'working', state: STEP_LABEL[stepOf(e.phase)] }
@@ -59,32 +60,21 @@ export function valleysStatus(e: E) {
 
 export function ValleysBody() {
   const e = useEngine()
-  const rows = valleyRows(e)
+  // One list, sorted Needs you, Working, Done; the coloured mark and the state carry the bucket.
   return (
-    <>
-      {ORDER.map((b) => {
-        const list = rows.filter((r) => r.bucket === b)
-        if (!list.length) return null
-        return (
-          <Section key={b} title={b === 'needs' ? 'Needs you' : b === 'working' ? 'Working' : 'Done'} aside={String(list.length)}>
-            <ul className="rows">
-              {list.map((r) => (
-                <li key={r.name}>
-                  <Row
-                    mark={<span className={`vmark ${r.bucket}`} aria-hidden />}
-                    label={r.name}
-                    sub={r.state || r.team}
-                    end={r.name === FARM.name ? 'Yours' : r.team}
-                    onClick={() => goPage(e, { kind: 'valley', id: r.name })}
-                    testId={`valley-${r.name === FARM.name ? 'ours' : r.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
-                  />
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )
-      })}
-    </>
+    <ul className="rows">
+      {valleyRows(e).map((r) => (
+        <li key={r.name}>
+          <Row
+            mark={<span className={`vmark ${r.bucket}`} aria-hidden />}
+            label={r.name}
+            sub={r.state || r.team}
+            onClick={() => goPage(e, { kind: 'valley', id: r.name })}
+            testId={`valley-${r.name === FARM.name ? 'ours' : r.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+          />
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -139,7 +129,7 @@ export function FarmBody({ id }: { id: RoleId }) {
           )}
         </dl>
       </Section>
-      <Section title="Plots" aside={tasks.length ? String(tasks.length) : undefined}>
+      <Section title="Plots">
         {tasks.length ? (
           <ul className="rows">
             {tasks.map((t) => {
@@ -168,24 +158,22 @@ export function FarmBody({ id }: { id: RoleId }) {
             })}
           </ul>
         ) : (
-          <p className="soft">{id === 'reviewer' ? 'No plot of its own. It runs the Agentic review on the whole diff at the harvest.' : 'No plots yet.'}</p>
+          <p className="soft">{id === 'reviewer' ? 'Reviews the whole diff at the harvest' : 'No plots yet'}</p>
         )}
       </Section>
-      {(['file', 'skill', 'tool'] as const).map((k) => {
-        const list = kinds(k)
-        if (!list.length) return null
-        return (
-          <Section key={k} title={k === 'file' ? 'Files' : k === 'skill' ? 'Skills' : 'Tools (MCP servers)'}>
-            <ul className="rows">
-              {list.map((n) => (
+      {context.length > 0 && (
+        <Section title="Files, skills and tools">
+          <ul className="rows">
+            {(['file', 'skill', 'tool'] as const).flatMap((k) =>
+              kinds(k).map((n) => (
                 <li key={n}>
-                  <Row mark={<span className={`kind ${k}`}>{k === 'skill' ? 'S' : k === 'tool' ? 'T' : 'F'}</span>} label={<span className="mono">{n}</span>} sub={e.lib(n).what} onClick={() => e.go({ kind: 'lib', id: n })} />
+                  <Row mark={<span className={`kind ${k}`}>{k === 'skill' ? 'S' : k === 'tool' ? 'T' : 'F'}</span>} label={<span className="mono">{n}</span>} end={fmtK(e.lib(n).tokens)} onClick={() => e.go({ kind: 'lib', id: n })} />
                 </li>
-              ))}
-            </ul>
-          </Section>
-        )
-      })}
+              )),
+            )}
+          </ul>
+        </Section>
+      )}
       <Section title="Activity">
         {log.length ? (
           <ul className="log">
@@ -194,7 +182,7 @@ export function FarmBody({ id }: { id: RoleId }) {
             ))}
           </ul>
         ) : (
-          <p className="soft">Nothing yet.</p>
+          <p className="soft">Nothing yet</p>
         )}
       </Section>
     </>

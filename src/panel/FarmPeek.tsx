@@ -1,7 +1,7 @@
 // Another project's valley, opened read-only from the Valleys page.
 import { engine } from '../sim/engine'
 import { FARM, NEIGHBOUR, OTHER_FARMS, VALLEY_STATS } from '../sim/scenario'
-import { VALLEY_CREWS } from '../sim/templates'
+import { NEIGHBOUR_CREWS } from '../sim/templates'
 import { fmtK, useEngine } from '../ui'
 import './peek.css'
 
@@ -14,7 +14,7 @@ export function FarmPeek() {
   const f = [NEIGHBOUR, ...OTHER_FARMS].find((x) => x.name === name)
   const s = VALLEY_STATS[name]
   if (!f || !s) return null
-  const crew = VALLEY_CREWS[name]
+  const crew = NEIGHBOUR_CREWS[[NEIGHBOUR, ...OTHER_FARMS].findIndex((x) => x.name === name)]
   const state = s.state ?? 'idle'
   return (
     <section className="peek" aria-label={`${name} valley`} data-testid="peek">
@@ -22,9 +22,10 @@ export function FarmPeek() {
         <h2>{name}</h2>
         <span className={`peek-state ${state}`}>{STATE[state]}</span>
       </div>
-      <p className="peek-team">{f.team}. A neighbouring project.</p>
       {s.doing && <p className="peek-doing">{s.doing}</p>}
       <dl className="peek-facts">
+        <dt>Team</dt>
+        <dd>{f.team}</dd>
         {crew && (
           <>
             <dt>Crew</dt>
@@ -46,7 +47,6 @@ export function FarmPeek() {
           </>
         )}
       </dl>
-      <p className="peek-note">You can look around. Only the {f.team} can change this project.</p>
       <button className="btn primary" onClick={() => engine.setView('farm')} data-testid="peek-back" autoFocus>
         Back to {FARM.name}
       </button>

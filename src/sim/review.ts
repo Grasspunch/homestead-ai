@@ -1,6 +1,6 @@
 // The harvest review. Approving the crew's work and merging it are two decisions.
 // At Plan, each task gets "Done when" gates; a crop ripens only when its gates pass.
-// At the harvest, machine gates pass on their own and you tick only what needs your eyes.
+// At the harvest, the gates run again on the whole app, and you tick only what needs your eyes.
 // Everything story-specific lives in this file as data, so the scenario can be swapped
 // without touching the mechanism in the engine or the panel.
 
@@ -9,40 +9,41 @@ export type GateId = 'shots' | 'unit' | 'integration' | 'e2e' | 'review'
 export const GATE_ORDER: GateId[] = ['shots', 'unit', 'integration', 'e2e', 'review']
 
 export const GATES: Record<GateId, { name: string; detail: string }> = {
-  shots: { name: 'Screenshots', detail: 'Pages it changes, before and after' },
+  shots: { name: 'Screenshots', detail: 'Every booking screen, at phone size' },
   unit: { name: 'Unit tests', detail: 'Tests for the code it changes' },
   integration: { name: 'Integration tests', detail: 'Against staging services' },
-  e2e: { name: 'End-to-end on staging', detail: 'A real browser, start to finish' },
+  e2e: { name: 'End-to-end on staging', detail: 'Real browsers, start to finish' },
   review: { name: 'Agentic review', detail: 'An agent that wrote none of the code' },
 }
 
 // Which gates each task carries, proposed by the head farmer at Plan. You can change them.
 export const TASK_GATES: Record<string, { gate: GateId; what: string }[]> = {
-  backend: [
-    { gate: 'unit', what: 'auth/google.test.ts' },
-    { gate: 'integration', what: 'Callback route on staging' },
-    { gate: 'review', what: 'Runs on the whole diff' },
-  ],
   frontend: [
-    { gate: 'unit', what: 'SignInButton.test.tsx' },
-    { gate: 'shots', what: 'Sign-in page' },
+    { gate: 'unit', what: 'BookingFlow.test.tsx' },
+    { gate: 'shots', what: 'Every booking screen, at phone size' },
     { gate: 'review', what: 'Runs on the whole diff' },
   ],
-  tests: [
-    { gate: 'e2e', what: 'google-signin.spec.ts, email-login.spec.ts' },
+  backend: [
+    { gate: 'unit', what: 'availability.test.ts, bookings.test.ts' },
+    { gate: 'integration', what: 'Bookings API and the staff rota on staging' },
+    { gate: 'e2e', what: 'booking.spec.ts: book a checkup on a phone' },
     { gate: 'review', what: 'Runs on the whole diff' },
   ],
-  docs: [{ gate: 'review', what: 'Guide matches the callback route' }],
+  messaging: [
+    { gate: 'unit', what: 'reminder.test.ts' },
+    { gate: 'integration', what: 'A text to a staging phone' },
+    { gate: 'review', what: 'Runs on the whole diff' },
+  ],
 }
 
 export type GateState = 'wait' | 'run' | 'pass' | 'fail' | 'look'
 
 // What each gate reports for the whole run at the harvest. `look` means it passed and needs your eyes.
 export const RESULTS: Record<GateId, { state: GateState; text: string }> = {
-  shots: { state: 'look', text: '2 pages, before and after' },
-  unit: { state: 'pass', text: '48 of 48 pass' },
-  integration: { state: 'pass', text: '12 of 12 pass' },
-  e2e: { state: 'pass', text: '3 of 3 runs, plus email login' },
+  shots: { state: 'look', text: '5 screens at phone size' },
+  unit: { state: 'pass', text: '41 of 41 pass' },
+  integration: { state: 'pass', text: '14 of 14 pass' },
+  e2e: { state: 'pass', text: '4 of 4 runs, two owners at once too' },
   review: { state: 'look', text: '0 blocking, 2 notes' },
 }
 
@@ -55,99 +56,102 @@ export interface Check {
 }
 
 export const CHECKS: Check[] = [
-  { id: 'shots:0', gate: 'shots', text: 'The Google button matches the design spec', evidence: 'auth-spec.md, frame 2: above the email field, full width.' },
-  { id: 'shots:1', gate: 'shots', text: 'The error reads well under the button', evidence: 'Captured after cancelling the Google prompt.' },
+  { id: 'shots:0', gate: 'shots', text: 'Each booking screen reads well on a phone', evidence: 'brand-style.md: one question per screen, big tap targets.' },
+  { id: 'shots:1', gate: 'shots', text: 'The reminder text sounds like the clinic', evidence: 'Sent to a staging phone through Twilio.' },
   { id: 'review:0', gate: 'review', text: 'The 2 notes can ship as they are', evidence: 'Neither blocks the deploy. Both are saved as follow-ups.' },
 ]
 
-// What goes out, and to whom. Merging is the one step that reaches outside people.
+// What goes out, and to whom. Merging changes nothing for owners: the deploy does.
 export const OUTPUT = {
-  pr: 482,
-  title: 'Add Google sign-in',
-  branch: 'homestead/google-sign-in',
+  pr: 57,
+  title: 'Add online booking',
+  why: 'Pet owners can book a checkup or a vaccination online, up to 8 weeks ahead, and get a text the day before. Today they can only book by phone while the front desk is open. Surgery still starts with a call.',
+  branch: 'homestead/vet-booking',
   base: 'main',
-  files: 14,
-  added: 312,
-  removed: 41,
-  audience: 'Ships to 12,400 users in Friday’s deploy',
-  ships: 'Ships Friday, Nov 13, 10:00 PT',
-  checkout: 'git fetch origin && git switch homestead/google-sign-in',
+  files: 23,
+  added: 1_184,
+  removed: 0,
+  audience: 'Reaches pet owners when you deploy',
+  ships: 'Ships when you approve the deploy',
+  checkout: 'git fetch origin && git switch homestead/vet-booking',
   undo: 'After this, undoing it means a revert and another deploy.',
-  caught: 'A broken sign-in was caught before it reached 12,400 users.',
-  ready: 'Google sign-in is ready for your review.',
-  failed: 'Not ready. The review found a token written to the logs.',
-  running: 'The Reviewer is reading the whole diff.',
+  caught: 'Saturday slots with no vet were caught before any owner could book one.',
+  ready: 'Online booking is ready for your review.',
+  failed: 'Not ready. Two owners booked the same slot.',
+  running: 'The gates are running on the whole app.',
   rerun: 'Every gate is running again.',
-  merged: 'Merged into main. It ships to 12,400 users with Friday’s deploy.',
-  guide: { title: 'Setup guide', file: 'docs/auth/google.md' },
+  merged: 'Merged into main. Nothing reaches owners until you deploy.',
 }
 
 // One commit per task on the pull request.
 export const COMMITS: Record<string, string> = {
-  backend: 'Add /auth/google/callback with state and PKCE',
-  frontend: 'Add the Continue with Google button and error states',
-  tests: 'Add Google sign-in end-to-end tests',
-  docs: 'Add the Google sign-in setup guide',
+  frontend: 'Add the booking pages: pet, reason, vet and time, confirm',
+  backend: 'Add the availability search and the bookings API',
+  messaging: 'Text owners a reminder the day before',
 }
 
-// A failed gate the demo can show: the reviewer finds a token in the logs.
-export const REVIEW_FAIL = {
+// The failed gate at the harvest: two owners book the same slot at the same moment.
+// It reaches you as a Failure ask from the agent whose code failed it.
+export const HARVEST_FAIL = {
   taskId: 'backend',
-  text: '1 blocking issue in Backend’s code',
-  detail: 'src/auth/google.ts line 48 logs the id_token. oauth-security.md says never log tokens.',
-  fix: 'Backend removes the log line, then every gate runs again.',
+  gate: 'e2e' as GateId,
+  text: '2 owners booked the same slot',
+  short: '2 bookings, 1 slot',
+  detail: 'Two owners booked Dr Patel at 9:00 at the same moment, and both were confirmed.',
+  question: 'Two owners booked Dr Patel at 9:00 at the same moment, and both were confirmed. Hold a slot for 5 minutes while someone books, then rerun?',
+  fix: 'Backend holds a slot for 5 minutes while someone books, then every gate runs again.',
+  fixed: 'Added a 5-minute hold on the slot while someone books',
+  refused: 'The second booking is refused at confirm',
 }
 
 // What each task's own gates report during Grow, when they pass.
 export const TASK_RESULTS: Record<string, Partial<Record<GateId, string>>> = {
-  backend: { unit: '9 of 9', integration: '4 of 4' },
-  frontend: { unit: '6 of 6', shots: 'Sign-in page, before and after' },
-  tests: { e2e: '3 of 3 runs' },
-  docs: {},
+  frontend: { unit: '12 of 12', shots: '5 screens at phone size' },
+  backend: { unit: '18 of 18', integration: '9 of 9', e2e: '1 of 1, one owner' },
+  messaging: { unit: '6 of 6', integration: '1 text delivered' },
 }
 
 // A failed gate the crew fixes alone: Frontend's first unit run misses one error state.
 export const UNIT_FAIL = {
   taskId: 'frontend',
-  text: '5 of 6 pass',
-  pest: 'SignInButton.test.tsx: the error has no role="alert"',
-  fix: 'Wrapped the error in <FieldError>, which react-components.md says to use. 6 of 6 pass.',
+  text: '11 of 12 pass',
+  pest: 'BookingFlow.test.tsx: no message when the slot was just taken',
+  fix: 'Added “That time was just taken. Pick another.” under the time picker. 12 of 12 pass.',
 }
 
-// Tests' end-to-end run against the retired endpoint.
-export const E2E_FAIL = { text: 'Failed, 404', again: 'Running again' }
+// Backend's integration run on staging, while it still reads the hours sheet: Saturday slots with no vet.
+export const INTEGRATION_FAIL = { text: 'No vet for 16 Saturday slots', again: 'Running again' }
 
-// Lines each task's commit adds and removes.
-export const COMMIT_STATS: Record<string, string> = { backend: '+128 −6', frontend: '+96 −31', tests: '+64', docs: '+24 −4' }
+// Lines each task's commit adds and removes. A new project, so nothing is removed.
+export const COMMIT_STATS: Record<string, string> = { frontend: '+512', backend: '+468', messaging: '+204' }
 
 // What each gate's page shows: the suites it ran, and for the end-to-end run, the recording.
 export const GATE_DETAIL: Partial<Record<GateId, { status: string; rows: [string, string, string][]; output?: string; steps?: string[] }>> = {
   unit: {
-    status: 'npm test, 11 seconds.',
+    status: 'npm test, 9 seconds.',
     rows: [
-      ['auth/google.test.ts', 'Backend, 9 new', '9 of 9'],
-      ['SignInButton.test.tsx', 'Frontend, 6 new', '6 of 6'],
-      ['api/session.test.ts', 'Frontend, 5 changed for /v2', '5 of 5'],
-      ['Existing suites', '9 files, unchanged', '28 of 28'],
+      ['BookingFlow.test.tsx', 'Frontend, 12 new', '12 of 12'],
+      ['availability.test.ts', 'Backend, 11 new', '11 of 11'],
+      ['bookings.test.ts', 'Backend, 7 new, 2 for the hold', '7 of 7'],
+      ['reminder.test.ts', 'Messaging, 6 new', '6 of 6'],
+      ['Existing suites', '2 files from the template', '5 of 5'],
     ],
-    output: 'Test Files  12 passed (12)\n     Tests  48 passed (48)\n  Duration  11.2s',
+    output: 'Test Files  6 passed (6)\n     Tests  41 passed (41)\n  Duration  9.4s',
   },
   integration: {
     status: 'Against staging services.',
     rows: [
-      ['Callback route', 'A Google test account, a real redirect', '4 of 4'],
-      ['Session API v2', 'POST /v2/session on staging', '5 of 5'],
-      ['Email login', 'Unchanged code, tested again', '3 of 3'],
+      ['Bookings API', 'Book, move and cancel on staging', '9 of 9'],
+      ['Staff rota', 'No Saturday slots from 1 December', '4 of 4'],
+      ['Reminder text', 'Twilio, to a staging phone', '1 of 1'],
     ],
   },
   e2e: {
-    status: 'Run by Tests, with the Playwright MCP.',
+    status: 'Run by QA in two browsers at once, with the Playwright MCP.',
     rows: [
-      ['google-signin.spec.ts', 'Failed on /v1/session, passed after your answer', '3 of 3'],
-      ['email-login.spec.ts', 'Still works', '3 of 3'],
+      ['booking.spec.ts', 'One owner books a checkup on a phone', '3 of 3'],
+      ['same-slot.spec.ts', 'Two owners, one slot: failed once, passed with the hold', '1 of 1'],
     ],
-    steps: ['Open /login', 'Click “Continue with Google”', 'Google consent screen', 'Redirect to /auth/google/callback', 'POST /v2/session returns 201', 'Lands on /home, signed in'],
+    steps: ['Open /book on a phone', 'Pick Biscuit, a dog', 'Reason: vaccination', 'Dr Patel, Tuesday 9:00', 'Confirm: the slot is held for 5 minutes', 'A second owner sees “That time was just taken”'],
   },
 }
-
-export const GUIDE = 'Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then add https://app.example.com/auth/google/callback as a redirect URI in the Google console.'

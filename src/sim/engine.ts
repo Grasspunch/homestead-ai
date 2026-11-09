@@ -1,15 +1,15 @@
 // The engine behind the demo.
-// Five agent steps are Claude calls (the head farmer's clarify, plan and cross-team check, Frontend's
-// session call and the Reviewer's review). They are simulated unless Live AI is on in Settings.
+// Five agent steps are Claude calls (the head farmer's clarify, plan and cross-team check, Backend's
+// read of the opening hours and the Reviewer's review). They are simulated unless Live AI is on in Settings.
 // Every number on screen is computed from the ledger: agent actions, energy, and how many times a human was needed.
 
-import { ATTACHMENTS, BEATS, BRIEF_GOAL, BUILDERS, CHICKEN_PEN, CHORES, CLARIFY, CLASH, CREW, CROW_SPOT, FARM, FARMSTEAD, OTHER_FARMS, WORLD, LESSON_STAGING, LESSON_TRACE, MISSING, NEIGHBOUR, REPLAN_SUBTASKS, ROLE_ORDER, START_SEEDS, SUGGESTED_BUDGET, TASKS, layoutFields, type Attachment, type ClarifyQ, type FieldSlot } from './scenario'
-import { callAgent, probeLive, setLiveAI, RECORDED, type ClarifyOut, type ConflictOut, type Outcome, type PlanOut, type ReviewOut, type SessionOut } from './live'
+import { ATTACHMENTS, BEATS, BRIEF_GOAL, BUILDERS, CHICKEN_PEN, CHORES, CLARIFY, CLASH, CREW, CROW_SPOT, FARM, FARMSTEAD, OTHER_FARMS, WORLD, LESSON_HOLD, LESSON_TRACE, MISSING, NEIGHBOUR, REPLAN_SUBTASKS, ROLE_ORDER, START_SEEDS, SUGGESTED_BUDGET, TASKS, layoutFields, type Attachment, type ClarifyQ, type FieldSlot } from './scenario'
+import { callAgent, probeLive, setLiveAI, RECORDED, type ClarifyOut, type ConflictOut, type HoursOut, type Outcome, type PlanOut, type ReviewOut } from './live'
 import { conflictDocs, PR_DIFF, SLOTS } from '../agent/agents'
 import { LIBRARY, libItem, type Access } from './library'
-import { CHECKS, COMMITS, E2E_FAIL, GATE_ORDER, GATES, OUTPUT, RESULTS, REVIEW_FAIL, TASK_GATES, TASK_RESULTS, UNIT_FAIL, type Check, type GateId, type GateState } from './review'
+import { CHECKS, COMMITS, GATE_ORDER, GATES, HARVEST_FAIL, INTEGRATION_FAIL, OUTPUT, RESULTS, TASK_GATES, TASK_RESULTS, UNIT_FAIL, type Check, type GateId, type GateState } from './review'
 import { defaultSettings, toml, usd, type Settings } from './settings'
-import { cartGate, CI_JOBS, HEALTH, LESSON_REDIRECT, RELEASE, SHIP_TEXT, SHIP_TIMES, healthOk, fmtHealth, type CiOutcome, type CiState, type ShipStage } from './ship'
+import { ANNOUNCE, BREACH, breachText, cartGate, CI_JOBS, HEALTH, LESSON_QUERY, RELEASE, SHIP_TEXT, SHIP_TIMES, healthOk, fmtHealth, type CiOutcome, type CiState, type ShipStage } from './ship'
 import { expandSignposts } from '../agent/docs'
 import { DEFAULT_TEAM, crewAsTemplate, teamTemplate, type GateKey, type TeamTemplate } from './templates'
 import type { Ask, CropKind, Dir, Farmhand, Flag, Job, LedgerEvent, LogEntry, Phase, ReasonLabel, Rect, Replan, RoleId, Seed, Subtask, Task, Toast } from './types'
@@ -31,7 +31,7 @@ export type Nav =
   | { kind: 'pick'; id: string }
   | { kind: 'library' }
   | { kind: 'settings'; id?: string }
-export type OutId = 'pr' | GateId | 'guide' | 'decisions' | 'lessons'
+export type OutId = 'pr' | GateId | 'decisions' | 'lessons'
 export type LogTab = 'all' | 'asks' | 'auto'
 
 export type Hint = 'plot' | 'ask' | 'auto'
@@ -85,7 +85,7 @@ export interface SeedFly {
 export interface Outputs {
   clarify?: Outcome<ClarifyOut>
   plan?: Outcome<PlanOut>
-  session?: Outcome<SessionOut>
+  hours?: Outcome<HoursOut>
   review?: Outcome<ReviewOut>
   conflict?: Outcome<ConflictOut>
 }
@@ -121,7 +121,7 @@ export class Engine {
   // The whole run's gates at the harvest. The review runs here, on the whole diff.
   harvestGates: Record<GateId, GateResult> = Object.fromEntries(GATE_ORDER.map((g) => [g, { state: 'wait', text: 'Not run yet' }])) as Record<GateId, GateResult>
   private rerunAt = 0
-  reviewFixed = false
+  fixSent = false // you answered the failed harvest gate, and its fix went back to the agent
   ticked = new Set<string>()
   approved = false
   // The merge: the one step that reaches people outside the crew.
@@ -195,7 +195,7 @@ export class Engine {
   energyCaught = 0
   harvestReady = false
   harvested = false
-  endpoint: string | null = null // the session endpoint Frontend's code calls
+  hoursFrom: string | null = null // where Backend's availability search takes the opening hours from
   out: Outputs = {}
   private requested = new Set<string>()
   private logId = 1
@@ -237,11 +237,12 @@ export class Engine {
     }))
     // In the barn until their plot is planted.
     const homeSpots: Record<RoleId, { x: number; y: number }> = {
-      backend: { x: 18.8, y: 8.5 },
-      frontend: { x: 20.4, y: 9.1 },
+      frontend: { x: 18.8, y: 8.5 },
+      backend: { x: 20.4, y: 9.1 },
+      messaging: { x: 22.0, y: 8.5 },
       tests: { x: 22.0, y: 8.5 },
       docs: { x: 23.6, y: 9.1 },
-      reviewer: { x: 25.2, y: 8.5 },
+      reviewer: { x: 23.6, y: 9.1 },
     }
     this.head.till = this.tasks.map(() => 0)
     this.farmhands = {} as Record<RoleId, Farmhand>
@@ -301,7 +302,7 @@ export class Engine {
   }
 
   get demoScenario() {
-    return /google sign-in/i.test(this.goal)
+    return /willow lane/i.test(this.goal)
   }
 
   task(id: string) {
@@ -428,7 +429,7 @@ export class Engine {
     if (this.view !== 'farm' || this.intro) return null
     const a = this.activeAsk
     if (a && a.from !== 'head' && this.phase === 'grow') return this.fieldOf(a.from)
-    if (this.crow.state === 'flying') return this.fieldOf('tests')
+    if (this.crow.state === 'flying') return this.fieldOf(this.task(MISSING.taskId).assignee)
     return null
   }
 
@@ -462,7 +463,7 @@ export class Engine {
         x += bw
       }
     }
-    const tf = this.fieldOf('tests') ?? this.fields[0]
+    const tf = this.fieldOf(this.task(MISSING.taskId).assignee) ?? this.fields[0]
     if (tf) {
       CROW_SPOT.x = tf.rect.x + tf.rect.w - 0.5
       CROW_SPOT.y = tf.rect.y + 0.15
@@ -648,10 +649,8 @@ export class Engine {
     if (this.phase === 'harvest' && this.harvestStage === 'review') {
       const h = this.harvestGates[g]
       if (h.state === 'run') return { state: 'run', text: 'Running again' }
-      if (g === 'review') {
-        if (h.state === 'fail') return { state: 'fail', text: taskId === REVIEW_FAIL.taskId ? '1 blocking' : 'Blocked' }
-        return h.state === 'look' ? { state: 'pass', text: 'Passed' } : h
-      }
+      if (h.state === 'fail') return { state: 'fail', text: taskId === HARVEST_FAIL.taskId ? (g === HARVEST_FAIL.gate ? HARVEST_FAIL.short : '1 blocking') : 'Blocked' }
+      if (g === 'review') return h.state === 'look' ? { state: 'pass', text: 'Passed' } : h
       return { state: 'pass', text: this.gates[taskId]?.[g]?.text ?? 'Passed' }
     }
     return this.gates[taskId]?.[g] ?? (g === 'review' ? { state: 'wait', text: 'At harvest' } : { state: 'wait', text: 'Not run yet' })
@@ -800,29 +799,30 @@ export class Engine {
   private onResolve(ask: Ask, value: string) {
     if (isShipAsk(ask.id)) return this.onShipResolve(ask, value)
     if (ask.id === 'crow') {
-      const v2 = value === 'v2'
+      const rota = value === 'rota'
       const t = this.task(MISSING.taskId)
       const who = this.farmhands[t.assignee].role
       this.replan = {
-        id: 'replan-session',
-        title: v2 ? `Switch ${who} to ${CLASH.theirs}` : `Keep ${CLASH.ours}, ask the ${NEIGHBOUR.team}`,
+        id: 'replan-hours',
+        title: rota ? `${who} reads hours from ${CLASH.theirs}` : `Keep ${CLASH.ours}, ask the ${NEIGHBOUR.team}`,
         status: 'open',
-        lines: v2
+        lines: rota
           ? [
-              { op: '~', text: `src/api/session.ts: POST ${CLASH.ours} → ${CLASH.theirs}` },
+              { op: '-', text: 'Saturday slots from 1 December: 16 a week' },
               { op: '+', text: `New crop on ${t.name}: “${REPLAN_SUBTASKS.switch.name}” (${who})` },
-              { op: '+', text: `${t.name} reads ${MISSING.file}` },
-              { op: '~', text: 'End-to-end sign-in tests run again on staging' },
-              { op: '~', text: `The ${NEIGHBOUR.name} crew is told web-app now calls ${CLASH.theirs}` },
+              { op: '~', text: `${t.name} reads ${MISSING.file} from now on, not ${CLASH.ours}` },
+              { op: '~', text: 'The availability tests run again on staging' },
+              { op: '~', text: `The ${NEIGHBOUR.name} crew is told the booking site follows its rota` },
             ]
           : [
-              { op: '~', text: `${who} keeps ${CLASH.ours}` },
-              { op: '+', text: `Ask sent to the ${NEIGHBOUR.name} crew: keep ${CLASH.ours} on staging until Nov 12` },
+              { op: '~', text: `${who} keeps ${CLASH.ours}: Saturdays 9:00 to 13:00` },
+              { op: '+', text: `Ask sent to the ${NEIGHBOUR.name} crew: confirm who works Saturdays from 1 December` },
               { op: '+', text: `${t.name} reads ${MISSING.file}` },
             ],
       }
       this.act('Head farmer', 1_500, t.id, 8)
     }
+    if (ask.id === 'hold') this.fixHarvestGate(value)
     // Whoever asked goes back to work, whichever farmhand the plan gave the task to.
     const asker = ask.from !== 'head' ? this.farmhands[ask.from] : null
     if (asker?.status === 'asking') asker.status = 'working'
@@ -835,17 +835,18 @@ export class Engine {
     const t = this.task(MISSING.taskId)
     if (!t.signposts.includes(MISSING.file)) t.signposts.push(MISSING.file)
     this.farmhands[t.assignee].context.push(MISSING.file)
-    const v2 = this.replan.lines.length > 3
-    if (v2) {
+    const rota = this.replan.lines.length > 3
+    if (rota) {
       t.plot = { ...t.plot, h: t.plot.h + 1 }
       t.subtasks.push({ ...REPLAN_SUBTASKS.switch, sets: [...REPLAN_SUBTASKS.switch.sets], progress: 0, started: false, done: false, emitted: 0, addedByReplan: true })
-    } else {
-      this.flags.add('sessionV2')
+      this.hoursFrom = MISSING.file
     }
+    // Either way the hours are settled, so the availability search runs again.
+    this.flags.add('hoursSettled')
     this.crow.state = 'leaving'
     this.crow.t = 0
-    this.addLog('Head farmer', 'Applied the re-plan and sent the decision to 2 crews', 'replan', t.id, 'Both projects now agree on the session API.')
-    this.addLog(`${NEIGHBOUR.name} crew`, v2 ? `Noted: web-app calls ${CLASH.theirs} from Friday` : `Kept ${CLASH.ours} on staging until Nov 12. Production still drops it Nov 12.`, 'info')
+    this.addLog('Head farmer', 'Applied the re-plan and sent the decision to 2 crews', 'replan', t.id, 'Both projects now agree about Saturdays.')
+    this.addLog(`${NEIGHBOUR.name} crew`, rota ? 'Noted: the booking site reads its hours from the rota' : 'Asked the practice manager. The rota still has no vet on Saturdays from 1 December.', 'info')
     this.toast('Decision sent to 2 crews')
     this.notify()
   }
@@ -1079,31 +1080,30 @@ export class Engine {
         }
       }
       const yours = this.activeAsk?.id === 'crow' || this.replan?.status === 'open'
-      return { taskId: MISSING.taskId, label: yours ? 'your call on the session API' : 'the session API check' }
+      return { taskId: MISSING.taskId, label: yours ? 'your call on the opening hours' : 'the opening hours check' }
     }
     return null
   }
 
   // The one glyph over a farmhand's head. Asks carry their reason, so the map draws its shape.
-  glyphOf(fh: Farmhand): { kind: 'work' } | { kind: 'ask'; reason: ReasonLabel; at: number } | { kind: 'sleep' } | null {
+  glyphOf(fh: Farmhand): { kind: 'work' } | { kind: 'ask'; reason: ReasonLabel; at: number } | { kind: 'done' } | null {
     if (fh.inside || fh.paused) return null
     if (fh.status === 'asking') {
       const a = this.openAsks.find((x) => x.from === fh.id)
       return { kind: 'ask', reason: a?.label ?? 'Anomaly', at: a?.raisedAt ?? this.t }
     }
     if (fh.status === 'working') return { kind: 'work' }
-    if (fh.status === 'done') return { kind: 'sleep' }
+    if (fh.status === 'done') return { kind: 'done' }
     return null
   }
 
-  // The draft a task has ready (a commit, a test file, the guide), shown as a crate on its plot.
+  // The draft a task has ready (its commit), shown as a crate on its plot.
   // Filled in by the panel work: null means no crate.
   draftFor(taskId: string): { label: string; nav: Nav[] } | null {
     if (this.phase === 'brief' || this.phase === 'clarify' || this.phase === 'plan') return null
     const t = this.tasks.find((x) => x.id === taskId)
     if (!t || !t.subtasks.some((s) => s.done)) return null
-    // The guide is its own output; every other task's draft is its commit, shown in the task view.
-    if (taskId === 'docs') return { label: OUTPUT.guide.title, nav: [{ kind: 'task', id: taskId }, { kind: 'out', id: 'guide' }] }
+    // Each task's draft is its commit, shown in the task view.
     return { label: COMMITS[taskId] ?? t.name, nav: [{ kind: 'task', id: taskId }] }
   }
 
@@ -1150,9 +1150,9 @@ export class Engine {
     if (fh.paused) return 'Paused'
     if (fh.status === 'asking') return 'Waiting for you'
     const chore = CHORES.find((c) => c.id === fh.chore?.id)?.label ?? 'Taking a break'
-    if (this.phase === 'harvest' && fh.id === this.task(REVIEW_FAIL.taskId).assignee) {
-      if (this.gateFailed) return 'Waiting for you to send the review back'
-      if (this.rerunAt) return 'Fixing line 48'
+    if (this.phase === 'harvest' && fh.id === this.task(HARVEST_FAIL.taskId).assignee) {
+      if (this.gateFailed) return 'Waiting for your call on the double booking'
+      if (this.rerunAt) return 'Fixing the double booking'
     }
     if (fh.id === 'reviewer' && this.phase !== 'harvest') return `Reviews at the harvest. ${chore}`
     if (fh.status === 'done') return `Done. ${chore}`
@@ -1173,7 +1173,7 @@ export class Engine {
 
   taskStatus(t: Task): { text: string; tone: '' | 'done' | 'needs' | 'warn' | 'fail' } {
     const done = t.subtasks.filter((s) => s.done).length
-    if (this.phase === 'harvest' && t.id === REVIEW_FAIL.taskId && this.harvestGates.review.state === 'fail') return { text: 'Review failed', tone: 'fail' }
+    if (this.phase === 'harvest' && t.id === HARVEST_FAIL.taskId && this.gateFailed) return { text: this.harvestGates.e2e.state === 'fail' ? 'End-to-end failed' : 'Review failed', tone: 'fail' }
     if (this.taskRipe(t)) return { text: 'Done', tone: 'done' }
     if (this.openAsks.some((a) => a.taskId === t.id) || (t.id === MISSING.taskId && this.replan?.status === 'open')) return { text: 'Needs you', tone: 'needs' }
     const failed = (this.taskGates[t.id] ?? []).find((g) => this.gates[t.id]?.[g]?.state === 'fail')
@@ -1300,14 +1300,16 @@ export class Engine {
     if (this.rerunAt) return OUTPUT.rerun
     if (this.gatesRunning) return OUTPUT.running
     if (this.sendState === 'sent') return OUTPUT.merged
-    return this.asks.find((a) => a.id === 'crow')?.answer === 'v2' ? OUTPUT.caught : OUTPUT.ready
+    return this.asks.find((a) => a.id === 'crow')?.answer === 'rota' ? OUTPUT.caught : OUTPUT.ready
   }
 
   // ---- review: gates, your eyes, approve, then merge -----------------------------------
 
-  // Machine gates already passed in Grow. The review runs now, on the whole diff, by an agent that wrote none of it.
+  // Each task's gates already passed in Grow. Now the end-to-end run covers the whole app, with two owners
+  // booking at once, and the review runs on the whole diff, by an agent that wrote none of it.
   private startReview() {
-    for (const g of GATE_ORDER) this.harvestGates[g] = g === 'review' ? { state: 'run', text: 'Reviewing the whole diff' } : { ...RESULTS[g] }
+    for (const g of GATE_ORDER)
+      this.harvestGates[g] = g === 'review' ? { state: 'run', text: 'Reviewing the whole diff' } : g === HARVEST_FAIL.gate ? { state: 'run', text: 'Two owners, one slot' } : { ...RESULTS[g] }
     this.addLog('Reviewer', 'Started the review of the whole diff', 'info')
     this.request('review', () => callAgent('review', { diff: PR_DIFF }, RECORDED.review))
   }
@@ -1354,20 +1356,56 @@ export class Engine {
     this.notify()
   }
 
-  // A failed gate goes back to the agent whose code failed it. Then every gate runs again.
-  sendBack() {
-    if (!this.gateFailed || this.approved) return
-    const t = this.task(REVIEW_FAIL.taskId)
+  // The whole-app end-to-end run books one slot from two browsers at once. Both are confirmed, so the gate
+  // fails and the agent whose code failed it asks you how to fix it.
+  private failHarvestGate() {
+    const t = this.task(HARVEST_FAIL.taskId)
+    const fh = this.farmhands[t.assignee]
+    this.harvestGates[HARVEST_FAIL.gate] = { state: 'fail', text: HARVEST_FAIL.text }
+    this.addLog('Gates', `End-to-end failed: ${HARVEST_FAIL.detail}`, 'pest', t.id, 'same-slot.spec.ts, run by QA in two browsers at once.')
+    this.raise({
+      id: 'hold',
+      label: 'Failure',
+      from: fh.id,
+      fromName: fh.role,
+      taskId: t.id,
+      question: HARVEST_FAIL.question,
+      impact: ['Two owners would turn up for the same visit, and one would be sent home.', 'Both browsers reached “You’re booked” within 40 ms of each other.', 'Nothing has merged yet.'],
+      options: [
+        { key: '1', label: 'Hold the slot, then rerun', value: 'hold', recommended: true, kind: 'alt' },
+        { key: '2', label: 'Refuse the second booking at confirm', value: 'refuse', kind: 'alt' },
+      ],
+      confidence: 'High',
+      basis: 'The end-to-end recording shows both confirmations.',
+      provenance: 'sim',
+      details: {
+        reasoning: HARVEST_FAIL.detail,
+        sources: ['e2e-tests/same-slot.spec.ts', 'src/api/bookings.ts'],
+        preview: 'const slot = await db.slots.find(slotId)\nif (slot.taken) return conflict()\n// a second request passes this check before the first one marks the slot taken',
+      },
+    })
+  }
+
+  // Your answer goes back to the agent whose code failed the gate. Then every gate runs again.
+  private fixHarvestGate(value: string) {
+    if (!this.gateFailed || this.approved || this.fixSent) return
+    const t = this.task(HARVEST_FAIL.taskId)
     const who = this.farmhands[t.assignee].role
-    this.reviewFixed = true
+    this.fixSent = true
     this.ticked.clear()
     for (const g of GATE_ORDER) this.harvestGates[g] = { state: 'run', text: 'Running again' }
     this.rerunAt = this.clock
-    this.act(who, 1_200, t.id, 4)
-    this.addLog('You', `Sent back to ${who}: ${REVIEW_FAIL.text}`, 'answer', t.id)
-    this.addLog(who, 'Removed the log line at src/auth/google.ts line 48', 'info', t.id, REVIEW_FAIL.fix)
-    this.toast(`${who} removed the log line. Every gate is running again.`)
-    this.notify()
+    this.act(who, 1_800, t.id, 6)
+    const did = value === 'refuse' ? HARVEST_FAIL.refused : HARVEST_FAIL.fixed
+    this.addLog(who, did, 'info', t.id, HARVEST_FAIL.fix)
+    if (!this.pendingSeeds.some((s) => s.file === LESSON_HOLD.file) && !this.seeds.some((s) => s.file === LESSON_HOLD.file)) this.pendingSeeds.push({ ...LESSON_HOLD })
+    this.toast(`${who}: ${did.toLowerCase()}. Every gate is running again.`)
+  }
+
+  // The button on the failed gate: the same as answering the ask with its recommended option.
+  sendBack() {
+    const ask = this.asks.find((a) => a.id === 'hold' && a.status !== 'resolved')
+    if (ask) this.answer(ask.id, (ask.options.find((o) => o.recommended) ?? ask.options[0]).value)
   }
 
   private finishRerun() {
@@ -1375,7 +1413,7 @@ export class Engine {
     this.toasts = []
     for (const g of GATE_ORDER) this.harvestGates[g] = g === 'review' ? this.reviewResult() : { ...RESULTS[g] }
     this.act('Reviewer', 2_400, undefined, 6)
-    this.addLog('Reviewer', 'Every gate passed on the second run', 'done', undefined, 'The id_token is no longer logged. 0 blocking, 2 notes.')
+    this.addLog('Gates', 'Every gate passed on the second run', 'done', undefined, 'Two owners, one slot: the second owner is told the time was just taken.')
     this.notify()
   }
 
@@ -1442,6 +1480,7 @@ export class Engine {
     if (st === 'ci') return this.updateCi()
     if (st === 'canary' || st === 'canary2') return this.updateCanary()
     if (st === 'rollback' && this.shipT >= SHIP_TIMES.rollback) return this.finishRollback()
+    if (st === 'fixing') return this.updateFix()
     if (st === 'rollout') {
       const k = Math.min(1, this.shipT / SHIP_TIMES.rollout)
       this.rollout = Math.round(5 + 95 * k)
@@ -1501,23 +1540,24 @@ export class Engine {
   }
 
   private deployAsk(id: string) {
+    const again = id === 'redeploy'
     return {
       id,
       label: 'Irreversible' as const,
       from: 'head' as const,
       fromName: 'Head farmer',
       taskId: '',
-      question: id === 'deploy' ? `Deploy ${RELEASE.app} ${RELEASE.version} to production?` : `Redeploy ${RELEASE.app} ${RELEASE.version} to production?`,
-      impact: [`Reaches ${RELEASE.users} users on ${RELEASE.app}`, id === 'deploy' ? 'CI passed on main. One known flaky test was retried.' : 'Same release, now with the production redirect URI in place.'],
+      question: again ? `Redeploy online booking to production?` : `Deploy online booking to production?`,
+      impact: [`Reaches every visitor to ${RELEASE.site}`, again ? 'Availability search now loads all 8 weeks of diaries in one query.' : 'CI passed on main. One known flaky test was retried.'],
       options: [
         { key: '1', label: 'Approve', value: 'approve', recommended: true, kind: 'approve' as const },
         { key: '2', label: 'Not now', value: 'hold', kind: 'deny' as const },
       ],
-      confirm: id === 'deploy' ? 'Deploy to production?' : 'Redeploy to production?',
+      confirm: again ? 'Redeploy to production?' : 'Deploy to production?',
       confirmLabel: 'Deploy to production',
-      confirmList: [`Production, ${RELEASE.users} users`, `${RELEASE.app} ${RELEASE.version}`, `Rollout: ${RELEASE.canary}`, `Roll back: ${this.settings.deploy.auto_rollback ? RELEASE.rule.toLowerCase() : 'ask you first if a health check fails'}`],
+      confirmList: [`Production: ${RELEASE.site}`, `Rollout: ${RELEASE.canary}`, `Roll back: ${this.settings.deploy.auto_rollback ? RELEASE.rule.charAt(0).toLowerCase() + RELEASE.rule.slice(1) : 'ask you first if a health check fails'}`],
       details: {
-        reasoning: 'Every gate passed, you approved and merged, and CI passed on main. Deploying is the step that reaches users.',
+        reasoning: again ? 'The fix passed CI on main. Deploying is the step that reaches pet owners, so it asks again.' : 'Every gate passed, you approved and merged, and CI passed on main. Deploying is the step that reaches pet owners.',
         sources: ['.github/workflows/main.yml', 'homestead.toml, deploy section'],
       },
       confidence: 'High' as const,
@@ -1528,13 +1568,14 @@ export class Engine {
 
   requestDeploy() {
     if (this.shipStage !== 'deploy' && this.shipStage !== 'held') return
+    if (this.shipStage === 'held' && this.rolledBack) return this.raiseFix()
     this.shipStage = 'deploy'
-    const id = this.deploys === 0 ? 'deploy' : `deploy-${this.deploys}`
+    const id = this.rolledBack ? 'redeploy' : this.deploys === 0 ? 'deploy' : `deploy-${this.deploys}`
     this.asks = this.asks.filter((a) => a.id !== id)
     this.raise(this.deployAsk(id))
   }
 
-  // The canary: 5% of users get the new version while the health checks are watched.
+  // The canary: 5% of visitors get online booking while the health checks are watched.
   startCanary() {
     this.phase = 'ship'
     this.deploys++
@@ -1544,8 +1585,8 @@ export class Engine {
     for (const h of HEALTH) this.health[h.id] = { value: h.good, ok: true, seen: false }
     this.cart = { state: 'out', k: 0, crow: false }
     this.act('Head farmer', 500, undefined, 2)
-    this.addLog('Head farmer', `Deployed ${RELEASE.app} ${RELEASE.version} to 5% of production`, 'done')
-    this.toast(`${RELEASE.version} is live for 5% of users`)
+    this.addLog('Head farmer', 'Deployed online booking to 5% of production', 'done')
+    this.toast('Online booking is live for 5% of visitors')
     this.notify()
   }
 
@@ -1555,9 +1596,9 @@ export class Engine {
     const k = Math.min(1, this.shipT / T)
     for (const h of HEALTH) {
       const wob = Math.sin(this.shipT * 3 + h.good) * 0.02
-      let v = h.good * (1 + wob * (h.unit === 'ms' ? 1 : 0.02))
-      // The first canary: sign-in success falls once real users start signing in.
-      if (!second && h.id === 'signin') v = h.good + (h.bad - h.good) * Math.max(0, Math.min(1, (k - 0.3) / 0.7))
+      let v = h.good * (1 + wob * (h.unit === 's' ? 1 : 0.02))
+      // The first canary: availability search slows once real visitors start searching.
+      if (!second && h.id === BREACH) v = h.good + (h.bad - h.good) * Math.max(0, Math.min(1, (k - 0.3) / 0.7))
       else if (!second) v = h.good + (h.bad - h.good) * k
       this.health[h.id] = { value: v, ok: healthOk(h, v), seen: this.shipT > 0.3 }
     }
@@ -1570,7 +1611,7 @@ export class Engine {
     }
     const bad = HEALTH.find((h) => !this.health[h.id].ok)
     if (!bad) return
-    const reading = `${bad.name} fell to ${fmtHealth(bad, this.health[bad.id].value)} on the canary (needs ${bad.min}%)`
+    const reading = breachText(bad, this.health[bad.id].value)
     if (this.settings.deploy.auto_rollback) return this.startRollback(reading)
     // The switch is off: hold the canary and ask.
     this.shipStage = 'held'
@@ -1580,10 +1621,10 @@ export class Engine {
       from: 'head',
       fromName: 'Head farmer',
       taskId: '',
-      question: `${reading}. Roll back to ${RELEASE.previous}?`,
-      impact: [`5% of users can't sign in with Google until this is decided.`],
+      question: `${reading}. Put the “Call us to book” page back?`,
+      impact: ['5% of visitors wait seconds for free times until this is decided.'],
       options: [
-        { key: '1', label: `Roll back to ${RELEASE.previous}`, value: 'rollback', recommended: true, kind: 'approve' },
+        { key: '1', label: 'Put the old page back', value: 'rollback', recommended: true, kind: 'approve' },
         { key: '2', label: 'Keep the canary running', value: 'keep', kind: 'deny' },
       ],
       details: { reasoning: 'Rolling back on its own is off in Settings, so the canary waits for you.', sources: ['Sentry', 'homestead.toml, deploy section'] },
@@ -1597,8 +1638,8 @@ export class Engine {
     this.shipT = 0
     this.rolledBack = true
     this.act('Head farmer', 400, undefined, 2)
-    this.addLog('Head farmer', `Rolled back to ${RELEASE.previous}: ${reading}. ${RELEASE.exposure.charAt(0).toUpperCase() + RELEASE.exposure.slice(1)}.`, 'auto', undefined, 'A rollback only restores what was live before, so it doesn’t wait for you.')
-    this.toast(`Rolled back to ${RELEASE.previous}`)
+    this.addLog('Head farmer', `Put the “Call us to book” page back: ${reading}. ${RELEASE.exposure.charAt(0).toUpperCase() + RELEASE.exposure.slice(1)}.`, 'auto', undefined, 'A rollback only restores what was live before, so it doesn’t wait for you.')
+    this.toast('Rolled back to the “Call us to book” page')
     this.notify()
   }
 
@@ -1607,25 +1648,40 @@ export class Engine {
     this.shipT = 0
     this.rollout = 0
     this.cart = { state: 'back', k: 0, crow: false }
-    if (!this.pendingSeeds.some((s) => s.file === LESSON_REDIRECT.file) && !this.seeds.some((s) => s.file === LESSON_REDIRECT.file)) this.pendingSeeds.push({ ...LESSON_REDIRECT })
+    if (!this.pendingSeeds.some((s) => s.file === LESSON_QUERY.file) && !this.seeds.some((s) => s.file === LESSON_QUERY.file)) this.pendingSeeds.push({ ...LESSON_QUERY })
+    this.raiseFix()
+  }
+
+  // The canary found the slow search: ask to fix it, then redeploy.
+  private raiseFix() {
+    this.asks = this.asks.filter((a) => a.id !== 'fix')
     this.raise({
-      id: 'redirect',
-      label: 'Anomaly',
+      id: 'fix',
+      label: 'Failure',
       from: 'head',
       fromName: 'Head farmer',
       taskId: '',
-      question: 'Add the production redirect URI, then redeploy?',
-      impact: ['An agent can’t reach the Google console. Once you add it, Homestead redeploys with the same canary.', SHIP_TEXT.cause],
+      question: SHIP_TEXT.fix,
+      impact: ['The Backend agent changes the query, CI runs on main, then the same canary.', SHIP_TEXT.cause],
       options: [
-        { key: '1', label: 'I added it, redeploy', value: 'redeploy', recommended: true, kind: 'approve' },
-        { key: '2', label: `Keep ${RELEASE.previous} live`, value: 'hold', kind: 'deny' },
+        { key: '1', label: 'Fix it and redeploy', value: 'fix', recommended: true, kind: 'approve' },
+        { key: '2', label: 'Keep the old page', value: 'hold', kind: 'deny' },
       ],
-      link: { label: 'Setup guide, step 3', out: 'guide' },
-      details: { reasoning: SHIP_TEXT.cause, sources: [SHIP_TEXT.sentry, 'docs/auth/google.md, step 3'], preview: 'redirect_uri_mismatch\nThe redirect URI in the request, https://app.example.com/auth/google/callback,\ndoes not match the ones authorized for the OAuth client.' },
+      details: { reasoning: SHIP_TEXT.cause, sources: [SHIP_TEXT.sentry, 'api/availability.ts, line 42'], preview: 'for (const vet of vets)\n  for (const day of days(8 * 7))\n    await diary.read(vet, day)   // 168 reads per search' },
       confidence: 'High',
-      basis: 'Sentry shows the same Google error for every failed sign-in',
+      basis: 'Sentry shows 168 diary queries for every availability search',
       provenance: 'sim',
     })
+  }
+
+  // The fix: the Backend agent loads the whole range at once, then the redeploy asks again.
+  private updateFix() {
+    if (this.shipT < SHIP_TIMES.fix) return
+    this.addLog('Backend', 'Availability search loads all 8 weeks of diaries in one query. 0.3 s on staging with full diaries. CI passed on main.', 'done')
+    this.shipStage = 'deploy'
+    this.shipT = 0
+    this.asks = this.asks.filter((a) => a.id !== 'redeploy')
+    this.raise(this.deployAsk('redeploy'))
   }
 
   private goLive() {
@@ -1633,9 +1689,45 @@ export class Engine {
     this.rollout = 100
     this.cart = { state: 'away', k: 0, crow: false }
     this.act('Head farmer', 300, undefined, 1)
-    this.addLog('Head farmer', `${RELEASE.version} is live for ${RELEASE.users} users`, 'done')
-    this.toast(`Live for ${RELEASE.users} users`)
+    this.addLog('Head farmer', `Online booking is live at ${RELEASE.site}`, 'done')
+    this.toast('Online booking is live for everyone')
+    this.raise(this.announceAsk())
     this.notify()
+  }
+
+  // Ask again for the text after a Not now.
+  requestAnnounce() {
+    if (this.shipStage !== 'live') return
+    this.asks = this.asks.filter((a) => a.id !== 'announce')
+    this.raise(this.announceAsk())
+    this.notify()
+  }
+
+  // The text that tells pet owners. It can't be taken back and it costs money, so the confirm shows all three.
+  private announceAsk() {
+    return {
+      id: 'announce',
+      label: 'Irreversible' as const,
+      from: 'head' as const,
+      fromName: 'Head farmer',
+      taskId: '',
+      question: `Text all ${ANNOUNCE.audience} that they can book online?`,
+      impact: [`${ANNOUNCE.audience} by text`, `${ANNOUNCE.cost}. A text can’t be taken back.`],
+      options: [
+        { key: '1', label: 'Approve', value: 'approve', recommended: true, kind: 'approve' as const },
+        { key: '2', label: 'Not now', value: 'hold', kind: 'deny' as const },
+      ],
+      confirm: `Text ${ANNOUNCE.audience}?`,
+      confirmLabel: `Send to ${ANNOUNCE.audience}`,
+      confirmList: [`To: ${ANNOUNCE.audience}`, `Message: “${ANNOUNCE.message}”`, `Cost: ${ANNOUNCE.cost.charAt(0).toLowerCase() + ANNOUNCE.cost.slice(1)}`],
+      details: {
+        reasoning: 'Online booking passed the canary and is live for everyone. Every pet owner on file gets one text from WillowVets.',
+        sources: [`${ANNOUNCE.provider}, read and send`, 'Practice records, 3,000 owners with a mobile number'],
+      },
+      confidence: 'High' as const,
+      basis: 'Live for everyone, every health check passing',
+      provenance: 'sim' as const,
+    }
   }
 
   // The cart: out along the valley road while a deploy runs, back to the gate on a rollback.
@@ -1658,25 +1750,29 @@ export class Engine {
       this.addLog('Head farmer', SHIP_TEXT.held, 'info')
       return
     }
-    if (id === 'redirect') {
+    if (id === 'fix') {
       this.cart.crow = false
-      if (value !== 'redeploy') {
+      if (value !== 'fix') {
         this.shipStage = 'held'
+        this.addLog('Head farmer', 'Kept the “Call us to book” page live', 'info')
         return
       }
-      this.addLog('You', 'Added the production redirect URI in the Google console', 'answer')
-      this.shipStage = 'deploy'
-      this.asks = this.asks.filter((a) => a.id !== 'redeploy')
-      this.raise(this.deployAsk('redeploy'))
-      // You already said redeploy: the ask opens on its confirm.
-      const r = this.asks.find((a) => a.id === 'redeploy')
-      if (r) r.status = 'confirming'
+      this.shipStage = 'fixing'
+      this.shipT = 0
+      this.act('Backend', 900, undefined, 2)
+      return
+    }
+    if (id === 'announce') {
+      if (value !== 'approve') return
+      this.shipStage = 'announced'
+      this.addLog('You', `Texted ${ANNOUNCE.audience}: “${ANNOUNCE.message}”`, 'done')
+      this.toast(`Texted ${ANNOUNCE.audience}`)
       return
     }
     if (id === 'rollback') {
       if (value === 'rollback') {
-        const h = HEALTH[0]
-        return this.startRollback(`${h.name} fell to ${fmtHealth(h, this.health[h.id].value)} on the canary (needs ${h.min}%)`)
+        const h = HEALTH.find((x) => x.id === BREACH)!
+        return this.startRollback(breachText(h, this.health[h.id].value))
       }
       this.addLog('Head farmer', 'Kept the canary running at 5%', 'info')
       return
@@ -1699,21 +1795,26 @@ export class Engine {
       case 'cifailed':
         return SHIP_TEXT.ciFailed
       case 'deploy':
-        return this.rolledBack ? SHIP_TEXT.cause : SHIP_TEXT.ciPassed
+        return SHIP_TEXT.ciPassed
       case 'held':
-        return this.asks.some((a) => a.id === 'rollback' && a.status !== 'resolved') ? 'The canary is failing. It waits for you.' : SHIP_TEXT.held
+        if (this.asks.some((a) => a.id === 'rollback' && a.status !== 'resolved')) return 'The canary is failing. It waits for you.'
+        return this.rolledBack ? 'The “Call us to book” page is live. The fix waits for you.' : SHIP_TEXT.held
       case 'canary':
         return SHIP_TEXT.canary
       case 'rollback':
         return SHIP_TEXT.rollback
       case 'rolledback':
         return SHIP_TEXT.rolledback
+      case 'fixing':
+        return SHIP_TEXT.fixing
       case 'canary2':
         return SHIP_TEXT.canary2
       case 'rollout':
         return SHIP_TEXT.rollout
       case 'live':
-        return SHIP_TEXT.live
+        return this.asks.some((a) => a.id === 'announce' && a.status === 'resolved') ? SHIP_TEXT.notSent : SHIP_TEXT.live
+      case 'announced':
+        return SHIP_TEXT.announced
       default:
         return ''
     }
@@ -1724,11 +1825,10 @@ export class Engine {
     return [
       { word: 'Plan', text: swapped ? 'Approved the plan with your changes' : 'Approved the plan as proposed' },
       ...this.asks.filter((a) => a.status === 'resolved' && !isShipAsk(a.id)).map((a) => ({ word: REASON_WORD[a.label] ?? a.label, text: `${a.answerLabel}`, q: a.question })),
-      ...(this.reviewFixed ? [{ word: 'Failed', text: `Sent the review back to ${this.farmhands[this.task(REVIEW_FAIL.taskId).assignee].role}` }] : []),
       ...(this.approved ? [{ word: 'Review', text: `Looked at ${CHECKS.length} things and approved` }] : []),
       ...(this.sendState === 'sent' ? [{ word: 'Merge', text: `Merged PR #${OUTPUT.pr}` }] : []),
       // Ship's asks come after the merge.
-      ...this.asks.filter((a) => a.status === 'resolved' && isShipAsk(a.id)).map((a) => ({ word: REASON_WORD[a.label] ?? a.label, text: shipDecided(a), q: a.question })),
+      ...this.asks.filter((a) => a.status === 'resolved' && isShipAsk(a.id)).map((a) => ({ word: a.id === 'announce' ? 'Send' : REASON_WORD[a.label] ?? a.label, text: shipDecided(a), q: a.question })),
     ]
   }
 
@@ -1783,7 +1883,7 @@ export class Engine {
     if (key === 'clarify') {
       const c = this.out.clarify!
       this.call('Head farmer', c)
-      this.questions = c.data.questions.slice(0, 3).map((q, i) => ({ id: q.id || `q${i}`, q: q.q, why: q.why, options: q.options.slice(0, 2) }))
+      this.questions = c.data.questions.slice(0, 4).map((q, i) => ({ id: q.id || `q${i}`, q: q.q, why: q.why, options: q.options.slice(0, 2) }))
       this.addLog('Head farmer', `Asked ${this.questions.length} questions it couldn’t answer from the brief`, 'info', undefined, c.provenance === 'live' ? `Live call, ${fmtTokens(c.tokens)}` : undefined)
     }
     if (key === 'plan') {
@@ -1794,23 +1894,25 @@ export class Engine {
       const crew = new Set(this.tasks.map((t) => t.assignee)).size
       this.addLog('Head farmer', `Proposed a plan: ${this.tasks.length} tasks for ${crew} agents, with Done-when gates on each`, 'info', undefined, p.provenance === 'live' ? `Live call, ${fmtTokens(p.tokens)}` : undefined)
     }
-    if (key === 'session') {
-      const d = this.out.session!
+    if (key === 'hours') {
+      const d = this.out.hours!
       const t = this.task(MISSING.taskId)
       this.call(this.farmhands[t.assignee].role, d, t.id)
-      this.endpoint = d.data.endpoint
+      this.hoursFrom = d.data.source
     }
     if (key === 'review') {
       const r = this.out.review!
       this.call('Reviewer', r)
       const b = r.data.blocking[0]
-      if (b && !this.reviewFixed) {
-        this.harvestGates.review = { state: 'fail', text: REVIEW_FAIL.text }
-        this.addLog('Reviewer', `Blocking: ${b.problem}`, 'pest', REVIEW_FAIL.taskId, `${b.file} line ${b.line}. ${b.rule}`)
+      if (b && !this.fixSent) {
+        this.harvestGates.review = { state: 'fail', text: `${r.data.blocking.length} blocking` }
+        this.addLog('Reviewer', `Blocking: ${b.problem}`, 'pest', HARVEST_FAIL.taskId, `${b.file} line ${b.line}. ${b.rule}`)
       } else {
         this.harvestGates.review = this.reviewResult()
         this.addLog('Reviewer', `Reviewed the whole diff: ${this.harvestGates.review.text}`, 'info', undefined, r.provenance === 'live' ? `Live call, ${fmtTokens(r.tokens)}` : undefined)
       }
+      // The end-to-end run on the whole app finishes alongside the review.
+      if (!this.fixSent) this.failHarvestGate()
     }
     if (key === 'conflict') {
       const c = this.out.conflict!
@@ -1819,8 +1921,8 @@ export class Engine {
       if (c.data.conflict) {
         this.crow = { state: 'flying', t: 0, x: CROW_SPOT.x + 14, y: CROW_SPOT.y - 12 }
         this.neighbourDrought = true
-        const other = c.data.endpoints.find((x) => x.farm !== FARM.name)
-        this.addLog('Head farmer', `Found the cause in ${NEIGHBOUR.name}: ${c.data.endpoints.map((x) => x.endpoint).join(' and ')}`, 'info', t.id, other ? `${other.source}: “${other.quote}”` : c.data.why)
+        const other = c.data.claims.find((x) => x.farm !== FARM.name)
+        this.addLog('Head farmer', `Found the cause in ${NEIGHBOUR.name}: ${c.data.claims.map((x) => x.claim).join(', but ')}`, 'info', t.id, other ? `${other.source}: “${other.quote}”` : c.data.why)
       } else {
         this.addLog('Head farmer', `Checked ${this.docsChecked} files on 2 farms: no clash found`, 'auto', t.id, c.data.why)
         this.raiseCrow()
@@ -2258,14 +2360,14 @@ export class Engine {
     fh.status = 'working'
     sub.progress = Math.min(1, sub.progress + dt / sub.secs)
     // Steps backed by a model call hold just short of done until the call returns.
-    // The end-to-end run holds halfway while it fails, until the session API is settled.
-    const e2eBlocked = sub.id === 't2' && this.gates[task.id]?.e2e?.state === 'fail'
-    if (e2eBlocked && this.flags.has('sessionV2')) {
-      this.gates[task.id]!.e2e = { state: 'run', text: E2E_FAIL.again }
-      this.addLog(fh.role, 'Running the end-to-end tests again on staging', 'info', task.id)
+    // The availability search holds halfway while its staging run fails, until the opening hours are settled.
+    const slotsBlocked = sub.id === 'b3' && this.gates[task.id]?.integration?.state === 'fail'
+    if (slotsBlocked && this.flags.has('hoursSettled')) {
+      this.gates[task.id]!.integration = { state: 'run', text: INTEGRATION_FAIL.again }
+      this.addLog(fh.role, 'Running the availability tests again on staging', 'info', task.id)
     }
-    const waitingOn = (sub.id === 'f2' && !this.out.session) || (e2eBlocked && !this.flags.has('sessionV2'))
-    if (waitingOn) sub.progress = Math.min(sub.progress, e2eBlocked ? 0.55 : 0.9)
+    const waitingOn = (sub.id === 'b2' && !this.out.hours) || (slotsBlocked && !this.flags.has('hoursSettled'))
+    if (waitingOn) sub.progress = Math.min(sub.progress, slotsBlocked ? 0.55 : 0.9)
     const target = Math.floor(sub.actions * sub.progress)
     const before = task.used
     while (sub.emitted < target) {
@@ -2324,62 +2426,59 @@ export class Engine {
     this.gates[task.id] = results
     const passed = this.machineGates(task.id).filter((g) => results[g]?.state === 'pass')
     if (passed.length) this.addLog('Gates', `${task.name}: ${passed.map((g) => `${GATES[g].name.toLowerCase()} ${results[g]!.text}`).join(', ')}`, 'info', task.id)
-    if (this.taskRipe(task)) {
-      this.addLog(fh.role, `Ripe: ${task.name}`, 'done', task.id)
-      if (task.id === 'tests' && this.flags.has('replanApplied') && !this.pendingSeeds.some((s) => s.file === LESSON_STAGING.file)) this.pendingSeeds.push({ ...LESSON_STAGING })
-    }
+    if (this.taskRipe(task)) this.addLog(fh.role, `Ripe: ${task.name}`, 'done', task.id)
     this.notify()
   }
 
   // Returns true when the subtask is blocked on an ask.
   private onSubStart(fh: Farmhand, task: Task, sub: Subtask): boolean {
-    if (sub.id === 'b2') {
-      this.addLog(fh.role, 'Added /auth/google/callback', 'auto', task.id, 'Follows oauth-security.md: a state parameter and PKCE.')
+    if (sub.id === 'b1') {
+      this.addLog(fh.role, 'Added the bookings table: owner, pet, reason, vet, slot', 'auto', task.id, 'Follows owner-data.md: a phone number only for the reminder.')
     }
-    if (sub.id === 'f2') {
+    if (sub.id === 'b2') {
       // The model call is the work: no scripted steps on top of it.
       sub.actions = 0
       const signposts = [...task.signposts, ...fh.almanac]
-      const sawChangelog = expandSignposts(signposts).includes(MISSING.file)
-      this.request('session', () =>
-        callAgent('session', { goal: this.goal, task: task.name, answers: this.answersText, signposts }, sawChangelog ? RECORDED.sessionV2 : RECORDED.session),
+      const sawRota = expandSignposts(signposts).includes(MISSING.file)
+      this.request('hours', () => callAgent('hours', { goal: this.goal, task: task.name, answers: this.answersText, signposts }, sawRota ? RECORDED.hoursRota : RECORDED.hours))
+    }
+    if (sub.id === 'b3' && this.hoursFrom !== MISSING.file && !this.flags.has('hoursSettled')) {
+      // Staging has the staff rota: it finds slots with no vet. The head farmer looks for why across farms.
+      this.gates[task.id] ??= {}
+      this.gates[task.id]!.integration = { state: 'fail', text: INTEGRATION_FAIL.text }
+      this.addLog(fh.role, 'Found Saturday slots with no vet on staging', 'pest', task.id, CLASH.failed)
+      if (!this.requested.has('conflict')) this.addLog('Head farmer', `Checking ${this.docsChecked} files on 2 farms for why`, 'info', task.id)
+      const hours = this.out.hours?.data
+      this.request('conflict', () =>
+        callAgent('conflict', { claim: hours ? `Saturdays ${hours.saturday}` : CLASH.sheet, source: hours?.source ?? 'unknown', failure: CLASH.failed, ourDocs: [...task.signposts] }, RECORDED.conflict),
       )
     }
-    if (sub.id === 't2' && this.endpoint === CLASH.ours && !this.flags.has('sessionV2')) {
-      // Staging no longer has the endpoint Frontend called. The head farmer looks for why across farms.
-      this.gates[task.id] ??= {}
-      this.gates[task.id]!.e2e = { state: 'fail', text: E2E_FAIL.text }
-      this.addLog(fh.role, 'Sign-in failed on staging', 'pest', task.id, CLASH.failed)
-      const front = this.task(MISSING.taskId)
-      if (!this.requested.has('conflict')) this.addLog('Head farmer', `Checking ${this.docsChecked} files on 2 farms for why`, 'info', task.id)
-      this.request('conflict', () =>
-        callAgent('conflict', { endpoint: this.endpoint, source: this.out.session?.data.source ?? 'unknown', failure: CLASH.failed, ourDocs: [...front.signposts] }, RECORDED.conflict),
-      )
+    if (sub.id === 'f1') {
+      this.addLog(fh.role, 'One question per screen: pet, then reason', 'auto', task.id, 'Follows brand-style.md and lesson-phone-first.md.')
     }
     return false
   }
 
   private onSubDone(fh: Farmhand, task: Task, sub: Subtask) {
-    if (sub.id === 'f2') {
-      const d = this.out.session!.data
+    if (sub.id === 'b2') {
+      const d = this.out.hours!.data
       const saw = expandSignposts(task.signposts).includes(MISSING.file)
-      this.addLog(fh.role, `Started the session with ${d.endpoint}`, 'auto', task.id, `From ${d.source}.${saw ? '' : ' The Session API v2 changelog was not attached.'}`, saw ? undefined : 'endpoint')
+      this.addLog(fh.role, `Read the opening hours from ${d.source}`, 'auto', task.id, `Saturdays: ${d.saturday}.${saw ? '' : ' The staff rota was not attached.'}`, saw ? undefined : 'endpoint')
     }
     if (sub.id === REPLAN_SUBTASKS.switch.id) {
-      this.endpoint = CLASH.theirs
-      this.addLog(fh.role, `Switched to ${CLASH.theirs}`, 'info', task.id, 'After your answer. Tests run again on staging.')
+      this.addLog(fh.role, 'Dropped Saturday slots from 1 December', 'info', task.id, 'After your answer. Hours now come from the staff rota.')
     }
-    if (sub.id === 'd1') this.addLog(fh.role, 'Wrote docs/auth/google.md', 'info', task.id, 'Uses the callback route Backend added.')
+    if (sub.id === 'b4') this.addLog(fh.role, 'Added POST /bookings', 'info', task.id, 'Confirms a slot and stores the booking.')
+    if (sub.id === 'm2') this.addLog(fh.role, 'Texted a staging phone: “Biscuit sees Dr Patel tomorrow at 9:00”', 'info', task.id, 'Through Twilio, between 9:00 and 20:00, with how to cancel.')
   }
 
   private raiseCrow() {
     const c = this.out.conflict!
-    const t = this.task('tests')
+    const t = this.task(MISSING.taskId)
     const fh = this.farmhands[t.assignee]
-    const front = this.task(MISSING.taskId)
-    const builder = this.farmhands[front.assignee].role
-    const ours = c.data.endpoints.find((d) => d.farm === FARM.name) ?? c.data.endpoints[0]
-    const theirs = c.data.endpoints.find((d) => d !== ours)
+    const ours = c.data.claims.find((d) => d.farm === FARM.name) ?? c.data.claims[0]
+    const theirs = c.data.claims.find((d) => d !== ours)
+    const rotaFirst = /rota/i.test(c.data.recommended)
     fh.status = 'asking'
     this.raise({
       id: 'crow',
@@ -2387,28 +2486,28 @@ export class Engine {
       from: fh.id,
       fromName: fh.role,
       taskId: t.id,
-      question: `Sign-in fails on staging. The ${NEIGHBOUR.name} project retired ${CLASH.ours} yesterday. Which should ${builder} use?`,
+      question: CLASH.question,
       impact: [
-        'Your deploy goes out Friday, Nov 13, the day after production drops /v1/session.',
+        `${CLASH.failed}`,
         ...(theirs ? [`${theirs.source}: “${theirs.quote}”`] : []),
-        'Nothing has merged yet.',
+        'Nothing has merged yet, and no owner can book yet.',
       ],
       sides: theirs
         ? [
-            { title: ours.endpoint, who: `${builder}, from ${ours.source.replace('web-app/', '')}`, source: ours.source, quote: ours.quote },
-            { title: theirs.endpoint, who: `The ${NEIGHBOUR.name} project`, source: theirs.source, quote: theirs.quote },
+            { title: ours.claim, who: `${fh.role}, from ${ours.source}`, source: ours.source, quote: ours.quote },
+            { title: theirs.claim, who: `The ${NEIGHBOUR.name} project`, source: theirs.source, quote: theirs.quote },
           ]
         : undefined,
       options: [
-        { key: '1', label: `Switch to ${CLASH.theirs}`, value: 'v2', recommended: c.data.recommended === CLASH.theirs, kind: 'alt' },
-        { key: '2', label: `Keep /v1 and tell that team`, value: 'keep', recommended: c.data.recommended !== CLASH.theirs, kind: 'alt' },
+        { key: '1', label: 'Use the rota’s hours', value: 'rota', recommended: rotaFirst, kind: 'alt' },
+        { key: '2', label: 'Keep the hours sheet and ask', value: 'sheet', recommended: !rotaFirst, kind: 'alt' },
       ],
       confidence: c.data.confidence,
-      basis: 'The changelog and the failing test agree.',
+      basis: 'The rota and the failing staging run agree.',
       provenance: c.provenance,
       details: {
         reasoning: `Staging: ${CLASH.failed}`,
-        sources: [...c.data.endpoints.map((d) => d.source), 'e2e-tests/google-signin.spec.ts'],
+        sources: [...c.data.claims.map((d) => d.source), 'src/api/availability.test.ts'],
       },
     })
   }
@@ -2436,14 +2535,15 @@ export function cropTiles(task: Task) {
 export const REASON_WORD: Record<string, string> = { Cost: 'Costs more', Risk: 'Risky', Failure: 'Failed', Anomaly: 'Looks wrong', Irreversible: 'Deploy' }
 
 export function isShipAsk(id: string) {
-  return id === 'deploy' || id.startsWith('deploy-') || id === 'redeploy' || id === 'redirect' || id === 'rollback' || id.startsWith('ci-')
+  return id === 'deploy' || id.startsWith('deploy-') || id === 'redeploy' || id === 'fix' || id === 'rollback' || id === 'announce' || id.startsWith('ci-')
 }
 
 // What a resolved Ship ask reads as in Your decisions.
 function shipDecided(a: Ask) {
   const deploy = a.id === 'deploy' || a.id.startsWith('deploy-')
-  if (deploy || a.id === 'redeploy') return a.answer === 'approve' ? `${a.id === 'redeploy' ? 'Redeployed' : 'Deployed'} ${RELEASE.app} ${RELEASE.version} to production` : 'Held the deploy'
-  if (a.id === 'redirect') return a.answer === 'redeploy' ? 'Added the production redirect URI and redeployed' : `Kept ${RELEASE.previous} live`
+  if (deploy || a.id === 'redeploy') return a.answer === 'approve' ? `${a.id === 'redeploy' ? 'Redeployed' : 'Deployed'} online booking to production` : 'Held the deploy'
+  if (a.id === 'fix') return a.answer === 'fix' ? 'Loaded all 8 weeks of diaries in one query' : 'Kept the “Call us to book” page'
+  if (a.id === 'announce') return a.answer === 'approve' ? `Texted ${ANNOUNCE.audience}` : 'Held the text to pet owners'
   return a.answerLabel ?? ''
 }
 

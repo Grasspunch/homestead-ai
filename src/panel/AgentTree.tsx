@@ -8,7 +8,7 @@ import { STEP_LABEL, stepOf } from '../sim/steps'
 import type { Farmhand, ReasonLabel } from '../sim/types'
 import { useEngine } from '../ui'
 
-export type GlyphState = { kind: 'work' } | { kind: 'ask'; reason: ReasonLabel } | { kind: 'sleep' } | null
+export type GlyphState = { kind: 'work' } | { kind: 'ask'; reason: ReasonLabel } | { kind: 'done' } | null
 
 const ASK_MARK: Record<ReasonLabel, string> = { Anomaly: '?', Failure: '×', Risk: '!', Cost: '$', Irreversible: '' }
 
@@ -23,10 +23,10 @@ export function Glyph({ g }: { g: GlyphState }) {
         <i />
       </span>
     )
-  if (g.kind === 'sleep')
+  if (g.kind === 'done')
     return (
-      <span className="glyph sleep" aria-hidden>
-        z
+      <span className="glyph done" aria-hidden>
+        ♪
       </span>
     )
   if (g.reason === 'Irreversible')
@@ -214,11 +214,7 @@ export function AgentTree() {
 
   return (
     <div className="tree-veil" onPointerDown={(ev) => ev.target === ev.currentTarget && close()}>
-      <div className="agent-tree" role="dialog" aria-label="Agents" data-testid="agent-tree">
-        <div className="tree-head">
-          <strong>Agents</strong>
-          <span>Enter to jump, Esc to close</span>
-        </div>
+      <div className="agent-tree" role="dialog" aria-label="Agent tree" data-testid="agent-tree">
         <div ref={list} className="tree-list" role="tree" aria-label="Region, valleys, fields and plots" tabIndex={0} aria-activedescendant={`tree-${rows[at].id}`} onKeyDown={onKey}>
           {rows.map((r, i) => (
             <div

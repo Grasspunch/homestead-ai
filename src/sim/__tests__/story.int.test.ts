@@ -1,8 +1,8 @@
 // A whole run through the engine, the way the Playwright run drives the app.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CHECKS, GATE_ORDER, OUTPUT } from '../review'
-import { CI_JOBS, LESSON_REDIRECT, RELEASE, SHIP_TEXT } from '../ship'
-import { LESSON_STAGING, LESSON_TRACE, MISSING } from '../scenario'
+import { CHECKS, GATE_ORDER, HARVEST_FAIL, INTEGRATION_FAIL, OUTPUT } from '../review'
+import { ANNOUNCE, CI_JOBS, LESSON_QUERY, RELEASE, SHIP_TEXT } from '../ship'
+import { CLASH, LESSON_HOLD, LESSON_TRACE, MISSING } from '../scenario'
 import { stepOf } from '../steps'
 import { freshEngine, toGrow, until } from './helpers'
 
@@ -13,37 +13,40 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('Google sign-in, end to end', () => {
-  it('catches the retired endpoint, re-plans, fails the review once, merges, rolls back once, then goes live', async () => {
+describe('Vet booking, end to end', () => {
+  it('catches the out-of-date hours, re-plans, fails the double booking once, merges, rolls back once, then goes live', async () => {
     const e = freshEngine()
     expect(stepOf(e.phase)).toBe('plant')
     await toGrow(e)
     expect(e.phase).toBe('grow')
     expect(stepOf(e.phase)).toBe('grow')
 
-    // Frontend reuses /v1/session; the end-to-end run on staging fails before anyone asks you.
-    await until(e, () => e.gates.tests?.e2e?.state === 'fail', 'e2e failure')
-    expect(e.endpoint).toBe('/v1/session')
-    expect(e.gates.tests!.e2e!.text).toBe('Failed, 404')
+    // Backend reads the hours sheet; the availability run on staging finds Saturday slots with no vet before anyone asks you.
+    await until(e, () => e.gates.backend?.integration?.state === 'fail', 'integration failure')
+    expect(e.hoursFrom).toBe('front-desk-hours.csv')
+    expect(e.gates.backend!.integration!.text).toBe(INTEGRATION_FAIL.text)
     expect(e.activeAsk).toBeNull()
 
-    // The crow lands and Tests asks.
+    // The crow lands and Backend asks.
     await until(e, () => e.activeAsk?.id === 'crow', 'crow ask')
     const ask = e.activeAsk!
-    expect(ask.fromName).toBe('Tests')
+    expect(ask.fromName).toBe('Backend')
+    expect(ask.label).toBe('Anomaly')
+    expect(ask.question).toBe(CLASH.question)
     expect(ask.options.map((o) => [o.value, o.label, !!o.recommended])).toEqual([
-      ['v2', 'Switch to /v2/session', true],
-      ['keep', 'Keep /v1 and tell that team', false],
+      ['rota', 'Use the rota’s hours', true],
+      ['sheet', 'Keep the hours sheet and ask', false],
     ])
-    expect(e.gates.tests!.e2e!.state).toBe('fail')
-    e.answer('crow', 'v2')
+    e.answer('crow', 'rota')
     expect(e.replan?.status).toBe('open')
 
-    // The re-plan gives Frontend a new step and the changelog.
+    // The re-plan drops Saturday slots from 1 December, and Backend reads the rota from now on.
     e.applyReplan()
-    const front = e.task(MISSING.taskId)
-    expect(front.subtasks.map((s) => s.id)).toContain('f4')
-    expect(front.signposts).toContain(MISSING.file)
+    const back = e.task(MISSING.taskId)
+    expect(back.subtasks.map((s) => s.id)).toContain('b5')
+    expect(back.signposts).toContain(MISSING.file)
+    expect(e.farmhands.backend.context).toContain(MISSING.file)
+    expect(e.hoursFrom).toBe(MISSING.file)
 
     // Trace why, and save the lesson.
     e.openTrace('endpoint')
@@ -51,28 +54,30 @@ describe('Google sign-in, end to end', () => {
     expect(e.seeds[0].file).toBe(LESSON_TRACE.file)
 
     await until(e, () => e.harvestReady, 'harvest ready')
-    expect(e.endpoint).toBe('/v2/session')
     for (const t of e.tasks) expect(e.taskRipe(t)).toBe(true)
-    expect(e.gates.tests!.e2e).toEqual({ state: 'pass', text: '3 of 3 runs' })
+    expect(e.gates.backend!.integration).toEqual({ state: 'pass', text: '9 of 9' })
     expect(e.flags.has('unitFixed')).toBe(true) // the frontend unit pest, fixed alone
-    expect(e.pendingSeeds.map((s) => s.file)).toContain(LESSON_STAGING.file)
     expect(e.neededYou).toBe(2)
 
-    // The harvest: the review fails first.
+    // The harvest: two owners book the same slot, and Backend asks how to fix it.
     e.openHarvest()
     expect(e.phase).toBe('harvest')
     expect(stepOf(e.phase)).toBe('harvest')
     e.skipHarvestMap()
-    await until(e, () => !e.gatesRunning, 'review result', 20)
-    expect(e.harvestGates.review.state).toBe('fail')
+    await until(e, () => e.activeAsk?.id === 'hold', 'hold ask', 20)
+    expect(e.harvestGates.e2e.state).toBe('fail')
     expect(e.harvestHeadline).toBe(OUTPUT.failed)
-    expect(e.taskStatus(e.task('backend')).text).toBe('Review failed')
+    expect(e.taskStatus(e.task('backend')).text).toBe('End-to-end failed')
+    expect(e.activeAsk!.question).toBe('Two owners booked Dr Patel at 9:00 at the same moment, and both were confirmed. Hold a slot for 5 minutes while someone books, then rerun?')
+    expect(e.activeAsk!.question).toBe(HARVEST_FAIL.question)
 
-    e.sendBack()
+    e.answer('hold', 'hold')
     await until(e, () => !e.gatesRunning, 'rerun', 20)
     expect(e.gateFailed).toBe(false)
     expect(e.harvestHeadline).toBe(OUTPUT.caught)
     for (const g of GATE_ORDER) expect(['pass', 'look']).toContain(e.harvestGates[g].state)
+    expect(e.pendingSeeds.map((s) => s.file)).toContain(LESSON_HOLD.file)
+    expect(e.neededYou).toBe(3)
 
     for (const c of CHECKS) e.toggleTick(c.id)
     e.approveHarvest()
@@ -81,10 +86,11 @@ describe('Google sign-in, end to end', () => {
     expect(e.sendState).toBe('sent')
     expect(e.phase).toBe('ship')
     expect(stepOf(e.phase)).toBe('harvest') // CI, deploy and the canary are the end of Harvest
-    expect(e.neededYou).toBe(2)
+    expect(e.neededYou).toBe(3)
     expect(e.decisions.map((d) => d.word)).toEqual(['Plan', 'Looks wrong', 'Failed', 'Review', 'Merge'])
 
     // CI on main: the known flaky test retries once on its own, then the deploy asks you.
+    const merged = { needed: e.neededYou, words: e.decisions.map((d) => d.word) }
     await until(e, () => e.activeAsk?.id === 'deploy', 'deploy ask', 30)
     expect(CI_JOBS.every((j) => e.ci[j.id].state === 'pass')).toBe(true)
     expect(e.autoDecided.some((l) => l.text.startsWith('Retried a known flaky test'))).toBe(true)
@@ -92,41 +98,53 @@ describe('Google sign-in, end to end', () => {
     expect(deploy.label).toBe('Irreversible')
     e.answer('deploy', 'approve')
     expect(deploy.status).toBe('confirming')
-    expect(deploy.confirmList).toEqual(expect.arrayContaining([`${RELEASE.app} ${RELEASE.version}`, `Rollout: ${RELEASE.canary}`]))
+    expect(deploy.confirmList).toEqual([`Production: ${RELEASE.site}`, `Rollout: ${RELEASE.canary}`, 'Roll back: if a health check fails, put the “Call us to book” page back on its own'])
     e.answer('deploy', 'approve')
 
-    // The canary fails on sign-in, and Homestead rolls back without asking.
-    await until(e, () => e.activeAsk?.id === 'redirect', 'redirect ask', 30)
+    // Availability search slows on the canary, and Homestead puts the old page back without asking.
+    await until(e, () => e.activeAsk?.id === 'fix', 'fix ask', 30)
     expect(e.rolledBack).toBe(true)
-    expect(e.autoDecided.some((l) => l.text.includes('5% of users for 6 minutes'))).toBe(true)
-    expect(e.activeAsk!.label).toBe('Anomaly')
-    expect(e.activeAsk!.link?.out).toBe('guide')
-    expect(e.pendingSeeds.map((s) => s.file)).toContain(LESSON_REDIRECT.file)
+    const auto = e.autoDecided.find((l) => l.text.startsWith('Put the “Call us to book” page back'))
+    expect(auto?.text).toContain('rose to 4.2 s on the canary (limit 1 s)')
+    expect(auto?.text).toContain('5% of visitors for 6 minutes')
+    expect(e.activeAsk!.label).toBe('Failure')
+    expect(e.activeAsk!.question).toBe(SHIP_TEXT.fix)
+    expect(e.pendingSeeds.map((s) => s.file)).toContain(LESSON_QUERY.file)
 
-    // You add the URI; the redeploy opens on its confirm.
-    e.answer('redirect', 'redeploy')
-    expect(e.activeAsk?.id).toBe('redeploy')
-    expect(e.activeAsk?.status).toBe('confirming')
+    // The agent loads all 8 weeks in one query; the redeploy asks again with the same confirm.
+    e.answer('fix', 'fix')
+    await until(e, () => e.activeAsk?.id === 'redeploy', 'redeploy ask', 30)
+    expect(e.activeAsk!.confirmList).toEqual(deploy.confirmList)
+    e.answer('redeploy', 'approve')
     e.answer('redeploy', 'approve')
     await until(e, () => e.shipStage === 'live', 'live', 30)
     expect(e.rollout).toBe(100)
     expect(e.shipHeadline).toBe(SHIP_TEXT.live)
-    expect(e.shipHeadline.startsWith('Live for 12,400 users')).toBe(true)
-    expect(e.neededYou).toBe(5)
-    expect(e.decisions.map((d) => d.word)).toEqual(['Plan', 'Looks wrong', 'Failed', 'Review', 'Merge', 'Deploy', 'Looks wrong', 'Deploy'])
+
+    // Then the text to every pet owner: it can't be taken back and it costs money.
+    const text = e.activeAsk!
+    expect(text.id).toBe('announce')
+    expect(text.confirmList).toEqual([`To: ${ANNOUNCE.audience}`, `Message: “${ANNOUNCE.message}”`, 'Cost: about £95'])
+    e.answer('announce', 'approve')
+    expect(text.status).toBe('confirming')
+    e.answer('announce', 'approve')
+    expect(e.shipStage).toBe('announced')
+    expect(e.shipHeadline).toBe('Saturday bookings at a closed clinic were caught before they reached 3,000 pet owners.')
+    expect(e.neededYou).toBe(merged.needed + 4)
+    expect(e.decisions.map((d) => d.word)).toEqual([...merged.words, 'Deploy', 'Failed', 'Deploy', 'Send'])
   })
 
-  it('with the changelog attached at Plan, Frontend calls /v2/session and no crow comes', async () => {
+  it('with the staff rota attached at Plan, Backend reads its hours and no crow comes', async () => {
     const e = freshEngine()
-    await toGrow(e, (e) => e.attach('frontend', MISSING.file))
-    expect(e.task('frontend').signposts).toContain(MISSING.file)
+    await toGrow(e, (e) => e.attach('backend', MISSING.file))
+    expect(e.task('backend').signposts).toContain(MISSING.file)
     await until(e, () => e.harvestReady, 'harvest ready')
-    expect(e.endpoint).toBe('/v2/session')
+    expect(e.hoursFrom).toBe(MISSING.file)
+    expect(e.out.hours?.data.saturday).toBe('closed from 1 December')
     expect(e.asks).toHaveLength(0)
     expect(e.crow.state).toBe('none')
-    expect(e.gates.tests!.e2e).toEqual({ state: 'pass', text: '3 of 3 runs' })
-    expect(e.log.some((l) => l.text === 'Sign-in failed on staging')).toBe(false)
+    expect(e.gates.backend!.integration).toEqual({ state: 'pass', text: '9 of 9' })
+    expect(e.log.some((l) => l.text === 'Found Saturday slots with no vet on staging')).toBe(false)
     expect(e.neededYou).toBe(1)
-    expect(e.pendingSeeds.map((s) => s.file)).not.toContain(LESSON_STAGING.file)
   })
 })

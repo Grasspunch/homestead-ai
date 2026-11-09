@@ -13,13 +13,9 @@ const GROUPS: [LibKind, string][] = [
   ['tool', 'Tools (MCP servers)'],
 ]
 
-function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="section">
-      <h4>
-        {title}
-        {aside && <span className="soft">{aside}</span>}
-      </h4>
+    <section className="section" aria-label={title}>
       {children}
     </section>
   )
@@ -48,13 +44,14 @@ export function Context({ t }: { t: Task }) {
     const L = e.lib(name)
     return (
       <li key={name}>
-        <Row mark={<KindMark kind={L.kind} />} label={<span className="mono">{name}</span>} sub={L.what} end={fmtK(L.tokens)} onClick={() => e.go({ kind: 'lib', id: name })} />
+        <Row mark={<KindMark kind={L.kind} />} label={<span className="mono">{name}</span>} end={fmtK(L.tokens)} onClick={() => e.go({ kind: 'lib', id: name })} />
       </li>
     )
   }
-  const list = (names: string[]) => (names.length ? <ul className="rows">{names.map(libRow)}</ul> : <p className="soft">None</p>)
+  // One list: the F, S and T marks say which is a file, a skill or a tool.
+  const all = [...of('file'), ...of('skill'), ...of('tool')]
   return (
-    <Section title="Context" aside={`${fmtK(e.contextTokens(t))} tokens`}>
+    <Section title="Context">
       {sugg && (
         <div className="suggest">
           <p>
@@ -67,12 +64,8 @@ export function Context({ t }: { t: Task }) {
           </button>
         </div>
       )}
-      <p className="sublabel">Files it reads</p>
-      {list(of('file'))}
-      <p className="sublabel">Skills it uses</p>
-      {list(of('skill'))}
-      <p className="sublabel">Tools it can call (MCP)</p>
-      {list(of('tool'))}
+      {all.length ? <ul className="rows">{all.map(libRow)}</ul> : <p className="soft">No files, skills or tools</p>}
+      <p className="soft">{fmtK(e.contextTokens(t))} tokens of context</p>
       {planning && (
         <button className="linkish" onClick={() => e.go({ kind: 'pick', id: t.id })}>
           Add a file, skill or tool
@@ -116,7 +109,7 @@ export function LibView({ name }: { name: string }) {
         <pre className="excerpt">{L.preview || (DOCS[name] ?? '').slice(0, 280)}</pre>
       </Section>
       <Section title="Used by">
-        <p>{users.length ? [...new Set(users.map((t) => `${e.farmhands[t.assignee].role} on ${t.name}`))].join(', ') : 'No task yet'}</p>
+        <p>{users.length ? `Used by ${[...new Set(users.map((t) => `${e.farmhands[t.assignee].role} on ${t.name}`))].join(', ')}` : 'No task uses it yet'}</p>
       </Section>
       <Section title="Cost">
         <p>
@@ -150,7 +143,7 @@ export function PickView({ taskId }: { taskId: string }) {
   const avail = items.filter((x) => !t.signposts.includes(x.name))
   const group = (kind: LibKind) => {
     const list = avail.filter((x) => x.kind === kind)
-    if (!list.length) return <p className="soft">{q ? 'No match' : 'All added'}</p>
+    if (!list.length) return null
     return (
       <ul className="rows">
         {list.map((x) => (
@@ -167,12 +160,10 @@ export function PickView({ taskId }: { taskId: string }) {
   return (
     <>
       {input}
-      {GROUPS.map(([kind, label]) => (
-        <div key={kind}>
-          <p className="sublabel">{label}</p>
-          {group(kind)}
-        </div>
+      {GROUPS.map(([kind]) => (
+        <div key={kind}>{group(kind)}</div>
       ))}
+      {!avail.length && <p className="soft">{q ? 'No match' : 'All added'}</p>}
       <ConnectLink />
     </>
   )
@@ -184,7 +175,7 @@ export function LibraryView() {
   const { input, items } = useSearch(false)
   const group = (kind: LibKind) => {
     const list = items.filter((x) => x.kind === kind)
-    if (!list.length) return <p className="soft">No match</p>
+    if (!list.length) return null
     return (
       <ul className="rows">
         {list.map((x) => {
@@ -195,7 +186,6 @@ export function LibraryView() {
               <Row
                 mark={<KindMark kind={x.kind} />}
                 label={<span className="mono">{x.name}</span>}
-                sub={x.what}
                 end={allowed ?? (users ? `${users} ${users > 1 ? 'tasks' : 'task'}` : 'Not attached')}
                 onClick={() => e.go({ kind: 'lib', id: x.name })}
               />
@@ -208,12 +198,10 @@ export function LibraryView() {
   return (
     <>
       {input}
-      {GROUPS.map(([kind, label]) => (
-        <div key={kind}>
-          <p className="sublabel">{label}</p>
-          {group(kind)}
-        </div>
+      {GROUPS.map(([kind]) => (
+        <div key={kind}>{group(kind)}</div>
       ))}
+      {!items.length && <p className="soft">No match</p>}
       <ConnectLink />
     </>
   )

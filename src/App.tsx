@@ -92,7 +92,6 @@ function Help() {
   ]
   return (
     <div className="help" role="dialog" aria-label="Help">
-      <h4>Words</h4>
       <dl>
         {GLOSSARY.map(([k, v]) => (
           <span key={k} style={{ display: 'contents' }}>
@@ -101,7 +100,6 @@ function Help() {
           </span>
         ))}
       </dl>
-      <h4>Keys</h4>
       <dl>
         {rows.map(([k, v]) => (
           <span key={k} style={{ display: 'contents' }}>

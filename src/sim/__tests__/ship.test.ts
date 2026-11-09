@@ -1,7 +1,7 @@
 // The rollback rule: a failing health check on the canary rolls back on its own when the
-// Settings switch is on, and asks you first when it is off.
+// Settings switch is on, and asks you first when it is off. Then the fix, the redeploy and the text.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RELEASE } from '../ship'
+import { ANNOUNCE, SHIP_TEXT } from '../ship'
 import { freshEngine, until } from './helpers'
 
 beforeEach(() => {
@@ -19,12 +19,13 @@ describe('the rollback rule', () => {
     await until(e, () => e.shipStage === 'rolledback', 'rolled back', 30)
     expect(e.rolledBack).toBe(true)
     expect(e.asks.some((a) => a.id === 'rollback')).toBe(false)
-    const auto = e.autoDecided.find((l) => l.text.startsWith(`Rolled back to ${RELEASE.previous}`))
-    expect(auto?.text).toContain('71%')
-    expect(auto?.text).toContain('5% of users for 6 minutes')
-    // The only thing it asks is what an agent can't do: the redirect URI.
-    expect(e.activeAsk?.id).toBe('redirect')
-    expect(e.activeAsk?.label).toBe('Anomaly')
+    const auto = e.autoDecided.find((l) => l.text.startsWith('Put the “Call us to book” page back'))
+    expect(auto?.text).toContain('Availability search p95 rose to 4.2 s on the canary (limit 1 s)')
+    expect(auto?.text).toContain('5% of visitors for 6 minutes')
+    // What it asks next is the fix.
+    expect(e.activeAsk?.id).toBe('fix')
+    expect(e.activeAsk?.label).toBe('Failure')
+    expect(e.activeAsk?.question).toBe(SHIP_TEXT.fix)
     expect(e.cart.state === 'back' || e.cart.state === 'gate').toBe(true)
   })
 
@@ -38,7 +39,34 @@ describe('the rollback rule', () => {
     expect(e.autoDecided.some((l) => l.text.startsWith('Rolled back'))).toBe(false)
     e.answer('rollback', 'rollback')
     await until(e, () => e.shipStage === 'rolledback', 'rolled back after the answer', 30)
-    expect(e.activeAsk?.id).toBe('redirect')
+    expect(e.activeAsk?.id).toBe('fix')
+  })
+
+  it('fixes the search, redeploys with the same confirm, then texts pet owners', async () => {
+    const e = freshEngine()
+    e.startCanary()
+    await until(e, () => e.activeAsk?.id === 'fix', 'fix ask', 30)
+    e.answer('fix', 'fix')
+    expect(e.shipStage).toBe('fixing')
+    await until(e, () => e.activeAsk?.id === 'redeploy', 'redeploy ask', 30)
+    const re = e.activeAsk!
+    expect(re.label).toBe('Irreversible')
+    expect(re.confirmList).toEqual(['Production: willowlanevets.co.uk/book', 'Rollout: 5% canary for 10 minutes, then everyone', 'Roll back: if a health check fails, put the “Call us to book” page back on its own'])
+    e.answer('redeploy', 'approve')
+    expect(re.status).toBe('confirming')
+    e.answer('redeploy', 'approve')
+    expect(e.shipStage).toBe('canary2')
+    await until(e, () => e.shipStage === 'live', 'live', 30)
+    const a = e.activeAsk!
+    expect(a.id).toBe('announce')
+    expect(a.label).toBe('Irreversible')
+    expect(a.impact[0]).toBe('3,000 pet owners by text')
+    expect(a.confirmList).toEqual(['To: 3,000 pet owners', 'Message: “You can now book online.”', 'Cost: about £95'])
+    e.answer('announce', 'approve')
+    e.answer('announce', 'approve')
+    expect(e.shipStage).toBe('announced')
+    expect(e.shipHeadline).toBe('Saturday bookings at a closed clinic were caught before they reached 3,000 pet owners.')
+    expect(e.decisions.slice(-1)[0]).toMatchObject({ word: 'Send', text: `Texted ${ANNOUNCE.audience}` })
   })
 
   it('retries a known flaky CI test once without asking, and a red run asks', async () => {
