@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { LESSON_DATES, ROLE_ORDER } from '../sim/scenario'
 import { DOCS } from '../sim/docs'
 import type { Ask, LogEntry } from '../sim/types'
-import { fmtT, Kbd, Reason, Term, useEngine } from '../ui'
+import { fmtT, Kbd, Portrait, Reason, Term, useEngine } from '../ui'
 
 const PROV = { live: 'Found by a live Claude call', replay: 'From a recorded run', sim: 'Scripted step' }
 
@@ -17,7 +17,6 @@ export function AskCard({ ask }: { ask: Ask }) {
       <div className="ask-head">
         <Reason label={ask.label} />
         <span title={task.name}>{ask.fromName}</span>
-        {ask.status !== 'confirming' && <span className="conf">{ask.confidence} confidence</span>}
       </div>
       {ask.status === 'confirming' ? (
         <>
@@ -75,7 +74,9 @@ export function AskCard({ ask }: { ask: Ask }) {
           </div>
           <details className="why">
             <summary>Why it’s asking</summary>
-            {ask.basis && <p>{ask.basis}</p>}
+            <p>
+              <b>{ask.confidence} confidence.</b> {ask.basis}
+            </p>
             <p>{ask.details.reasoning}</p>
             <p className="mono">{ask.details.sources.join(', ')}</p>
             {ask.details.preview && <pre>{ask.details.preview}</pre>}
@@ -197,9 +198,8 @@ export function Crew() {
             aria-pressed={e.selected === r}
             tabIndex={0}
           >
-            <div className="role">
-              {f.role} <span>{f.name}</span>
-            </div>
+            <Portrait color={f.color} shade={f.colorDark} />
+            <div className="role">{f.role}</div>
             <div className="status">{status}</div>
             <button
               className="pz"
@@ -225,7 +225,7 @@ export function FarmhandCard() {
     <div className="fh-card" data-testid="farmhand-card">
       <h3>
         <span>
-          {f.role} <span style={{ fontFamily: 'var(--font-pixel)', fontSize: 15, color: 'var(--ink-faint)' }}>{f.name}</span>
+          {f.role}
         </span>
         <button className="btn ghost" onClick={() => e.select(null)}>
           Close
@@ -235,9 +235,9 @@ export function FarmhandCard() {
         <dt>Tools</dt>
         <dd>{f.tools.join(', ')}</dd>
         <dt>Almanac</dt>
-        <dd className="mono">{f.almanac.join(', ') || '—'}</dd>
+        <dd className="mono">{f.almanac.join(', ') || 'None'}</dd>
         <dt>Seeds</dt>
-        <dd className="mono">{f.seeds.join(', ') || '—'}</dd>
+        <dd className="mono">{f.seeds.join(', ') || 'None'}</dd>
         <dt>Signposts</dt>
         <dd className="mono">{f.context.join(', ')}</dd>
       </dl>
@@ -292,14 +292,25 @@ function LogLine({ l }: { l: LogEntry }) {
   const e = useEngine()
   const traceable = l.traceId === 'date' && e.flags.has('dateResolved') && !e.flags.has('seedSaved')
   return (
-    <li className={`k-${l.kind} ${traceable ? 'traceable' : ''}`} onClick={traceable ? () => e.openTrace('date') : undefined}>
+    <li className={`k-${l.kind} ${traceable ? 'traceable' : ''}`}>
       <span className="t">{fmtT(l.t)}</span>
-      <span>
-        <span className="who">{l.who}</span> {l.text}
-        {l.kind === 'auto' && <span className="tag auto">auto</span>}
-        {traceable && <button className="why-btn">Why?</button>}
-        {l.reason && l.kind === 'auto' && <span className="why">{l.reason}</span>}
-      </span>
+      {l.reason ? (
+        <details>
+          <summary>
+            <span className="who">{l.who}</span> {l.text}
+          </summary>
+          <span className="why">{l.reason}</span>
+        </details>
+      ) : (
+        <span>
+          <span className="who">{l.who}</span> {l.text}
+        </span>
+      )}
+      {traceable && (
+        <button className="why-btn" onClick={() => e.openTrace('date')}>
+          Why?
+        </button>
+      )}
     </li>
   )
 }

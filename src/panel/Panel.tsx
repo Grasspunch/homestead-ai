@@ -66,21 +66,12 @@ export function Panel() {
           </>
         )}
       </div>
-      <footer className="panel-foot">
+      <footer className={`panel-foot ${growing && !review ? 'empty' : ''}`}>
         {review ? (
           <button className="btn primary grow" onClick={() => setReview(null)}>
             {growing ? "Back to the farm" : `Back to ${current.label.toLowerCase()}`}
           </button>
-        ) : growing ? (
-          <>
-            <button className="btn ghost" onClick={() => e.setView(e.view === 'valley' ? 'farm' : 'valley')} title="V">
-              {e.view === 'valley' ? 'Back to the farm' : 'See the whole valley'}
-            </button>
-            <button className="btn ghost" onClick={() => (e.showHelp = !e.showHelp, e.notify())} title="?">
-              Shortcuts
-            </button>
-          </>
-        ) : (
+        ) : growing ? null : (
           <SetupFooter />
         )}
       </footer>

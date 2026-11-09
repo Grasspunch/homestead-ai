@@ -430,7 +430,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     if (planned) {
       for (const fh of Object.values(e.farmhands)) {
         const p = toScreen(fh.x, fh.y - 1.5)
-        nameTag(ctx, p.x, p.y, fh.role, fh.color, e.selected === fh.id)
+        if (e.selected === fh.id || fh.status === 'asking') nameTag(ctx, p.x, p.y, fh.role, fh.color, e.selected === fh.id)
         const em = fh.status === 'asking' ? 'alert' : fh.status === 'waiting' ? 'sleep' : null
         if (em) emote(ctx, p.x, p.y - 14, em, clock, cam.scale)
       }
@@ -613,7 +613,6 @@ function valleyCard(ctx: CanvasRenderingContext2D, x: number, y: number, name: s
   const lines = [
     `${s.agents} agents, ${s.waiting} waiting on a human`,
     ...(s.unattended ? [s.unattended] : []),
-    ...(name === FARM.name ? [] : ['(simulated farm for the demo)']),
   ]
   ctx.font = `15px ${FONT}`
   const w = Math.max(...lines.map((l) => ctx.measureText(l).width), 160) + 28

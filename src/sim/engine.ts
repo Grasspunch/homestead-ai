@@ -635,8 +635,8 @@ export class Engine {
       this.call('Head farmer', p)
       this.applyPlan(p.data)
       this.planRevealT = this.clock
-      this.addLog('Head farmer', `Proposed a quest plan: 5 tasks, a crew of 4`, 'info', undefined, `${p.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'}, ${fmtTokens(p.tokens)}. Each task gets only the documents it needs.`)
-      if (/webinar|invite/i.test(this.goal)) this.addLog('Head farmer', 'Planted a saved seed in the Scheduler’s card: lesson-webinar-timezones.md', 'auto', 'invites', 'It matched “webinar” in the brief.')
+      this.addLog('Head farmer', `Proposed a quest plan: 5 tasks, a crew of 4`, 'info', undefined, `${p.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'}, ${fmtTokens(p.tokens)}`)
+      if (/webinar|invite/i.test(this.goal)) this.addLog('Head farmer', 'Gave the Scheduler a saved lesson: lesson-webinar-timezones.md', 'auto', 'invites', 'It matched “webinar” in the brief.')
       this.webinarDate = this.webinarFor(this.launchDate)
     }
     if (key === 'draft') {
@@ -659,7 +659,7 @@ export class Engine {
         this.crow = { state: 'flying', t: 0, x: CROW_SPOT.x + 14, y: CROW_SPOT.y - 12 }
         this.neighbourDrought = true
         const other = c.data.dates.find((x) => x.farm !== 'Q1 Launch')
-        this.addLog('Head farmer', `Found a conflict: ${c.data.dates.map((x) => x.date).join(' vs ')}`, 'info', 'draft', other ? `${other.source}: “${other.quote}”` : c.data.why)
+        this.addLog('Head farmer', `Found two launch dates: ${c.data.dates.map((x) => x.date).join(' and ')}`, 'info', 'draft', other ? `${other.source}: “${other.quote}”` : c.data.why)
       } else {
         this.addLog('Head farmer', `Cross-checked the date with ${this.docsChecked} documents on 2 farms: no conflict`, 'auto', 'draft', c.data.why)
         this.flags.add('dateResolved')
@@ -736,7 +736,7 @@ export class Engine {
         this.walkTo(fh, fh.home)
         fh.status = 'done'
       }
-      this.addLog('Head farmer', 'Every crop is ripe. The harvest report is ready.', 'done')
+      this.addLog('Head farmer', 'Every crop is ripe', 'done')
       this.toast('Every crop is ripe. Press H for the harvest report')
       this.chime()
       this.notify()
@@ -865,7 +865,7 @@ export class Engine {
     }
     if (!task.dry && before < task.budget * 0.75 && task.used >= task.budget * 0.75) {
       task.dry = true
-      this.addLog(fh.role, `${task.name} passed 75% of its energy`, 'energy', task.id, 'The plot turns dry so spend shows before it happens.')
+      this.addLog(fh.role, `${task.name} passed 75% of its energy`, 'energy', task.id, 'The plot turns dry as a warning.')
       this.notify()
     }
     if (sub.progress >= 1 && !waitingOn) {
@@ -1004,7 +1004,7 @@ export class Engine {
       if (ask?.answer === 'approve') this.addLog(fh.role, `${this.irreversible.action}: ${this.irreversible.count} sent (simulated)`, 'done', 'invites')
     }
     if (sub.id === 'b1' && this.demoScenario) this.addLog(fh.role, 'Tone check: removed “revolutionary” from the headline options', 'auto', 'brand', 'brand-voice.md bans it.')
-    if (task.subtasks.every((s) => s.done)) this.addLog(fh.role, `${task.name}: ripe`, 'done', task.id)
+    if (task.subtasks.every((s) => s.done)) this.addLog(fh.role, `Ripe: ${task.name}`, 'done', task.id)
   }
 
   private raiseCrow() {

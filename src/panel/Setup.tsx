@@ -170,6 +170,7 @@ export function Review({ step }: { step: 'brief' | 'clarify' | 'plan' }) {
     )
   return (
     <dl className="review">
+      {e.replan?.status === 'applied' && <p className="panel-lead">Updated by the re-plan: the draft now reads eng-standup-notes/.</p>}
       {e.tasks.map((t) => (
         <span key={t.id} style={{ display: 'contents' }}>
           <dt>{t.name}</dt>

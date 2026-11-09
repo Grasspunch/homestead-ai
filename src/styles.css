@@ -11,9 +11,9 @@
   --ink: #241d33;
   --ink-soft: #5a5468;
   --ink-faint: #8d889a;
-  --parchment: #ffffff;
-  --parchment-deep: #f2f2f5;
-  --paper: #ffffff;
+  --sheet: #ffffff;
+  --sheet-sunk: #f2f2f5;
+  --card: #ffffff;
   --rule: rgba(36, 29, 51, 0.09);
   --rule-strong: rgba(36, 29, 51, 0.2);
   --sprout: #4f8f3f;
@@ -55,7 +55,7 @@ body,
 }
 
 body {
-  background: var(--parchment);
+  background: var(--sheet);
   color: var(--ink);
   font-family: var(--font-body);
   font-size: 14px;
@@ -102,7 +102,7 @@ button {
 }
 
 .map-wrap.replay::after {
-  content: 'Replay · how the Writer got this date';
+  content: 'Replay: how the Writer got this date';
   position: absolute;
   left: 50%;
   top: 84px;
@@ -156,7 +156,7 @@ button {
 
 .crumbs button[aria-pressed='true'] {
   background: var(--ink);
-  color: var(--parchment);
+  color: var(--sheet);
 }
 
 .crumbs .sep {
@@ -182,7 +182,7 @@ button {
   min-width: 72px;
 }
 
-.meter + .meter {
+.meters > * + * {
   border-left: 1px solid var(--rule);
 }
 
@@ -207,7 +207,7 @@ button {
 /* The count the whole product is about leads the HUD. */
 .meter.needed {
   background: var(--ink);
-  color: var(--parchment);
+  color: var(--sheet);
   min-width: 92px;
 }
 
@@ -218,7 +218,7 @@ button {
 
 .meter.needed span,
 .meter.needed em {
-  color: var(--parchment-deep);
+  color: var(--sheet-sunk);
 }
 
 .meter b small {
@@ -236,7 +236,7 @@ button {
 
 .bar {
   height: 6px;
-  background: var(--parchment-deep);
+  background: var(--sheet-sunk);
   border: 1px solid var(--rule-strong);
   border-radius: 3px;
   margin: 3px 0 2px;
@@ -255,17 +255,19 @@ button {
 }
 
 .pause-btn {
-  border: 2px solid var(--ink);
-  background: var(--paper);
-  border-radius: 6px;
-  box-shadow: 0 3px 0 rgba(44, 35, 64, 0.25);
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 15px;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  background: transparent;
+  font-weight: 700;
+  font-size: 13px;
   padding: 0 12px;
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.pause-btn:hover {
+  background: var(--sheet-sunk);
 }
 
 .pause-btn[aria-pressed='true'] {
@@ -274,14 +276,10 @@ button {
 }
 
 .chip-live {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 15px;
-  border-radius: 6px;
-  border: 2px solid var(--ink);
-  padding: 4px 10px;
-  background: var(--paper);
-  box-shadow: 0 3px 0 rgba(44, 35, 64, 0.25);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 0 12px;
+  color: var(--ink-soft);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -333,7 +331,7 @@ button {
   font-weight: 500;
   font-size: 15px;
   background: var(--ink);
-  color: var(--parchment);
+  color: var(--sheet);
   padding: 6px 12px 5px;
   border-radius: 5px;
   box-shadow: 0 3px 0 rgba(0, 0, 0, 0.2);
@@ -350,7 +348,7 @@ button {
 .tooltip {
   position: absolute;
   pointer-events: none;
-  background: var(--paper);
+  background: var(--card);
   border: 2px solid var(--ink);
   border-radius: 6px;
   padding: 7px 10px;
@@ -383,7 +381,7 @@ button {
 /* ---- the quest log panel ---- */
 
 .panel {
-  background: var(--parchment);
+  background: var(--sheet);
   border-left: 3px solid var(--ink);
   display: flex;
   flex-direction: column;
@@ -395,7 +393,7 @@ button {
 .panel-head {
   padding: 16px 20px 12px;
   border-bottom: 2px solid var(--ink);
-  background: var(--paper);
+  background: var(--card);
   position: relative;
 }
 
@@ -467,7 +465,7 @@ button {
 .panel-foot {
   border-top: 2px solid var(--ink);
   padding: 12px 20px;
-  background: var(--paper);
+  background: var(--card);
   position: relative;
   display: flex;
   gap: 8px;
@@ -507,7 +505,7 @@ button {
 
 .btn {
   border: 2px solid var(--ink);
-  background: var(--paper);
+  background: var(--card);
   border-radius: 7px;
   padding: 7px 12px;
   font-weight: 600;
@@ -519,7 +517,7 @@ button {
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--parchment-deep);
+  background: var(--sheet-sunk);
 }
 
 .btn:active {
@@ -603,7 +601,7 @@ textarea.goal {
   font-size: 15px;
   line-height: 1.5;
   color: var(--ink);
-  background: var(--paper);
+  background: var(--card);
   border: 2px solid var(--ink);
   border-radius: var(--r);
   padding: 10px 12px;
@@ -716,7 +714,7 @@ textarea.goal {
 }
 
 .voice .bubble {
-  background: var(--paper);
+  background: var(--card);
   border: 1.5px solid var(--rule-strong);
   border-radius: 4px 12px 12px 12px;
   padding: 9px 12px;
@@ -781,7 +779,7 @@ textarea.goal {
 .opt {
   border: 1.5px solid var(--rule-strong);
   border-radius: 6px;
-  background: var(--paper);
+  background: var(--card);
   padding: 6px 12px;
   font-size: 15px;
 }
@@ -798,7 +796,7 @@ textarea.goal {
 .opt[aria-pressed='true'] {
   background: var(--ink);
   border-color: var(--ink);
-  color: var(--parchment);
+  color: var(--sheet);
 }
 
 @keyframes rise {
@@ -869,7 +867,7 @@ textarea.goal {
   font-weight: 600;
   border: 1.5px solid var(--ink);
   border-radius: 6px;
-  background: var(--paper);
+  background: var(--card);
   padding: 3px 6px;
 }
 
@@ -891,7 +889,7 @@ textarea.goal {
 
 .hand {
   display: grid;
-  grid-template-columns: 10px 128px 1fr auto;
+  grid-template-columns: 24px 110px 1fr auto;
   gap: 10px;
   align-items: center;
   padding: 7px 4px;
@@ -900,14 +898,6 @@ textarea.goal {
   cursor: pointer;
 }
 
-.hand::before {
-  content: '';
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: var(--c);
-  box-shadow: inset 0 0 0 1px rgba(44, 35, 64, 0.25);
-}
 
 .hand .role {
   font-weight: 700;
@@ -944,7 +934,7 @@ textarea.goal {
 }
 
 .hand.sel {
-  background: var(--paper);
+  background: var(--card);
   box-shadow: inset 2px 0 0 var(--ink);
 }
 
@@ -960,7 +950,7 @@ textarea.goal {
 
 .hand .pz:hover {
   color: var(--ink);
-  background: var(--parchment-deep);
+  background: var(--sheet-sunk);
 }
 
 .hand.paused {
@@ -972,7 +962,7 @@ textarea.goal {
 .ask {
   border: 2px solid var(--ink);
   border-radius: 12px;
-  background: var(--paper);
+  background: var(--card);
   box-shadow: 0 3px 0 var(--ink);
   margin-bottom: 14px;
   overflow: hidden;
@@ -1076,7 +1066,7 @@ textarea.goal {
   border: 1.5px solid var(--rule-strong);
   border-radius: 9px;
   padding: 9px 10px;
-  background: var(--parchment);
+  background: var(--sheet);
   text-align: left;
   display: flex;
   flex-direction: column;
@@ -1175,7 +1165,7 @@ textarea.goal {
   gap: 4px;
   font-family: var(--font-mono);
   font-size: 11px;
-  background: var(--parchment-deep);
+  background: var(--sheet-sunk);
   border: 1px solid var(--rule-strong);
   border-radius: 4px;
   padding: 1px 2px 1px 6px;
@@ -1228,7 +1218,7 @@ textarea.goal {
   border: 1.5px solid var(--rule-strong);
   border-radius: 7px;
   padding: 6px 9px;
-  background: var(--parchment);
+  background: var(--sheet);
 }
 
 details.why {
@@ -1248,7 +1238,7 @@ details.why pre {
   white-space: pre-wrap;
   font-family: var(--font-mono);
   font-size: 11.5px;
-  background: var(--parchment);
+  background: var(--sheet);
   border-radius: 6px;
   padding: 8px;
   margin: 6px 0 0;
@@ -1341,7 +1331,7 @@ details.why pre {
   height: 20px;
   border-radius: 50%;
   background: var(--ink);
-  color: var(--parchment);
+  color: var(--sheet);
   font-family: var(--font-body);
   font-weight: 600;
   font-size: 14px;
@@ -1452,7 +1442,8 @@ details.why pre {
 
 .log li {
   display: grid;
-  grid-template-columns: 42px 1fr;
+  grid-template-columns: 42px 1fr auto;
+  align-items: start;
   gap: 6px;
   padding: 6px 0;
   border-bottom: 1px solid var(--rule);
@@ -1512,7 +1503,7 @@ details.why pre {
 .log li .why-btn {
   border: 1.5px solid var(--harvest);
   color: var(--cost);
-  background: var(--paper);
+  background: var(--card);
   border-radius: 5px;
   font-size: 12.5px;
   padding: 0 6px;
@@ -1531,7 +1522,7 @@ details.why pre {
 .fh-card {
   border: 2px solid var(--ink);
   border-radius: 12px;
-  background: var(--paper);
+  background: var(--card);
   padding: 12px 14px;
   margin-bottom: 14px;
   box-shadow: 0 3px 0 var(--ink);
@@ -1567,7 +1558,7 @@ details.why pre {
 .transcript {
   font-family: var(--font-mono);
   font-size: 11.5px;
-  background: var(--parchment);
+  background: var(--sheet);
   border-radius: 6px;
   padding: 7px 9px;
   max-height: 120px;
@@ -1597,7 +1588,7 @@ details.why pre {
   width: min(1060px, 94vw);
   max-height: 92vh;
   overflow: auto;
-  background: var(--parchment);
+  background: var(--sheet);
   border: 3px solid var(--ink);
   border-radius: 16px;
   box-shadow: 0 8px 0 var(--ink), 0 30px 80px rgba(0, 0, 0, 0.35);
@@ -1607,7 +1598,7 @@ details.why pre {
 .harvest-top {
   padding: 26px 32px 20px;
   border-bottom: 2px solid var(--ink);
-  background: var(--paper);
+  background: var(--card);
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 20px;
@@ -1687,7 +1678,7 @@ details.why pre {
 }
 
 .doc {
-  background: var(--paper);
+  background: var(--card);
   border: 1.5px solid var(--rule-strong);
   border-radius: 10px;
   padding: 18px 20px;
@@ -1773,7 +1764,7 @@ table.list td:last-child {
   position: fixed;
   inset: auto auto 60px calc(50% - var(--panel-w) / 2);
   transform: translateX(-50%);
-  background: var(--paper);
+  background: var(--card);
   border: 2px solid var(--ink);
   border-radius: 12px;
   padding: 14px 18px;
@@ -1826,7 +1817,7 @@ table.list td:last-child {
 
 .intro-card {
   max-width: 560px;
-  background: var(--paper);
+  background: var(--card);
   border: 3px solid var(--ink);
   border-radius: 14px;
   box-shadow: 0 6px 0 var(--ink), 0 24px 60px rgba(0, 0, 0, 0.3);
@@ -2004,4 +1995,32 @@ table.list td:last-child {
 
 .sent b {
   color: var(--ink);
+}
+
+.portrait {
+  image-rendering: pixelated;
+  border-radius: 4px;
+  background: var(--sky);
+}
+
+.panel-foot.empty {
+  display: none;
+}
+
+.log details summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.log details summary::-webkit-details-marker {
+  display: none;
+}
+
+.log details summary:hover {
+  text-decoration: underline dotted var(--rule-strong);
+  text-underline-offset: 3px;
+}
+
+.log details[open] summary {
+  margin-bottom: 2px;
 }

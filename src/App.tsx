@@ -53,6 +53,11 @@ function Hud() {
             {e.paused ? '▶ Resume' : '❚❚ Pause'}
           </button>
         )}
+        {growing && (
+          <button className="pause-btn" onClick={() => (e.showHelp = !e.showHelp, e.notify())} aria-label="Keyboard shortcuts">
+            ?
+          </button>
+        )}
       </div>
     </div>
   )

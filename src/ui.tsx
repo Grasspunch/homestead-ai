@@ -1,4 +1,5 @@
-import { useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { draw, loadAtlas } from './map/atlas'
 import atlas from './map/atlas.json'
 import { engine } from './sim/engine'
 
@@ -65,6 +66,26 @@ export function Avatar({ frame = 'char_idle_down_0', size = 40 }: { frame?: stri
       }}
     />
   )
+}
+
+// A farmhand's face, tinted like its sprite on the map.
+export function Portrait({ color, shade, size = 24 }: { color: string; shade: string; size?: number }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    let alive = true
+    loadAtlas().then(() => {
+      const c = ref.current
+      if (!alive || !c) return
+      const ctx = c.getContext('2d')!
+      ctx.imageSmoothingEnabled = false
+      ctx.clearRect(0, 0, c.width, c.height)
+      draw(ctx, 'char_idle_down_0', -14, -15, { tint: { body: color, shade } })
+    })
+    return () => {
+      alive = false
+    }
+  }, [color, shade])
+  return <canvas ref={ref} width={20} height={20} className="portrait" style={{ width: size, height: size }} aria-hidden />
 }
 
 export function fmtK(n: number) {
