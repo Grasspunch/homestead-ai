@@ -10,7 +10,7 @@ import { LIBRARY, libItem, type Access } from './library'
 import { CHECKS, E2E_FAIL, GATE_ORDER, GATES, OUTPUT, RESULTS, REVIEW_FAIL, TASK_GATES, TASK_RESULTS, UNIT_FAIL, type Check, type GateId, type GateState } from './review'
 import { defaultSettings, toml, usd, type Settings } from './settings'
 import { expandSignposts } from '../agent/docs'
-import type { Ask, CropKind, Dir, Farmhand, Flag, Job, LedgerEvent, LogEntry, Phase, Rect, Replan, RoleId, Seed, Subtask, Task, Toast } from './types'
+import type { Ask, CropKind, Dir, Farmhand, Flag, Job, LedgerEvent, LogEntry, Phase, ReasonLabel, Rect, Replan, RoleId, Seed, Subtask, Task, Toast } from './types'
 
 const WALK_SPEED = 3.4 // tiles per second
 const CROW_FLIGHT = 2.2 // seconds
@@ -910,6 +910,31 @@ export class Engine {
       return { taskId: MISSING.taskId, label: yours ? 'your call on the session API' : 'the session API check' }
     }
     return null
+  }
+
+  // The one glyph over a farmhand's head. Asks carry their reason, so the map draws its shape.
+  glyphOf(fh: Farmhand): { kind: 'work' } | { kind: 'ask'; reason: ReasonLabel; at: number } | { kind: 'sleep' } | null {
+    if (fh.inside || fh.paused) return null
+    if (fh.status === 'asking') {
+      const a = this.openAsks.find((x) => x.from === fh.id)
+      return { kind: 'ask', reason: a?.label ?? 'Anomaly', at: a?.raisedAt ?? this.t }
+    }
+    if (fh.status === 'working') return { kind: 'work' }
+    if (fh.status === 'done') return { kind: 'sleep' }
+    return null
+  }
+
+  // The draft a task has ready (a commit, a test file, the guide), shown as a crate on its plot.
+  // Filled in by the panel work: null means no crate.
+  draftFor(_taskId: string): { label: string; nav: Nav[] } | null {
+    return null
+  }
+
+  openDraft(taskId: string) {
+    const d = this.draftFor(taskId)
+    if (!d) return
+    this.setPanel(true)
+    this.setNav(d.nav)
   }
 
   fhStatus(fh: Farmhand): string {
