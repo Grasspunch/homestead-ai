@@ -1,6 +1,6 @@
 // The quest log: the owner's side of the screen. One card at a time asks for attention.
 import type { Phase } from '../sim/types'
-import { Kbd, useEngine } from '../ui'
+import { useEngine } from '../ui'
 import { Grow } from './Grow'
 import { Brief, Clarify, Plan, SetupFooter } from './Setup'
 
@@ -19,10 +19,6 @@ export function Panel() {
   return (
     <aside className="panel" aria-label="Quest log">
       <header className="panel-head">
-        <div className="eyebrow">
-          <span>Q1 Launch · You (PM)</span>
-          <span>{e.live === null ? 'checking…' : e.live ? 'Live · Claude' : 'Replay'}</span>
-        </div>
         <h1>{e.phase === 'brief' || e.phase === 'clarify' ? 'Brief the head farmer' : e.questTitle}</h1>
         <ol className="steps">
           {STEPS.map((s, i) => (
@@ -41,14 +37,11 @@ export function Panel() {
       <footer className="panel-foot">
         {growing ? (
           <>
-            <span className="foot-sum">
-              {e.neededYou} needed you · {e.liveCalls ? `${e.liveCalls} live calls` : `${e.replayCalls} replayed calls`} · {e.simSteps} simulated steps
-            </span>
-            <button className="btn ghost" onClick={() => e.setView(e.view === 'valley' ? 'farm' : 'valley')}>
-              {e.view === 'valley' ? 'Farm' : 'Valley'} <Kbd>V</Kbd>
+            <button className="btn ghost grow" onClick={() => e.setView(e.view === 'valley' ? 'farm' : 'valley')} title="V">
+              {e.view === 'valley' ? 'Back to the farm' : 'See the whole valley'}
             </button>
-            <button className="btn ghost" onClick={() => (e.showHelp = !e.showHelp, e.notify())} aria-label="Keyboard shortcuts">
-              <Kbd>?</Kbd>
+            <button className="btn ghost" onClick={() => (e.showHelp = !e.showHelp, e.notify())} title="?">
+              Shortcuts
             </button>
           </>
         ) : (

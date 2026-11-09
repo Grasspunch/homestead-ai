@@ -58,7 +58,7 @@ function Hud() {
         </div>
         {growing && (
           <button className="pause-btn" aria-pressed={e.paused} onClick={() => e.togglePause()} data-testid="pause">
-            {e.paused ? '▶' : '❚❚'} <Kbd>P</Kbd>
+            {e.paused ? '▶ Resume' : '❚❚ Pause'}
           </button>
         )}
       </div>
@@ -113,17 +113,17 @@ function Intro() {
   return (
     <div className="intro" role="dialog" aria-label="Homestead AI">
       <div className="intro-card">
-        <div className="eyebrow">Homestead AI · a farm for your AI agents</div>
-        <h1>
-          Your agents don’t know <em>what other teams decided.</em>
-        </h1>
+        <div className="brand">
+          <img src="/favicon.svg" alt="" /> Homestead AI
+        </div>
+        <h1>Your agents don’t know what other teams decided.</h1>
         <p>
           Four farms in this valley run their own crews of agents. Yours is about to announce Relay v2 for March 12, the date you promised Acme. Engineering, two
           fences away, moved the release to March 26 and wrote it in standup notes you didn’t attach. Your agents only read what you give them.
         </p>
         <p>
-          On a homestead you set the goal and approve the plan. The farmhands do the work, and they only come to you for what matters: a cost, a risk, something that
-          can’t be undone, a failure, or an anomaly like this one.
+          On a homestead you set the goal and approve the plan, and the farmhands do the work. They stop and ask you when a step costs more than planned, carries risk,
+          can’t be undone, fails, or looks wrong, like this date.
         </p>
         <button className="btn primary" onClick={() => e.startDemo()} data-testid="start" autoFocus>
           Walk onto the farm <Kbd>⏎</Kbd>

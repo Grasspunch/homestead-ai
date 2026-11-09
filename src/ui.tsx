@@ -10,9 +10,8 @@ export function useEngine() {
 // A farm word with its plain meaning inline, so nobody has to hover to learn the metaphor.
 export function Term({ w, m }: { w: string; m: string }) {
   return (
-    <span className="term">
+    <span className="term" title={m}>
       {w}
-      <small>{m}</small>
     </span>
   )
 }

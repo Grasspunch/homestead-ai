@@ -3,8 +3,6 @@ import { ROLE_ORDER } from '../sim/scenario'
 import type { RoleId } from '../sim/types'
 import { Avatar, fmtK, Kbd, Sprite, Term, useEngine } from '../ui'
 
-const KIND_GLYPH: Record<string, string> = { file: 'PDF', doc: 'MD', sheet: 'XLS', folder: 'DIR', almanac: 'ALM' }
-
 export function Brief() {
   const e = useEngine()
   const selected = e.attachments.filter((a) => a.selected).length
@@ -14,13 +12,13 @@ export function Brief() {
         <Avatar />
         <div className="bubble">
           <div className="who">Head farmer</div>
-          What should this farm grow? Write the goal in your own words, pick what I may read, and set the energy budget.
+          What should this farm grow? Write the goal, tick the files I may read, and set how much energy the crew can spend.
         </div>
       </div>
 
       <div className="section-title">
         <span>Goal</span>
-        {e.live === false && <span className="demo-tag">Demo scenario: replay mode has no model to read a new goal</span>}
+        {e.live === false && <span className="demo-tag">Replay mode runs this goal only</span>}
       </div>
       <textarea className="goal" value={e.goal} readOnly={e.live === false} onChange={(ev) => e.setGoal(ev.target.value)} aria-label="Goal" />
 
@@ -36,13 +34,12 @@ export function Brief() {
               <code>{a.name}</code>
               <div className="note">{a.note}</div>
             </span>
-            <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>{KIND_GLYPH[a.kind]}</span>
           </button>
         ))}
       </div>
 
       <div className="section-title">
-        <Term w="Energy" m="token budget" />
+        <Term w="Energy" m="Token budget for the whole crew" />
         <span>suggested 120k</span>
       </div>
       <div className="budget">
@@ -117,13 +114,13 @@ export function Plan() {
         <Avatar />
         <div className="bubble">
           <div className="who">Head farmer</div>
-          Here’s the plan: 5 tasks, a crew of 4 and {fmtK(total)} of {fmtK(e.budget)} energy. Each farmhand reads only its task’s signposts. Change anything, then approve. Nothing is planted before you do.
+          Here’s the plan: 5 tasks, a crew of 4 and {fmtK(total)} of {fmtK(e.budget)} energy. Each farmhand reads only the files signposted on its task, so add any file it should see before you approve.
         </div>
       </div>
 
       <div className="section-title">
-        <span>Quest plan · {e.questTitle}</span>
-        <span>chips: what it may read</span>
+        <span>Quest plan</span>
+        <span>{fmtK(total)} energy</span>
       </div>
       {e.tasks.map((t, i) => {
         const changed = t.assignee !== t.proposedAssignee
@@ -166,7 +163,7 @@ export function Plan() {
                 )}
               </div>
               <div className="assign">
-                <Term w="Farmhand" m="agent" />
+                <Term w="Farmhand" m="The agent that does this task" />
                 <select value={t.assignee} onChange={(ev) => e.reassign(t.id, ev.target.value as RoleId)} aria-label={`Assign ${t.name}`}>
                   {ROLE_ORDER.map((r) => (
                     <option key={r} value={r}>

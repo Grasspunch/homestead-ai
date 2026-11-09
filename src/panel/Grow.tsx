@@ -38,7 +38,7 @@ export function AskCard({ ask }: { ask: Ask }) {
           <div className="confirm-bar">
             <b>{ask.confirm}</b>
             <button className="btn ghost" onClick={() => e.cancelConfirm(ask.id)}>
-              Back <Kbd>Esc</Kbd>
+              Back
             </button>
             <button className="btn danger" onClick={() => e.answer(ask.id, 'approve')} data-testid="confirm">
               Send <Kbd>⏎</Kbd>
@@ -117,7 +117,7 @@ export function ReplanCard() {
     <div className="ask" data-testid="replan">
       <div className="ask-head">
         <span className="reason Anomaly">Re-plan</span>
-        <span>Head farmer · shown as a diff before anything changes</span>
+        <span>Head farmer</span>
       </div>
       <div className="ask-body">
         <h2>{r.title}</h2>
@@ -169,7 +169,7 @@ export function TraceCard() {
             Stated reason: <i>“{entry?.reason ?? 'Source: customer-call-notes.md'}”</i>
           </li>
           <li className="missing">
-            <span className="mono">eng-standup-notes/</span> was in the brief’s picker but wasn’t attached, and plan review didn’t add it as a signpost. No farmhand on this farm could see the delay.
+            <span className="mono">eng-standup-notes/</span> was in the brief’s picker, but it wasn’t attached and plan review didn’t add it as a signpost, so no farmhand on this farm could see the delay.
           </li>
         </ol>
         <div className="seed-card">
@@ -179,10 +179,10 @@ export function TraceCard() {
         </div>
         <div className="actions">
           <button className="btn primary" onClick={() => e.saveSeed()} data-testid="save-seed">
-            Save as a seed <Kbd>S</Kbd>
+            Save as a seed
           </button>
           <button className="btn ghost" onClick={() => e.closeTrace()}>
-            Close <Kbd>Esc</Kbd>
+            Close
           </button>
         </div>
       </div>
@@ -247,7 +247,7 @@ export function FarmhandCard() {
           {f.role} <span style={{ fontFamily: 'var(--font-pixel)', fontSize: 15, color: 'var(--ink-faint)' }}>{f.name}</span>
         </span>
         <button className="btn ghost" onClick={() => e.select(null)}>
-          Close <Kbd>Esc</Kbd>
+          Close
         </button>
       </h3>
       <dl className="slots">
@@ -293,7 +293,7 @@ export function QuestLog() {
             Asks
           </button>
           <button aria-pressed={filter === 'auto'} onClick={() => setFilter('auto')} data-testid="filter-auto">
-            Auto-decided · {e.autoDecided.length}
+            Decided alone ({e.autoDecided.length})
           </button>
         </span>
       </div>
@@ -316,7 +316,7 @@ function LogLine({ l }: { l: LogEntry }) {
       <span>
         <span className="who">{l.who}</span> {l.text}
         {l.kind === 'auto' && <span className="tag auto">auto</span>}
-        {traceable && <button className="why-btn">Why? W</button>}
+        {traceable && <button className="why-btn">Why?</button>}
         {l.reason && <span className="why">{l.reason}</span>}
       </span>
     </li>
@@ -343,10 +343,10 @@ export function Grow() {
         <div className="nudge">
           <p>
             <b>Why did the Writer use {e.out.draft?.data.launch_date ?? 'March 12'}?</b>
-            Replay the moment and keep what we learned.
+            Replay what it read, then save the lesson for next time.
           </p>
           <button className="btn" onClick={() => e.openTrace('date')} data-testid="open-trace">
-            Trace <Kbd>W</Kbd>
+            Trace it
           </button>
         </div>
       ) : e.harvestReady ? (
@@ -356,7 +356,7 @@ export function Grow() {
             The harvest report is ready.
           </p>
           <button className="btn primary" onClick={() => e.openHarvest()} data-testid="open-harvest">
-            Harvest <Kbd>H</Kbd>
+            Open the report
           </button>
         </div>
       ) : null}
@@ -365,7 +365,7 @@ export function Grow() {
 
       <div className="section-title">
         <span>
-          <Term w="Crew" m="your agents" />
+          <Term w="Crew" m="Your agents on this farm" />
         </span>
         <span>{fmtK(e.energyUsed)} energy so far</span>
       </div>

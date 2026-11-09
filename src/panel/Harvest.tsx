@@ -1,6 +1,6 @@
 // The harvest report: what grew, what it cost, and every time the crew needed you.
 import { INVITE_LIST } from '../sim/scenario'
-import { fmtK, Kbd, useEngine } from '../ui'
+import { fmtK, useEngine } from '../ui'
 
 // Outputs a person can take away: the announcement, the calendar invite and the recipient list.
 function download(name: string, type: string, body: string) {
@@ -88,55 +88,44 @@ export function Harvest() {
       <div className="harvest" role="dialog" aria-label="Harvest report" data-testid="harvest">
         <div className="harvest-top">
           <div>
-            <div className="eyebrow">Harvest report · Q1 Launch · {e.questTitle}</div>
+            <div className="eyebrow">Harvest report</div>
             {caught ? (
               <h1>
-                Caught before sending: <em>a wrong launch date</em> that would have reached {count} {audience}
+                A wrong launch date nearly went to {count} {audience}.
               </h1>
             ) : (
-              <h1>
-                {e.questTitle}: <em>harvested</em>
-              </h1>
+              <h1>{e.questTitle} is harvested.</h1>
             )}
             {caught && (
               <p className="harvest-sub">
-                The draft said {original}, from a promise in the call notes. Priya’s standup moved the release to {e.launchDate}, in notes you hadn’t attached. The head farmer found it by checking {e.docsChecked} documents across 2 farms, and you made the call before anything went out.
+                The draft said {original}, from a promise in the call notes. Priya’s standup moved the release to {e.launchDate}, in notes you hadn’t attached. The head farmer found the conflict by checking {e.docsChecked} documents across 2 farms, and you picked the date before anything went out.
               </p>
             )}
           </div>
-          <span className={`prov ${draft?.provenance ?? 'replay'}`}>{draft?.provenance === 'live' ? 'Draft written live by Claude' : 'Draft from a recorded run'}</span>
         </div>
         <div className="harvest-stats">
-          <div>
-            <b>{e.neededYou}</b>
-            <span>times the crew needed you</span>
-          </div>
-          <div>
-            <b>{e.liveCalls || e.replayCalls}</b>
-            <span>
-              {e.liveCalls ? 'live' : 'replayed'} model calls · {fmtK(e.modelTokens)} tokens
-            </span>
-          </div>
-          <div>
-            <b>{e.simSteps}</b>
-            <span>simulated farmhand steps</span>
-          </div>
-          <div>
-            <b>{fmtK(e.energyUsed)}</b>
-            <span>
-              of {fmtK(e.budget)} energy · {fmtK(e.modelTokens)} from model calls{saved ? ` · ${fmtK(saved)} saved at a dry plot` : ''}
-            </span>
-          </div>
+          <span className="lead">
+            The crew needed you <b>{e.neededYou}</b> times
+          </span>
+          <span>
+            <b>{e.liveCalls || e.replayCalls}</b> {e.liveCalls ? 'live' : 'replayed'} model calls ({fmtK(e.modelTokens)} tokens)
+          </span>
+          <span>
+            <b>{e.simSteps}</b> simulated steps
+          </span>
+          <span title={saved ? `${fmtK(saved)} saved at a dry plot` : undefined}>
+            <b>{fmtK(e.energyUsed)}</b> of {fmtK(e.budget)} energy
+          </span>
         </div>
         <div className="harvest-grid">
           <section>
             <div className="section-title">
               <span>Announcement</span>
-              <span>brand-voice checked</span>
+              <span>{draft?.provenance === 'live' ? 'written live by Claude' : 'from a recorded run'}, brand voice checked</span>
             </div>
             <div className="doc">
               <h2>{d?.headline ?? e.questTitle}</h2>
-              {d?.launch_date && <div className="dateline">{demo ? `Launching ${e.launchDate} · for the pilot customers` : e.launchDate}</div>}
+              {d?.launch_date && <div className="dateline">{demo ? `For the pilot customers, launching ${e.launchDate}` : e.launchDate}</div>}
               {(d?.paragraphs ?? []).map((p, i) => (
                 <p key={i}>{render(p)}</p>
               ))}
@@ -248,7 +237,7 @@ export function Harvest() {
               Restart demo
             </button>
             <button className="btn" onClick={() => e.closeHarvest()}>
-              Back to the farm <Kbd>Esc</Kbd>
+              Back to the farm
             </button>
             <button
               className="btn primary"

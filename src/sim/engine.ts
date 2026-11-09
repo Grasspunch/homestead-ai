@@ -404,7 +404,7 @@ export class Engine {
     this.human(ask.fromName, ask.taskId)
     this.addLog(ask.fromName, `Asked: ${ask.question}`, 'ask', ask.taskId, ask.details.reasoning)
     const q = this.openAsks.length
-    this.toast(q > 1 ? `New ${ask.label} ask queued (${q} waiting)` : `${ask.label}: ${ask.fromName} needs you`)
+    this.toast(q > 1 ? `New ${ask.label} ask queued (${q} waiting)` : `${ask.label}: the ${ask.fromName} needs you`)
     this.chime()
     this.notify()
   }
