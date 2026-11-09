@@ -5,10 +5,11 @@
 set -euo pipefail
 src="$(cd "$(dirname "$0")/.." && pwd)"
 dst="${1:?path to the Lovable repo}"
-mkdir -p "$dst/src/homestead" "$dst/public/sprites" "$dst/public/fonts"
+mkdir -p "$dst/src/homestead" "$dst/public/sprites" "$dst/public/fonts" "$dst/public/ui"
 rm -rf "$dst/src/homestead" && mkdir -p "$dst/src/homestead"
 ( cd "$src/src" && tar cf - --exclude=main.tsx . ) | ( cd "$dst/src/homestead" && tar xf - )
 cp "$src/public/sprites/atlas.png" "$dst/public/sprites/atlas.png"
+cp "$src/public/ui/emoji.png" "$dst/public/ui/emoji.png"
 cp "$src/public/fonts/sprout-lands.ttf" "$dst/public/fonts/sprout-lands.ttf"
 cp "$src/public/cursor-paw.png" "$dst/public/cursor-paw.png"
 cp "$src/public/favicon.ico" "$dst/public/favicon.ico"
