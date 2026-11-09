@@ -13,8 +13,10 @@ export type Flag =
   | 'dateUsed'
   | 'dateResolved'
   | 'replanApplied'
-  | 'invitesSent'
+  | 'invitesQueued'
   | 'seedSaved'
+
+export type Dir = 'down' | 'up' | 'left' | 'right'
 
 export interface Rect {
   x: number
@@ -78,6 +80,15 @@ export interface Farmhand {
   home: { x: number; y: number }
   path: { x: number; y: number }[]
   facing: 1 | -1
+  dir: Dir // which way it faces when standing
+  look: 'left' | 'right' | null // a short glance while it waits
+  nextShift: number // seconds until the next glance
+  shiftLeft: number // seconds the current glance lasts
+  fade: number // 1 visible, 0 inside the barn
+  inside: boolean
+  seed: number // per-farmhand offset so no two move in sync
+  chore: { id: string; t: number } | null // what it does once its work is done
+  react: number // clock when you last clicked it
   moving: boolean
   status: 'idle' | 'walking' | 'working' | 'waiting' | 'asking' | 'done'
   paused: boolean

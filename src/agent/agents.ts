@@ -60,7 +60,7 @@ export const SLOTS = [
   { key: 'make', subtasks: 3, hint: 'produce the main deliverable' },
   { key: 'check', subtasks: 2, hint: 'check the deliverable against sources' },
   { key: 'polish', subtasks: 1, hint: 'a final pass on tone, policy or format' },
-  { key: 'send', subtasks: 3, hint: 'prepare and carry out the one outward action that cannot be undone, such as sending email to people outside the company' },
+  { key: 'send', subtasks: 3, hint: 'prepare the one outward action, such as email to people outside the company. It is sent only after the owner approves the finished work' },
 ] as const
 
 export interface ClarifyOut {
@@ -304,12 +304,12 @@ export function findConflict(client: ClaudeClient, input: { draftDate: string; d
   return callJSON<ConflictOut>(
     client,
     'You are the head farmer coordinating crews across farms. Before anything leaves the company, you check that facts one crew used agree with what other crews know. Only report a conflict the documents actually show; newer information from the team that owns the fact outranks older promises.',
-    `Our crew (farm "Q1 Launch") committed to this date in its deliverable: ${input.draftDate} (source: ${input.draftSource}).
+    `Our crew (farm "Relay v2 launch") committed to this date in its deliverable: ${input.draftDate} (source: ${input.draftSource}).
 
 Documents from our farm:
 ${mine.map(doc).join('\n\n')}
 
-Everything the neighbouring farm "Auth SDK v2" (Priya's engineering crew) shares with other farms:
+Everything the neighbouring farm "Auth SDK v2" (the platform team's crew) shares with other farms:
 ${theirs.map(doc).join('\n\n')}
 
 Do these sources disagree about that date? If they do, list each competing date with its farm, source document and the exact quote, recommend which date to use, and say why in one sentence. If they agree, return conflict false and list the date once.`,

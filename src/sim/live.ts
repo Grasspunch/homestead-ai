@@ -1,9 +1,9 @@
 // Calls the live agents at /api/agent (a server route on Lovable, or the Vite dev API locally).
-// If no key is configured or a call fails, the demo uses a recorded run of the same call
-// and labels it "Replay" on screen, so nothing canned passes as live.
+// Calls are simulated by default (a recorded response to the same prompt), so testing spends no tokens.
+// The Live AI switch in settings turns real calls on; a failed live call falls back to the simulated one.
 
 import type { AgentTask, ClaimsOut, ClarifyOut, ConflictOut, DraftOut, PlanOut, PlanTask } from '../agent/agents'
-import { CLARIFY, TASKS } from './scenario'
+import { CLARIFY, FARM, TASKS } from './scenario'
 
 export type Provenance = 'live' | 'replay'
 
@@ -48,7 +48,7 @@ export const RECORDED: {
 } = {
   clarify: { questions: CLARIFY.map((q) => ({ ...q, options: [...q.options] })) },
   plan: {
-    quest_title: 'Launch Relay v2',
+    quest_title: FARM.name,
     tasks: { gather: fromTask('research'), make: fromTask('draft'), check: fromTask('factcheck'), polish: fromTask('brand'), send: fromTask('invites') },
     irreversible: { action: 'Send the webinar invite', audience: 'people at 6 pilot customers', count: 42 },
   },
@@ -91,7 +91,7 @@ export const RECORDED: {
   conflict: {
     conflict: true,
     dates: [
-      { date: 'March 12', farm: 'Q1 Launch', source: 'customer-call-notes.md (Jan 28)', quote: 'We told Acme they would have v2 by March 12.' },
+      { date: 'March 12', farm: FARM.name, source: 'customer-call-notes.md (Jan 28)', quote: 'We told Acme they would have v2 by March 12.' },
       { date: 'March 26', farm: 'Auth SDK v2', source: 'eng-standup-notes/2026-02-03.md', quote: 'v2 release moves to March 26.' },
     ],
     recommended_date: 'March 26',
@@ -100,7 +100,7 @@ export const RECORDED: {
   },
   noConflict: {
     conflict: false,
-    dates: [{ date: 'March 26', farm: 'Q1 Launch', source: 'eng-standup-notes/2026-02-03.md', quote: 'v2 release moves to March 26.' }],
+    dates: [{ date: 'March 26', farm: FARM.name, source: 'eng-standup-notes/2026-02-03.md', quote: 'v2 release moves to March 26.' }],
     recommended_date: 'March 26',
     why: 'The draft already uses the date from the newest engineering note.',
     confidence: 'High',
@@ -108,11 +108,17 @@ export const RECORDED: {
   tokens: { clarify: 1_940, plan: 4_610, draft: 3_850, claims: 2_420, conflict: 4_180 },
 }
 
+// Simulated by default, so testing spends no tokens. The Live AI switch in settings turns real calls on.
+let liveAI = false
+export function setLiveAI(on: boolean) {
+  liveAI = on
+}
+
 export async function callAgent<T>(task: AgentTask, input: Record<string, unknown>, recorded: T): Promise<Outcome<T>> {
   const t0 = performance.now()
   const replay = (error?: string): Outcome<T> => ({ data: recorded, tokens: RECORDED.tokens[task], provenance: 'replay', ms: performance.now() - t0, error })
-  if (!(await probeLive())) {
-    // A short pause so the replay paces like a real call.
+  if (!liveAI || !(await probeLive())) {
+    // A short pause so a simulated response paces like a real call.
     await new Promise((r) => setTimeout(r, 900))
     return replay()
   }

@@ -153,6 +153,13 @@ const PIXELS: Record<string, string[]> = {
     '.......kk.kk....',
   ],
   seed: ['.kkk.', 'kssSk', 'ksSSk', 'kSSSk', '.kkk.'],
+  // A file lifted out of the chest.
+  scroll: ['.kkkkkk.', 'kswwwwsk', 'kswppwsk', 'kswwwwsk', 'kswppwsk', 'kswwwwsk', '.kkkkkk.'],
+  heart: ['.rr.rr.', 'rwrrrrr', 'rrrrrrr', 'rrrrrrr', '.rrrrr.', '..rrr..', '...r...'],
+  fruit: ['..g..', '.rrr.', 'rrwrr', 'rrrrr', '.rrr.'],
+  fish: ['.....k.', '..PPPk.', '.PwPPPk', 'PPPPPP.', '.PPPPk.', '..k..k.'],
+  butterfly: ['y.k.y', 'yyky.', '.yky.', 'yyky.', 'y...y'],
+  smoke: ['.ww.', 'wwww', 'wwww', '.ww.'],
 }
 
 const pixelCache = new Map<string, HTMLCanvasElement>()

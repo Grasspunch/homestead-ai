@@ -33,12 +33,12 @@ row 15 | large doc load | v1 4.2 | v2 3.9`,
 - Numbers need a source.
 - No "revolutionary", "game-changing", "seamless".`,
 
-  'eng-standup-notes/2026-01-20.md': `# Eng standup, Jan 20 (Priya's crew, Auth SDK v2)
+  'eng-standup-notes/2026-01-20.md': `# Eng standup, Jan 20 (platform team, Auth SDK v2)
 - Relay v2 on track for March 12.
 - OIDC library upgrade starts this week; risk is the upstream release.
 - Kai on call until Jan 27.`,
 
-  'eng-standup-notes/2026-02-03.md': `# Eng standup, Feb 3 (Priya's crew, Auth SDK v2)
+  'eng-standup-notes/2026-02-03.md': `# Eng standup, Feb 3 (platform team, Auth SDK v2)
 - Auth SDK dependency (upstream OIDC library) slips two weeks.
 - v2 release moves to March 26. Release v2.0 plot blocked until then.
 - Load tests green.`,
@@ -52,7 +52,7 @@ Release date: see the latest standup notes.`,
 
   'auth-sdk/oncall-rota.md': `# On-call rota, March
 - March 2 to March 8: Kai
-- March 9 to March 15: Priya
+- March 9 to March 15: platform team
 - March 16 to March 22: Dev
 - March 23 to March 29: Kai (release week)`,
 
@@ -71,7 +71,7 @@ Umbrella Health,5
 Hooli,3`,
 }
 
-// What the neighbouring farm (Priya's Auth SDK crew) shares with other farms.
+// What the neighbouring farm (the platform team's Auth SDK crew) shares with other farms.
 export const NEIGHBOUR_DOCS = [
   'eng-standup-notes/2026-01-20.md',
   'eng-standup-notes/2026-02-03.md',

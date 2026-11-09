@@ -1,4 +1,4 @@
-// The demo story: a PM launches Relay v2 on the "Q1 Launch" farm.
+// The demo story: a product team launches Relay v2. Each farm is named after its project.
 // Every word an agent says in the demo lives here, so the script can be tuned in one place.
 
 import type { CropKind, Farmhand, Rect, RoleId, Seed, Task } from './types'
@@ -7,21 +7,30 @@ export const TILE = 16
 export const WORLD = { w: 76, h: 46 }
 
 export const FARM = {
-  name: 'Q1 Launch',
-  quest: 'Launch Relay v2',
-  owner: 'You',
-  ownerRole: 'PM',
+  name: 'Relay v2 launch',
+  team: 'Product team',
   rect: { x: 2, y: 2, w: 34, h: 21 } as Rect,
   house: { x: 4, y: 3, sprite: 'house_0' },
   headFarmer: { x: 7.5, y: 8.4 },
+  // The farmhouse door: farmhands wait for you on the porch.
+  door: { x: 5.95, y: 7.1 },
+  porch: [
+    { x: 5.3, y: 7.7 },
+    { x: 6.6, y: 7.7 },
+  ],
+  // The crew sleeps in the barn and goes back inside when its work is done.
+  barn: { x: 20, y: 3, sprite: 'house_1', door: { x: 21.95, y: 7.15 } },
   seedLibrary: { x: 12, y: 6 },
+  // Ripe crops are carried here at the harvest.
+  shipping: { x: 15.5, y: 9.1 },
+  // Where the head farmer stands to lift files out of the chest.
+  chestSpot: { x: 12.5, y: 7.9 },
   budget: 120_000,
 }
 
 export const NEIGHBOUR = {
   name: 'Auth SDK v2',
-  owner: 'Priya',
-  ownerRole: 'Eng lead',
+  team: 'Platform team',
   rect: { x: 40, y: 2, w: 34, h: 21 } as Rect,
   house: { x: 66, y: 3, sprite: 'house_4' },
 }
@@ -30,16 +39,14 @@ export const NEIGHBOUR = {
 export const OTHER_FARMS = [
   {
     name: 'Brand refresh',
-    owner: 'Leo',
-    ownerRole: 'Designer',
+    team: 'Design team',
     rect: { x: 2, y: 26, w: 34, h: 18 } as Rect,
     house: { x: 4, y: 27, sprite: 'house_5' },
     kind: 'garden' as const,
   },
   {
     name: 'Invoices',
-    owner: 'Ana',
-    ownerRole: 'Finance lead',
+    team: 'Finance team',
     rect: { x: 40, y: 26, w: 34, h: 18 } as Rect,
     house: { x: 66, y: 27, sprite: 'house_2' },
     kind: 'orchard' as const,
@@ -48,11 +55,66 @@ export const OTHER_FARMS = [
 
 export const CROW_SPOT = { x: 38, y: 12.2 }
 
-export const VALLEY_STATS: Record<string, { owners: string; agents: number; energyWeek: number; pests: number; waiting: number; harvests: number; unattended?: string }> = {
-  'Q1 Launch': { owners: 'You (PM)', agents: 5, energyWeek: 0, pests: 0, waiting: 0, harvests: 0 },
-  'Auth SDK v2': { owners: 'Priya (Eng lead)', agents: 4, energyWeek: 412_000, pests: 3, waiting: 1, harvests: 2 },
-  'Brand refresh': { owners: 'Leo (Designer)', agents: 3, energyWeek: 168_000, pests: 0, waiting: 0, harvests: 4, unattended: '1 sprinkler: nightly asset export' },
-  Invoices: { owners: 'Ana (Finance lead)', agents: 2, energyWeek: 96_000, pests: 1, waiting: 0, harvests: 31, unattended: '1 beehive: invoice extraction' },
+// ---- Things on the farm ---------------------------------------------------------
+// Clicking one plays a short reaction. None of them change the work.
+
+export type PropKind = 'tree' | 'pond' | 'well' | 'bush' | 'sunflower' | 'house' | 'chest' | 'flowers' | 'workstation' | 'basket'
+export interface Prop {
+  id: string
+  kind: PropKind
+  sprite: string
+  x: number // tiles, top-left of the sprite
+  y: number
+  w: number // hit box in tiles
+  h: number
+}
+
+export const PROPS: Prop[] = [
+  { id: 'house', kind: 'house', sprite: FARM.house.sprite, x: FARM.house.x, y: FARM.house.y, w: 3.9, h: 3.9 },
+  { id: 'chest', kind: 'chest', sprite: 'chest', x: FARM.seedLibrary.x, y: FARM.seedLibrary.y, w: 1.5, h: 1.2 },
+  { id: 'well', kind: 'well', sprite: 'well', x: 17, y: 4, w: 2, h: 1.9 },
+  { id: 'pond', kind: 'pond', sprite: '', x: 28, y: 4, w: 5, h: 3 },
+  { id: 'apple-tree', kind: 'tree', sprite: 'tree_apple', x: 32, y: 14, w: 2, h: 2 },
+  { id: 'nap-tree', kind: 'tree', sprite: 'tree', x: 11.5, y: 17.6, w: 2, h: 2 },
+  { id: 'bush-a', kind: 'bush', sprite: 'bush_1', x: 26, y: 4, w: 1, h: 1 },
+  { id: 'bush-b', kind: 'bush', sprite: 'bush_0', x: 34, y: 10.5, w: 1, h: 1 },
+  { id: 'sunflower', kind: 'sunflower', sprite: 'sunflower', x: 34, y: 17, w: 1, h: 2 },
+  { id: 'house-flowers', kind: 'flowers', sprite: 'flower_2', x: 3, y: 7.2, w: 1, h: 1 },
+  { id: 'workstation', kind: 'workstation', sprite: 'workstation', x: 9.2, y: 4.8, w: 1.9, h: 1.3 },
+  { id: 'basket', kind: 'basket', sprite: 'basket', x: 30.6, y: 15.6, w: 1, h: 1 },
+]
+
+// Chickens wander inside this pen.
+export const CHICKEN_PEN = { x: 27.6, y: 8.3, w: 4.6, h: 1.4 }
+
+// What a farmhand does once its tasks are done, so it never just stands there.
+// Each chore uses frames the sprite sheet already has.
+export interface Chore {
+  id: string
+  label: string
+  spot: { x: number; y: number }
+  dir: 'down' | 'up' | 'left' | 'right'
+  anim: 'idle' | 'water' | 'chop'
+  emote?: 'sleep' | 'heart' | 'check'
+  partner?: string // a chore done in pairs
+}
+
+export const CHORES: Chore[] = [
+  { id: 'feed', label: 'Feeding the chickens', spot: { x: 27.0, y: 9.2 }, dir: 'right', anim: 'water' },
+  { id: 'flowers', label: 'Watering the flowers', spot: { x: 3.5, y: 9.0 }, dir: 'up', anim: 'water' },
+  { id: 'chop', label: 'Chopping wood', spot: { x: 10.1, y: 7.2 }, dir: 'up', anim: 'chop' },
+  { id: 'fruit', label: 'Picking apples', spot: { x: 33.0, y: 16.6 }, dir: 'up', anim: 'idle', emote: 'check' },
+  { id: 'nap', label: 'Napping under the tree', spot: { x: 12.5, y: 20.1 }, dir: 'down', anim: 'idle', emote: 'sleep' },
+  { id: 'pond', label: 'Looking at the pond', spot: { x: 30.5, y: 7.7 }, dir: 'up', anim: 'idle' },
+  { id: 'chat-a', label: 'Chatting', spot: { x: 16.4, y: 7.3 }, dir: 'right', anim: 'idle', partner: 'chat-b' },
+  { id: 'chat-b', label: 'Chatting', spot: { x: 17.7, y: 7.3 }, dir: 'left', anim: 'idle', partner: 'chat-a' },
+]
+
+export const VALLEY_STATS: Record<string, { agents: number; energyWeek: number; pests: number; waiting: number; harvests: number; unattended?: string }> = {
+  [FARM.name]: { agents: 5, energyWeek: 0, pests: 0, waiting: 0, harvests: 0 },
+  [NEIGHBOUR.name]: { agents: 4, energyWeek: 412_000, pests: 3, waiting: 1, harvests: 2 },
+  'Brand refresh': { agents: 3, energyWeek: 168_000, pests: 0, waiting: 0, harvests: 4, unattended: '1 sprinkler: nightly asset export' },
+  Invoices: { agents: 2, energyWeek: 96_000, pests: 1, waiting: 0, harvests: 31, unattended: '1 beehive: invoice extraction' },
 }
 
 // ---- Brief ----------------------------------------------------------------
@@ -63,7 +125,7 @@ export const BRIEF_GOAL =
 export interface Attachment {
   id: string
   name: string
-  kind: 'file' | 'doc' | 'folder' | 'sheet' | 'almanac'
+  kind: 'file' | 'doc' | 'folder' | 'sheet' | 'skill'
   note: string
   selected: boolean
 }
@@ -73,7 +135,10 @@ export const ATTACHMENTS: Attachment[] = [
   { id: 'calls', name: 'customer-call-notes.md', kind: 'doc', note: 'Pilot customer calls', selected: true },
   { id: 'pilots', name: 'pilot-customers.csv', kind: 'sheet', note: '6 companies, 42 contacts', selected: true },
   { id: 'bench', name: 'benchmarks-q4.xlsx', kind: 'sheet', note: 'Sync benchmarks', selected: true },
-  { id: 'voice', name: 'brand-voice.md', kind: 'almanac', note: 'Almanac page from the brand team', selected: true },
+  { id: 'voice', name: 'brand-voice.md', kind: 'skill', note: 'Skill from the brand team', selected: true },
+  { id: 'post', name: 'write-launch-post.md', kind: 'skill', note: 'Skill from the marketing team', selected: true },
+  { id: 'tz', name: 'lesson-webinar-timezones.md', kind: 'skill', note: 'Lesson saved from a past harvest', selected: true },
+  { id: 'quote', name: 'lesson-quote-approval.md', kind: 'skill', note: 'Lesson saved from a past harvest', selected: true },
   { id: 'standup', name: 'eng-standup-notes/', kind: 'folder', note: 'Engineering standups', selected: false },
 ]
 
@@ -194,7 +259,7 @@ export const TASKS: TaskSeed[] = [
     budget: 30_000,
     assignee: 'writer',
     proposedAssignee: 'writer',
-    signposts: ['product-brief-relay-v2.pdf', 'customer-call-notes.md'],
+    signposts: ['product-brief-relay-v2.pdf', 'customer-call-notes.md', 'write-launch-post.md'],
     subtasks: [
       { id: 'd1', name: 'Outline', secs: 3, energy: 4_000, actions: 9, sets: ['outlineDone'] },
       { id: 'd2', name: 'Write the draft', secs: 6, energy: 12_000, actions: 26, needs: ['factsReady'], sets: ['draftWritten', 'dateUsed'] },
@@ -210,7 +275,7 @@ export const TASKS: TaskSeed[] = [
     assignee: 'writer',
     proposedAssignee: 'writer',
     proposalNote: 'The Writer knows the draft best. Saves about 4k energy.',
-    signposts: ['benchmarks-q4.xlsx', 'customer-call-notes.md'],
+    signposts: ['benchmarks-q4.xlsx', 'customer-call-notes.md', 'lesson-quote-approval.md'],
     subtasks: [
       { id: 'f1', name: 'Check numbers', secs: 4, energy: 4_000, actions: 16, needs: ['draftWritten'] },
       { id: 'f2', name: 'Check quotes', secs: 3, energy: 3_000, actions: 11, sets: ['factcheckDone'] },
@@ -235,11 +300,11 @@ export const TASKS: TaskSeed[] = [
     budget: 20_000,
     assignee: 'scheduler',
     proposedAssignee: 'scheduler',
-    signposts: ['pilot-customers.csv'],
+    signposts: ['pilot-customers.csv', 'lesson-webinar-timezones.md'],
     subtasks: [
       { id: 'i1', name: 'Pick a webinar slot', secs: 3, energy: 3_000, actions: 10 },
       { id: 'i2', name: 'Build the invite list', secs: 4, energy: 5_000, actions: 21 },
-      { id: 'i3', name: 'Send the invites', secs: 3, energy: 1_500, actions: 9, needs: ['replanApplied'], sets: ['invitesSent'] },
+      { id: 'i3', name: 'Queue the invites', secs: 3, energy: 1_500, actions: 9, needs: ['replanApplied'], sets: ['invitesQueued'] },
     ],
   },
 ]
@@ -279,7 +344,7 @@ export const LESSON_DATES: Seed = {
   file: 'lesson-launch-dates.md',
   title: 'Launch dates come from engineering',
   body: 'When a task sets or repeats a launch date, attach the engineering release tracker or standup notes as a signpost. Customer call notes record promises, not the schedule.',
-  from: 'Harvest: Q1 Launch (crow on Draft the announcement)',
+  from: 'Harvest: Relay v2 launch (crow on Draft the announcement)',
   isNew: true,
 }
 
@@ -287,7 +352,7 @@ export const LESSON_SOURCES: Seed = {
   file: 'lesson-cite-benchmarks.md',
   title: 'Every performance claim cites its benchmark',
   body: 'Claims like “3x faster” need the benchmark file and row next to them in the draft, or the Reviewer will flag them.',
-  from: 'Harvest: Q1 Launch (beetle on Draft the announcement)',
+  from: 'Harvest: Relay v2 launch (beetle on Draft the announcement)',
   isNew: true,
 }
 
