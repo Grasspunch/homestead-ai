@@ -229,8 +229,8 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
         const s = t.subtasks[c.sub]
         if (!s) continue
         const st = stageOf(s.progress, s.done)
-        const wob = st === 3 && e.harvestReady ? Math.sin(clock * 6 + c.x) * 0.6 : 0
-        draw(ctx, `crop_${t.crop}_${st}`, c.x * TILE, c.y * TILE + wob)
+        // Ripe crops hold still on their full-grown sprite.
+        draw(ctx, `crop_${t.crop}_${st}`, c.x * TILE, c.y * TILE)
       }
       // energy bar along the top edge of the plot
       const frac = Math.min(1, t.used / t.budget)
