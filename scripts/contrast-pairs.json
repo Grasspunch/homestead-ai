@@ -1,0 +1,61 @@
+{
+  "_doc": "Text and ground pairs that scripts/check-contrast.mjs grades against src/ds/tokens.css. Each group crosses every fg with every bg. A bg written 'A over B' is A composited over B (for translucent tokens like --plate). min is the WCAG ratio; set large: true (min 3) only for text that is 18px+ or 14px+ bold.",
+  "groups": [
+    {
+      "population": "sheet",
+      "what": "Text on the white panel and its hover and sunk rows",
+      "fg": ["--ink", "--ink-2", "--ink-3", "--sprout", "--sprout-strong", "--out", "--out-strong", "--fail", "--fail-strong"],
+      "bg": ["--sheet", "--sheet-hover", "--sheet-sunk"],
+      "min": 4.5
+    },
+    {
+      "population": "plate",
+      "what": "Labels on the light plate over the farm, on its lightest and darkest grounds",
+      "fg": ["--ink", "--ink-2", "--ink-3", "--sprout", "--sprout-strong", "--out", "--out-strong", "--fail", "--fail-strong"],
+      "bg": ["--plate over --grass", "--plate over --soil", "--plate over --soil-wet"],
+      "min": 4.5
+    },
+    {
+      "population": "chip",
+      "what": "Ink and the matching hue on the sprout wash",
+      "fg": ["--ink", "--ink-2", "--ink-3", "--sprout", "--sprout-strong"],
+      "bg": ["--sprout-soft"],
+      "min": 4.5
+    },
+    {
+      "population": "chip",
+      "what": "Ink and the matching hue on the out wash",
+      "fg": ["--ink", "--ink-2", "--ink-3", "--out", "--out-strong"],
+      "bg": ["--out-soft"],
+      "min": 4.5
+    },
+    {
+      "population": "chip",
+      "what": "Ink and the matching hue on the fail wash",
+      "fg": ["--ink", "--ink-2", "--ink-3", "--fail", "--fail-strong"],
+      "bg": ["--fail-soft"],
+      "min": 4.5
+    },
+    {
+      "population": "button",
+      "what": "White on the filled sprout button, at rest and on hover",
+      "fg": ["--on-sprout"],
+      "bg": ["--sprout", "--sprout-strong"],
+      "min": 4.5
+    },
+    {
+      "population": "button",
+      "what": "White on the filled out button, at rest and on hover",
+      "fg": ["--on-out"],
+      "bg": ["--out", "--out-strong"],
+      "min": 4.5
+    },
+    {
+      "population": "button",
+      "what": "White on the filled fail button, at rest and on hover",
+      "fg": ["--on-fail"],
+      "bg": ["--fail", "--fail-strong"],
+      "min": 4.5
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+# Made by npm run shots and scripts/crop-shot.mjs. Only shots/ref/ is committed.
+out/
+diff/
+crops/
