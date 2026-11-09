@@ -39,8 +39,6 @@
   --skill-wash: #ece6f6;
   --anomaly: #5e4a9a;
   --anomaly-wash: #e7e1f5;
-  --live: #2f7d4f;
-  --replay: #9a6a12;
   --sky: #a9d8ef;
   --shadow: 0 1px 0 rgba(44, 35, 64, 0.06), 0 8px 24px -12px rgba(44, 35, 64, 0.35);
   --font-display: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
@@ -130,7 +128,7 @@ button {
   image-rendering: pixelated;
 }
 
-.map-wrap.replay::after {
+.map-wrap.past::after {
   /* A quiet sepia wash while looking back at a past step. No banner. */
   content: '';
   position: absolute;
@@ -218,29 +216,6 @@ button {
 .pause-btn[aria-pressed='true'] {
   background: var(--harvest);
   color: #fff;
-}
-
-.chip-live {
-  font-weight: 700;
-  font-size: 13px;
-  padding: 0 12px;
-  color: var(--ink-soft);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.chip-live i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--live);
-  box-shadow: 0 0 0 3px rgba(47, 125, 79, 0.2);
-}
-
-.chip-live.replay i {
-  background: var(--replay);
-  box-shadow: 0 0 0 3px rgba(154, 106, 18, 0.2);
 }
 
 .paused-veil {
@@ -508,7 +483,7 @@ button {
 .title-row {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 6px;
 }
 
 .title-row h1 {
@@ -520,7 +495,7 @@ button {
   line-height: 1.2;
   letter-spacing: -0.01em;
   margin: 0;
-  text-wrap: balance;
+  text-wrap: pretty;
 }
 
 .icon-btn {
@@ -822,10 +797,8 @@ button.row:hover .chev {
 }
 
 .who strong {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--needs);
 }
 
@@ -972,11 +945,9 @@ button.row:hover .chev {
 
 .group {
   margin: 8px 0 0;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink);
 }
 
 .fine {
@@ -1348,11 +1319,9 @@ textarea.goal:focus {
 
 .section h4 {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink);
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -1804,11 +1773,9 @@ textarea.goal:focus {
 .help h4 {
   grid-row: 1;
   margin: 0 0 4px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink);
 }
 
 .help dl {

@@ -1166,7 +1166,7 @@ export class Engine {
     if (this.sendState !== 'confirming') return
     this.sendState = 'sent'
     this.act('Head farmer', 600, undefined, 2)
-    this.addLog('You', `Merged PR #${OUTPUT.pr} into ${OUTPUT.base} (simulated)`, 'done')
+    this.addLog('You', `Merged PR #${OUTPUT.pr} into ${OUTPUT.base}`, 'done')
     this.toast(`Merged #${OUTPUT.pr} into ${OUTPUT.base}`)
     this.notify()
   }

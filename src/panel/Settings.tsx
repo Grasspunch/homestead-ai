@@ -178,14 +178,14 @@ function Gates() {
     <div className="settings">
       {GATE_ORDER.map((g) => (
         <div className="gate-cfg" key={g}>
-          <label className="field">
+          <div className="gate-head">
             <strong>{GATES[g].name}</strong>
-            <input className="mono" value={S.gates[g].run} onChange={(x) => e.setSetting(`gates.${g}`, 'run', x.target.value)} aria-label={`${GATES[g].name} command`} />
-          </label>
-          <label className="toggle">
-            <input type="checkbox" checked={S.gates[g].required} onChange={(x) => e.setSetting(`gates.${g}`, 'required', x.target.checked)} />
-            Required
-          </label>
+            <label className="toggle">
+              <input type="checkbox" checked={S.gates[g].required} onChange={(x) => e.setSetting(`gates.${g}`, 'required', x.target.checked)} />
+              Required
+            </label>
+          </div>
+          <input className="mono gate-run" value={S.gates[g].run} onChange={(x) => e.setSetting(`gates.${g}`, 'run', x.target.value)} aria-label={`${GATES[g].name} command`} />
         </div>
       ))}
       <ul className="opt-list">

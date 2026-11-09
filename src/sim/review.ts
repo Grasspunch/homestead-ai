@@ -78,7 +78,7 @@ export const OUTPUT = {
   failed: 'Not ready. The review found a token written to the logs.',
   running: 'The Reviewer is reading the whole diff.',
   rerun: 'Every gate is running again.',
-  merged: 'Merged into main. It ships to 12,400 users with Friday’s deploy. Simulated.',
+  merged: 'Merged into main. It ships to 12,400 users with Friday’s deploy.',
   guide: { title: 'Setup guide', file: 'docs/auth/google.md' },
 }
 

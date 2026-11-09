@@ -119,9 +119,8 @@
 /* Gates: the command, and whether it must pass. */
 .settings .gate-cfg {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
   padding: 4px 0 12px;
   border-bottom: 1px solid var(--rule);
 }
@@ -221,4 +220,20 @@
   .settings .limits {
     grid-template-columns: 1fr;
   }
+}
+
+.settings .gate-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.settings .gate-head .toggle {
+  padding-bottom: 0;
+}
+.settings .gate-run {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }

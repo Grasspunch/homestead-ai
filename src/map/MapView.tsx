@@ -116,7 +116,7 @@ export function MapView() {
   return (
     <div
       ref={wrap}
-      className={`map-wrap ${e.trace ? 'replay' : ''} ${dragging ? 'dragging' : clickable(hover?.hit ?? null) ? 'can-click' : ''}`}
+      className={`map-wrap ${e.trace ? 'past' : ''} ${dragging ? 'dragging' : clickable(hover?.hit ?? null) ? 'can-click' : ''}`}
       onPointerDown={(ev) => {
         if (ev.button !== 0 || !cam.current || engine.intro) return
         drag.current = { x: ev.clientX, y: ev.clientY, cam: { ...cam.current }, moved: false, id: ev.pointerId }
