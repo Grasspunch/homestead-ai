@@ -17,7 +17,8 @@
     "sprites-premium": "Sprout Lands - Sprites - premium pack",
     "sprites-basic": "Sprout Lands - Sprites - Basic pack",
     "ui-premium": "Sprout Lands - UI Pack - Premium pack",
-    "ui-basic": "Sprout Lands - UI Pack - Basic pack"
+    "ui-basic": "Sprout Lands - UI Pack - Basic pack",
+    "authored": "./art/authored"
   },
   "atlas": {"png": "public/sprites/atlas.png", "json": "src/map/atlas.json", "width": 512, "gap": 1},
   "titles": {
@@ -26,7 +27,9 @@
     "ground": "Ground",
     "buildings": "Buildings",
     "decor": "Decor",
-    "emotes": "UI emotes"
+    "emotes": "UI emotes",
+    "ui": "Panel controls and icons",
+    "glyphs": "Field glyphs (our own art)"
   },
   "groups": {
     "characters": [
@@ -278,6 +281,76 @@
           {"name": "emote_question", "rect": [192, 256, 32, 32], "trim": true},
           {"name": "emote_sleep", "rect": [288, 256, 32, 32], "trim": true}
         ]
+      }
+    ],
+    "ui": [
+      {
+        "pack": "ui-premium",
+        "file": "UI Sprites/Other UI sprites/Xs and check marks/Xs and check marks.png",
+        "frames": [{"name": "ui_check", "rect": [2, 3, 12, 11]}, {"name": "ui_x", "rect": [3, 50, 10, 12]}]
+      },
+      {
+        "pack": "ui-premium",
+        "file": "UI Sprites/Other UI sprites/UI Settings Buttons.png",
+        "_note": "The wooden switch and the tick meter.",
+        "frames": [
+          {"name": "ui_toggle_off", "rect": [2, 151, 28, 18]},
+          {"name": "ui_toggle_on", "rect": [66, 151, 28, 18]},
+          {"name": "ui_tick_on", "rect": [6, 178, 4, 12]},
+          {"name": "ui_tick_off", "rect": [22, 178, 4, 12]}
+        ]
+      },
+      {
+        "pack": "ui-premium",
+        "file": "UI Sprites/Icons/All Icons.png",
+        "_note": "16px panel icons, the darkest filled set (columns 12 to 15).",
+        "frames": [
+          {"name": "icon_gear", "tile": [12, 0]},
+          {"name": "icon_question", "tile": [13, 0]},
+          {"name": "icon_star", "tile": [14, 0]},
+          {"name": "icon_podium", "tile": [12, 1]},
+          {"name": "icon_trophy", "tile": [13, 1]},
+          {"name": "icon_crown", "tile": [14, 1]},
+          {"name": "icon_slash", "tile": [15, 1]},
+          {"name": "icon_check", "tile": [12, 2]},
+          {"name": "icon_cross", "tile": [13, 2]},
+          {"name": "icon_no", "tile": [14, 2]},
+          {"name": "icon_music", "tile": [15, 2]},
+          {"name": "icon_forward", "tile": [12, 3]},
+          {"name": "icon_play", "tile": [13, 3]},
+          {"name": "icon_pause", "tile": [14, 3]},
+          {"name": "icon_music_off", "tile": [15, 3]},
+          {"name": "icon_heart", "tile": [12, 4]},
+          {"name": "icon_plant", "tile": [13, 4]},
+          {"name": "icon_plants", "tile": [14, 4]},
+          {"name": "icon_note", "tile": [15, 4]},
+          {"name": "icon_gamepad", "tile": [12, 5]},
+          {"name": "icon_chat", "tile": [13, 5]},
+          {"name": "icon_skull", "tile": [14, 5]},
+          {"name": "icon_note_off", "tile": [15, 5]},
+          {"name": "icon_alert", "tile": [12, 6]},
+          {"name": "icon_coin", "tile": [13, 6]},
+          {"name": "icon_cart", "tile": [14, 6]},
+          {"name": "icon_sound", "tile": [15, 6]},
+          {"name": "icon_plus", "tile": [12, 7]},
+          {"name": "icon_minus", "tile": [13, 7]},
+          {"name": "icon_house", "tile": [14, 7]},
+          {"name": "icon_mute", "tile": [15, 7]},
+          {"name": "icon_power", "tile": [12, 8]},
+          {"name": "icon_enter", "tile": [13, 8]},
+          {"name": "icon_exit", "tile": [14, 8]},
+          {"name": "icon_volume_down", "tile": [15, 8]},
+          {"name": "icon_paw", "tile": [14, 9]},
+          {"name": "icon_volume_up", "tile": [15, 9]}
+        ]
+      }
+    ],
+    "glyphs": [
+      {
+        "pack": "authored",
+        "file": "glyph_envelope.png",
+        "_note": "Drawn by us with the Sprout Lands palette.",
+        "frames": [{"name": "glyph_envelope", "rect": [0, 0, 16, 16]}]
       }
     ]
   },

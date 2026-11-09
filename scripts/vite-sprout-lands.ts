@@ -97,6 +97,7 @@ function scan(root: string, build = false) {
   const packs = []
   const files = []
   for (const [id, folder] of Object.entries(manifest.packs)) {
+    if (folder.startsWith('./')) continue // our own art (art/authored), not a Sprout Lands pack
     const dir = path.join(base, folder)
     const present = !build && fs.existsSync(dir) && fs.statSync(dir).isDirectory()
     const list = present ? walk(dir).sort((a, b) => a.localeCompare(b, 'en', { numeric: true })) : []

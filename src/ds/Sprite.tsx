@@ -9,6 +9,12 @@ export function hasSprite(name: string) {
   return name in frames
 }
 
+export function spriteNames(prefix: string) {
+  return Object.keys(frames)
+    .filter((n) => n.startsWith(prefix))
+    .sort()
+}
+
 export function spriteSize(name: string): [number, number] {
   const f = frames[name]
   return f ? [f[2], f[3]] : [0, 0]

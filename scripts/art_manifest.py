@@ -20,7 +20,11 @@ def load(path=MANIFEST):
 
 
 def find_pack(base, folder):
-    """The folder of one unzipped pack under base (case-insensitive, any depth)."""
+    """The folder of one unzipped pack under base (case-insensitive, any depth).
+    A folder starting with ./ is our own art, relative to the repo (art/authored)."""
+    if folder.startswith('./'):
+        path = os.path.join(ROOT, folder[2:])
+        return path if os.path.isdir(path) else None
     if os.path.basename(os.path.normpath(base)).lower() == folder.lower():
         return base
     for dirpath, dirnames, _ in os.walk(base):

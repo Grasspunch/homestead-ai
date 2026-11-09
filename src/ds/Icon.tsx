@@ -1,4 +1,4 @@
-import { Sprite } from './Sprite'
+import { Sprite, spriteNames } from './Sprite'
 
 // Two icon families, each drawn only at whole multiples of its native size:
 // Emoji: 32px art from the UI pack's emoji sheet (public/ui/emoji.png), drawn at 32 or 64.
@@ -60,11 +60,8 @@ export function Emoji({ name, size = 32, title }: { name: string; size?: 32 | 64
   )
 }
 
-export const UI_ICON_NAMES = [
-  'gear', 'question', 'star', 'podium', 'trophy', 'crown', 'slash', 'check', 'cross', 'no', 'music', 'forward', 'play',
-  'pause', 'music_off', 'heart', 'branch', 'fork', 'note', 'gamepad', 'chat', 'skull', 'sound_off', 'alert', 'coin',
-  'cart', 'sound', 'plus', 'minus', 'house', 'mute', 'power', 'enter', 'exit', 'back', 'paw', 'back_plus',
-]
+// Every 16px panel icon in the atlas (manifest group "ui", frames icon_*).
+export const UI_ICON_NAMES = spriteNames('icon_').map((n) => n.slice(5))
 
 export function UiIcon({ name, size = 16, title }: { name: string; size?: 16 | 32 | 48; title?: string }) {
   return <Sprite name={`icon_${name}`} scale={size / 16} title={title} className="hs-uiicon" />

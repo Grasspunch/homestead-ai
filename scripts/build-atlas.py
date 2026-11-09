@@ -38,7 +38,7 @@ def locate_packs(manifest, base):
     found, missing = {}, []
     for pid in art_manifest.packs_used(manifest):
         folder = manifest['packs'][pid]
-        path = art_manifest.find_pack(base, folder) if os.path.isdir(base) else None
+        path = art_manifest.find_pack(base, folder) if os.path.isdir(base) or folder.startswith('./') else None
         if path:
             found[pid] = path
         else:
