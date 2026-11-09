@@ -120,7 +120,10 @@ function buildBackground() {
 
 // ---- helpers -----------------------------------------------------------------
 
-function bed(ctx: CanvasRenderingContext2D, r: Rect, dry: boolean) {
+// The tilled bed is one tile wider than the crop area on every side, so each crop
+// sits on an inner soil tile and the bed's rim stays clear.
+function bed(ctx: CanvasRenderingContext2D, crops: Rect, dry: boolean) {
+  const r = { x: crops.x - 1, y: crops.y - 1, w: crops.w + 2, h: crops.h + 2 }
   const pre = dry ? 'bed_dry_' : 'bed_wet_'
   for (let j = 0; j < r.h; j++)
     for (let i = 0; i < r.w; i++) {
@@ -217,10 +220,10 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       ctx.save()
       ctx.globalAlpha = k
       ctx.fillStyle = 'rgba(255,248,220,0.35)'
-      ctx.fillRect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE)
+      ctx.fillRect((r.x - 1) * TILE, (r.y - 1) * TILE, (r.w + 2) * TILE, (r.h + 2) * TILE)
       ctx.strokeStyle = 'rgba(92, 78, 146, 0.6)'
       ctx.lineWidth = 1
-      ctx.strokeRect(r.x * TILE + 0.5, r.y * TILE + 0.5, r.w * TILE - 1, r.h * TILE - 1)
+      ctx.strokeRect((r.x - 1) * TILE + 0.5, (r.y - 1) * TILE + 0.5, (r.w + 2) * TILE - 1, (r.h + 2) * TILE - 1)
       ctx.restore()
     } else if (planned) {
       bed(ctx, r, t.dry)
@@ -236,14 +239,14 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       const frac = Math.min(1, t.used / t.budget)
       const bw = r.w * TILE - 6
       ctx.fillStyle = 'rgba(62,49,80,0.55)'
-      ctx.fillRect(r.x * TILE + 3, r.y * TILE - 4, bw, 3)
+      ctx.fillRect(r.x * TILE + 3, (r.y - 1) * TILE - 4, bw, 3)
       ctx.fillStyle = frac >= 0.75 ? '#e8a05a' : '#7fc06a'
-      ctx.fillRect(r.x * TILE + 3, r.y * TILE - 4, Math.max(1, bw * frac), 3)
+      ctx.fillRect(r.x * TILE + 3, (r.y - 1) * TILE - 4, Math.max(1, bw * frac), 3)
     } else return
 
     // Signposts: one sign per attached file, along the left edge.
     t.signposts.forEach((s, k) => {
-      const sx = (r.x - 1) * TILE
+      const sx = (r.x - 2) * TILE
       const sy = (r.y + k * 0.7 - 0.2) * TILE
       if (k > r.h + 1) return
       const isNew = s === 'eng-standup-notes/'
@@ -253,7 +256,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     if (replay && t.id === 'draft' && !t.signposts.includes('eng-standup-notes/')) {
       // The missing signpost: what the Writer never saw.
       const k = t.signposts.length
-      const sx = (r.x - 1) * TILE
+      const sx = (r.x - 2) * TILE
       const sy = (r.y + k * 0.7 - 0.2) * TILE
       ctx.save()
       ctx.globalAlpha = 0.5 + 0.3 * Math.sin(clock * 5)
