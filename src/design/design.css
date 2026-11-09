@@ -55,6 +55,7 @@ button {
 
 .ds-brand img {
   image-rendering: pixelated;
+  margin-top: -6px;
 }
 
 .ds-nav-group + .ds-nav-group {
