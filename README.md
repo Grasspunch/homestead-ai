@@ -116,7 +116,7 @@ We'd rather you hear it from us:
 | Every human decision and its effect on the plan | Sending the 42 invites (the card says **Simulated**) |
 | The ledger and every number computed from it | The other three farms in the valley and their stats |
 
-The Claude Code hook from the design (a real Claude Code permission prompt arriving as a card) was cut on purpose to keep the 3-minute story tight.
+The Claude Code hook from the design (a real Claude Code permission prompt arriving as a card) was cut on purpose to keep the 3-minute story tight. The one-page [design rationale](docs/RATIONALE.md) explains the main choices.
 
 ## Project layout
 
