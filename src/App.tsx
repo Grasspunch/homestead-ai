@@ -119,7 +119,7 @@ function Intro() {
         </h1>
         <p>
           Four farms in this valley run their own crews of agents. Yours is about to announce Relay v2 for March 12, the date you promised Acme. Engineering, two
-          fences away, moved the release to March 26 and wrote it down where none of your agents can see it.
+          fences away, moved the release to March 26 and wrote it in standup notes you didn’t attach. Your agents only read what you give them.
         </p>
         <p>
           On a homestead you set the goal and approve the plan. The farmhands do the work, and they only come to you for what matters: a cost, a risk, something that

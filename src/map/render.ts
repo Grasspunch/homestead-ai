@@ -170,7 +170,10 @@ export interface RenderOut {
   hits: Hit[]
 }
 
+let viewW = 0
+
 export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W: number, H: number, dpr: number): RenderOut {
+  viewW = W
   if (!bg) buildBackground()
   const hits: Hit[] = []
   const clock = e.clock
@@ -365,6 +368,35 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     const img = pixelSprite(flying && Math.floor(clock * 8) % 2 ? 'crow1' : 'crow0')
     const cx = e.crow.x * TILE - 8
     const cy = e.crow.y * TILE - 12 + (flying ? 0 : Math.abs(Math.sin(clock * 2)) * -1)
+    // While the conflict is open: threads to the two plots that disagree, and a pulse so it can't be missed.
+    const open = e.crow.state === 'landed' && (e.activeAsk?.id === 'crow' || e.replan?.status === 'open')
+    if (open) {
+      const ox = CROW_SPOT.x * TILE
+      const oy = CROW_SPOT.y * TILE - 8
+      const ours = e.task('draft').plot
+      const theirs = NEIGHBOUR_PLOTS.find((p) => p.drought)?.plot ?? NEIGHBOUR_PLOTS[0].plot
+      ctx.save()
+      ctx.setLineDash([4, 3])
+      ctx.lineDashOffset = -clock * 12
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = 'rgba(122, 82, 170, 0.9)'
+      for (const r of [ours, theirs]) {
+        ctx.beginPath()
+        ctx.moveTo(ox, oy)
+        ctx.lineTo((r.x + r.w / 2) * TILE, r.y * TILE - 2)
+        ctx.stroke()
+      }
+      ctx.setLineDash([])
+      for (let k = 0; k < 2; k++) {
+        const ph = (clock * 0.8 + k * 0.5) % 1
+        ctx.strokeStyle = `rgba(122, 82, 170, ${0.8 * (1 - ph)})`
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.arc(ox, oy - 4, 8 + ph * 26, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
     // a fence post to stand on
     if (!flying) draw(ctx, 'fence_03', CROW_SPOT.x * TILE - 8, CROW_SPOT.y * TILE - 6)
     ctx.save()
@@ -372,7 +404,8 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       ctx.translate(cx + 16, cy)
       ctx.scale(-1, 1)
       ctx.drawImage(img, 0, 0)
-    } else ctx.drawImage(img, cx, cy - (flying ? 0 : 8))
+    } else if (flying) ctx.drawImage(img, cx, cy)
+    else ctx.drawImage(img, cx - 4, cy - 16, 24, 24)
     ctx.restore()
     hits.push({ kind: 'crow', id: 'crow', rect: { x: cx - 2, y: cy - 10, w: 20, h: 20 }, title: 'Crow', body: 'Two launch dates conflict: March 12 vs March 26' })
   }
@@ -537,7 +570,7 @@ function nameTag(ctx: CanvasRenderingContext2D, x: number, y: number, text: stri
   ctx.font = `16px ${FONT}`
   const w = Math.ceil(ctx.measureText(text).width) + 10
   const h = 15
-  const rx = Math.round(x - w / 2)
+  const rx = Math.round(Math.max(4, Math.min(viewW - w - 4, x - w / 2)))
   const ry = Math.round(y - h)
   ctx.fillStyle = selected ? '#fff6c8' : 'rgba(255,250,232,0.92)'
   ctx.fillRect(rx, ry, w, h)
@@ -549,7 +582,7 @@ function nameTag(ctx: CanvasRenderingContext2D, x: number, y: number, text: stri
   ctx.fillStyle = '#3e3150'
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'center'
-  ctx.fillText(text, Math.round(x), ry + 6.5)
+  ctx.fillText(text, rx + w / 2, ry + 6.5)
   ctx.restore()
 }
 
@@ -559,7 +592,7 @@ function label(ctx: CanvasRenderingContext2D, x: number, y: number, text: string
   ctx.font = `16px ${FONT}`
   const t = `${text}  ·  ${sub}`
   const w = Math.ceil(ctx.measureText(t).width) + 12
-  const rx = Math.round(x - w / 2)
+  const rx = Math.round(Math.max(4, Math.min(viewW - w - 4, x - w / 2)))
   let ry = Math.round(y)
   const hits = (yy: number) => placed.some((r) => rx < r.x + r.w + 4 && rx + w + 4 > r.x && yy < r.y + r.h + 2 && yy + 15 + 2 > r.y)
   while (hits(ry)) ry += 17
@@ -573,7 +606,7 @@ function label(ctx: CanvasRenderingContext2D, x: number, y: number, text: string
   ctx.fillStyle = '#fbf6df'
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'center'
-  ctx.fillText(t, Math.round(x), ry + 7)
+  ctx.fillText(t, rx + w / 2, ry + 7)
   ctx.restore()
 }
 

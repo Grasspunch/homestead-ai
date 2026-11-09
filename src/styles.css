@@ -1008,6 +1008,10 @@ textarea.goal {
   color: var(--live);
 }
 
+.prov.sim {
+  color: var(--ink-soft);
+}
+
 .prov.replay {
   color: var(--replay);
 }
@@ -1890,4 +1894,11 @@ table.list td:last-child {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+.downloads {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0 4px;
 }

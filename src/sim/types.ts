@@ -129,7 +129,7 @@ export interface Ask {
   sides?: AskSide[]
   confidence: 'High' | 'Medium' | 'Low'
   basis?: string // what the confidence rests on, in one line
-  provenance: 'live' | 'replay'
+  provenance: 'live' | 'replay' | 'sim' // live or recorded model call, or a scripted step
   status: 'open' | 'confirming' | 'resolved'
   answer?: string
   answerLabel?: string
