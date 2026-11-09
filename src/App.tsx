@@ -5,7 +5,7 @@ import { MapView } from './map/MapView'
 import { Harvest } from './panel/Harvest'
 import { Panel } from './panel/Panel'
 import { engine } from './sim/engine'
-import { fmtK, Kbd, Term, useEngine } from './ui'
+import { fmtK, Kbd, useEngine } from './ui'
 
 function Hud() {
   const e = useEngine()
@@ -25,34 +25,40 @@ function Hud() {
       <div className="meters">
         {growing && (
           <>
-            <div className="meter energy" data-testid="meter-energy">
-              <span>
-                <Term w="Energy" m="tokens" />
-              </span>
+            <div className="meter energy" data-testid="meter-energy" title="Energy is tokens. Model calls report their real usage; simulated steps use estimates.">
+              <span>Energy</span>
               <div className="bar">
                 <i className={pct > 85 ? 'warn' : ''} style={{ width: `${pct}%` }} />
               </div>
               <b>
-                {fmtK(e.energyUsed)} <small style={{ fontWeight: 400, color: 'var(--ink-faint)' }}>/ {fmtK(e.budget)}</small>
+                {fmtK(e.energyUsed)} <small>/ {fmtK(e.budget)}</small>
               </b>
+              <em>{fmtK(e.modelTokens)} from model calls</em>
             </div>
-            <div className="meter" data-testid="meter-actions">
-              <span>agent actions</span>
-              <b>{e.actions}</b>
+            <div className="meter" data-testid="meter-calls" title="Each model call is one Claude request in this run">
+              <span>Model calls</span>
+              <b>{e.liveCalls || e.replayCalls}</b>
+              <em>{e.liveCalls ? 'live' : 'replayed'}</em>
+            </div>
+            <div className="meter" data-testid="meter-sim" title="Scripted farmhand steps that stand in for tool use">
+              <span>Simulated</span>
+              <b>{e.simSteps}</b>
+              <em>steps</em>
             </div>
             <div className="meter" data-testid="meter-needed">
-              <span>needed you</span>
+              <span>Needed you</span>
               <b>{e.neededYou}</b>
+              <em>times</em>
             </div>
           </>
         )}
         <div className={`chip-live ${e.live ? '' : 'replay'}`} title={e.live ? 'Writer, Reviewer and the date check call Claude live' : 'No API key here: model steps replay recorded runs'}>
           <i />
-          {e.live === null ? 'Checking…' : e.live ? 'Live · Claude' : 'Replay · recorded runs'}
+          {e.live === null ? 'Checking' : e.live ? 'Live' : 'Replay'}
         </div>
         {growing && (
           <button className="pause-btn" aria-pressed={e.paused} onClick={() => e.togglePause()} data-testid="pause">
-            {e.paused ? '▶ Resume' : '❚❚ Pause'} <Kbd>P</Kbd>
+            {e.paused ? '▶' : '❚❚'} <Kbd>P</Kbd>
           </button>
         )}
       </div>
@@ -101,8 +107,41 @@ function Help() {
   )
 }
 
+function Intro() {
+  const e = useEngine()
+  if (!e.intro) return null
+  return (
+    <div className="intro" role="dialog" aria-label="Homestead AI">
+      <div className="intro-card">
+        <div className="eyebrow">Homestead AI · a farm for your AI agents</div>
+        <h1>
+          Your agents don’t know <em>what other teams decided.</em>
+        </h1>
+        <p>
+          Four farms in this valley run their own crews of agents. Yours is about to announce Relay v2 for March 12, the date you promised Acme. Engineering, two
+          fences away, moved the release to March 26 and wrote it down where none of your agents can see it.
+        </p>
+        <p>
+          On a homestead you set the goal and approve the plan. The farmhands do the work, and they only come to you for what matters: a cost, a risk, something that
+          can’t be undone, a failure, or an anomaly like this one.
+        </p>
+        <button className="btn primary" onClick={() => e.startDemo()} data-testid="start" autoFocus>
+          Walk onto the farm <Kbd>⏎</Kbd>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function onKey(ev: KeyboardEvent) {
   const e = engine
+  if (e.intro) {
+    if (ev.key === 'Enter') {
+      ev.preventDefault()
+      e.startDemo()
+    }
+    return
+  }
   const el = ev.target as HTMLElement
   const typing = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT'
   const mod = ev.metaKey || ev.ctrlKey
@@ -170,7 +209,7 @@ function onKey(ev: KeyboardEvent) {
   if (k === 'p') e.togglePause()
   else if (k === 'v') e.setView(e.view === 'valley' ? 'farm' : 'valley')
   else if (k === 'h') (e.harvestOpen ? e.closeHarvest() : e.openHarvest())
-  else if (k === 'w' && e.flags.has('dateResolved') && !e.flags.has('seedSaved')) e.openTrace('date')
+  else if (k === 'w' && e.replan?.status === 'applied' && !e.flags.has('seedSaved')) e.openTrace('date')
   else if (k === 's' && e.trace) e.saveSeed()
 }
 
@@ -186,6 +225,7 @@ export function App() {
         <MapView />
         <Hud />
         <Toasts />
+        <Intro />
         {e.paused && (
           <div className="paused-veil">
             <span>Paused · press P to resume</span>

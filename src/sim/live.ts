@@ -2,7 +2,8 @@
 // If no key is configured or a call fails, the demo uses a recorded run of the same call
 // and labels it "Replay" on screen, so nothing canned passes as live.
 
-import type { AgentTask, ClaimsOut, ConflictOut, DraftOut } from '../agent/agents'
+import type { AgentTask, ClaimsOut, ClarifyOut, ConflictOut, DraftOut, PlanOut, PlanTask } from '../agent/agents'
+import { CLARIFY, TASKS } from './scenario'
 
 export type Provenance = 'live' | 'replay'
 
@@ -30,7 +31,27 @@ export function probeLive(): Promise<boolean> {
 }
 
 // Recorded outputs from a real run of the same prompts. Used only when live calls are unavailable.
-export const RECORDED: { draft: DraftOut; claims: ClaimsOut; conflict: ConflictOut; tokens: Record<AgentTask, number> } = {
+const fromTask = (id: string): PlanTask => {
+  const t = TASKS.find((x) => x.id === id)!
+  return { name: t.name, subtasks: t.subtasks.map((s) => s.name), assignee: t.proposedAssignee, budget: t.budget, signposts: [...t.signposts], note: t.proposalNote ?? null }
+}
+
+export const RECORDED: {
+  clarify: ClarifyOut
+  plan: PlanOut
+  draft: DraftOut
+  draftWithEngNotes: DraftOut
+  claims: ClaimsOut
+  conflict: ConflictOut
+  noConflict: ConflictOut
+  tokens: Record<AgentTask, number>
+} = {
+  clarify: { questions: CLARIFY.map((q) => ({ ...q, options: [...q.options] })) },
+  plan: {
+    quest_title: 'Launch Relay v2',
+    tasks: { gather: fromTask('research'), make: fromTask('draft'), check: fromTask('factcheck'), polish: fromTask('brand'), send: fromTask('invites') },
+    irreversible: { action: 'Send the webinar invite', audience: 'people at 6 pilot customers', count: 42 },
+  },
   draft: {
     headline: 'Relay v2: sync that keeps up with your team',
     paragraphs: [
@@ -45,6 +66,16 @@ export const RECORDED: { draft: DraftOut; claims: ClaimsOut; conflict: ConflictO
       { text: 'Up to 3x faster sync', source: null },
       { text: 'SSO with Okta, Google Workspace and Entra ID', source: 'product-brief-relay-v2.pdf' },
     ],
+  },
+  get draftWithEngNotes() {
+    const d = RECORDED.draft
+    return {
+      ...d,
+      paragraphs: d.paragraphs.map((p) => p.replace('March 12', 'March 26')),
+      launch_date: 'March 26',
+      launch_date_source: 'eng-standup-notes/2026-02-03.md',
+      claims: d.claims.map((c) => (c.text.includes('March 12') ? { text: 'Available March 26', source: 'eng-standup-notes/2026-02-03.md' } : c)),
+    }
   },
   claims: {
     checked: 4,
@@ -67,7 +98,14 @@ export const RECORDED: { draft: DraftOut; claims: ClaimsOut; conflict: ConflictO
     why: 'The engineering note is newer and comes from the team that ships the release; March 12 was a promise made before the delay.',
     confidence: 'High',
   },
-  tokens: { draft: 3_850, claims: 2_420, conflict: 1_960 },
+  noConflict: {
+    conflict: false,
+    dates: [{ date: 'March 26', farm: 'Q1 Launch', source: 'eng-standup-notes/2026-02-03.md', quote: 'v2 release moves to March 26.' }],
+    recommended_date: 'March 26',
+    why: 'The draft already uses the date from the newest engineering note.',
+    confidence: 'High',
+  },
+  tokens: { clarify: 1_940, plan: 4_610, draft: 3_850, claims: 2_420, conflict: 4_180 },
 }
 
 export async function callAgent<T>(task: AgentTask, input: Record<string, unknown>, recorded: T): Promise<Outcome<T>> {
@@ -91,4 +129,4 @@ export async function callAgent<T>(task: AgentTask, input: Record<string, unknow
   }
 }
 
-export type { DraftOut, ClaimsOut, ConflictOut }
+export type { DraftOut, ClaimsOut, ConflictOut, ClarifyOut, PlanOut }

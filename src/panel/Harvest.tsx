@@ -33,36 +33,52 @@ export function Harvest() {
     ...e.asks.filter((a) => a.status === 'resolved').map((a) => ({ label: a.label, text: a.question, answer: a.answerLabel ?? '' })),
   ]
   const saved = e.ledger.length ? e.energyCaught : 0
+  const crow = e.asks.find((a) => a.id === 'crow')
+  const caught = crow?.answer === 'theirs'
+  const { count, audience } = e.irreversible
   return (
     <div className="harvest-veil" onClick={(ev) => ev.target === ev.currentTarget && e.closeHarvest()}>
       <div className="harvest" role="dialog" aria-label="Harvest report" data-testid="harvest">
         <div className="harvest-top">
           <div>
-            <div className="eyebrow">Harvest report · Q1 Launch</div>
-            <h1>
-              Relay v2 launch comms are <em>ready to ship</em>
-            </h1>
+            <div className="eyebrow">Harvest report · Q1 Launch · {e.questTitle}</div>
+            {caught ? (
+              <h1>
+                Caught before sending: <em>a wrong launch date</em> that would have reached {count} {audience}
+              </h1>
+            ) : (
+              <h1>
+                {e.questTitle}: <em>harvested</em>
+              </h1>
+            )}
+            {caught && (
+              <p className="harvest-sub">
+                The draft said {original}, from a promise in the call notes. Priya’s standup moved the release to {e.launchDate}. The head farmer found it by checking {e.docsChecked} documents across 2 farms, and you made the call before anything went out.
+              </p>
+            )}
           </div>
           <span className={`prov ${draft?.provenance ?? 'replay'}`}>{draft?.provenance === 'live' ? 'Draft written live by Claude' : 'Draft from a recorded run'}</span>
         </div>
         <div className="harvest-stats">
           <div>
-            <b>{e.actions}</b>
-            <span>agent actions</span>
-          </div>
-          <div>
             <b>{e.neededYou}</b>
             <span>times the crew needed you</span>
           </div>
           <div>
-            <b>{fmtK(e.energyUsed)}</b>
+            <b>{e.liveCalls || e.replayCalls}</b>
             <span>
-              of {fmtK(e.budget)} energy{saved ? ` · ${fmtK(saved)} saved by catching a dry plot` : ''}
+              {e.liveCalls ? 'live' : 'replayed'} model calls · {fmtK(e.modelTokens)} tokens
             </span>
           </div>
           <div>
-            <b>{Object.keys(e.farmhands).length}</b>
-            <span>farmhands, one head farmer</span>
+            <b>{e.simSteps}</b>
+            <span>simulated farmhand steps</span>
+          </div>
+          <div>
+            <b>{fmtK(e.energyUsed)}</b>
+            <span>
+              of {fmtK(e.budget)} energy{saved ? ` · ${fmtK(saved)} saved at a dry plot` : ''}
+            </span>
           </div>
         </div>
         <div className="harvest-grid">
@@ -125,10 +141,10 @@ export function Harvest() {
                 <li key={s.file}>
                   <code>{s.file}</code>
                   <span>
-                    <button className="btn ghost" onClick={() => e.keepPendingSeed(s.file, true)}>
+                    <button className="btn ghost sm" onClick={() => e.keepPendingSeed(s.file, true)}>
                       Keep
                     </button>{' '}
-                    <button className="btn ghost" onClick={() => e.keepPendingSeed(s.file, false)}>
+                    <button className="btn ghost sm" onClick={() => e.keepPendingSeed(s.file, false)}>
                       Discard
                     </button>
                   </span>

@@ -3,8 +3,10 @@
 // head farmer's cross-farm date check). The rest of the farmhands' work is simulated, which the brief allows.
 // Every number on screen is computed from the ledger: agent actions, energy, and how many times a human was needed.
 
-import { ATTACHMENTS, BRIEF_GOAL, CLARIFY, CREW, CROW_SPOT, FARM, LESSON_DATES, LESSON_SOURCES, REPLAN_SUBTASKS, ROLE_ORDER, START_SEEDS, SUGGESTED_BUDGET, TASKS, type Attachment } from './scenario'
-import { callAgent, probeLive, RECORDED, type ClaimsOut, type ConflictOut, type DraftOut, type Outcome } from './live'
+import { ATTACHMENTS, BRIEF_GOAL, CLARIFY, CREW, CROW_SPOT, FARM, LESSON_DATES, LESSON_SOURCES, REPLAN_SUBTASKS, ROLE_ORDER, START_SEEDS, SUGGESTED_BUDGET, TASKS, type Attachment, type ClarifyQ } from './scenario'
+import { callAgent, probeLive, RECORDED, type ClaimsOut, type ClarifyOut, type ConflictOut, type DraftOut, type Outcome, type PlanOut } from './live'
+import { conflictDocs, SLOTS } from '../agent/agents'
+import { expandSignposts } from '../agent/docs'
 import type { Ask, Farmhand, Flag, Job, LedgerEvent, LogEntry, Phase, Rect, Replan, RoleId, Seed, Subtask, Task, Toast } from './types'
 
 const WALK_SPEED = 3.4 // tiles per second
@@ -26,6 +28,8 @@ export interface SeedFly {
 }
 
 export interface Outputs {
+  clarify?: Outcome<ClarifyOut>
+  plan?: Outcome<PlanOut>
   draft?: Outcome<DraftOut>
   claims?: Outcome<ClaimsOut>
   conflict?: Outcome<ConflictOut>
@@ -43,7 +47,8 @@ export class Engine {
   clock = 0 // real seconds since load, for animation
   speed = 1
   paused = false
-  view: View = 'farm'
+  view: View = 'valley'
+  intro = true // the opening card over the valley
   harvestOpen = false
   showHelp = false
   live: boolean | null = null // null until probed
@@ -52,7 +57,10 @@ export class Engine {
   goal = BRIEF_GOAL
   attachments: Attachment[] = ATTACHMENTS.map((a) => ({ ...a }))
   budget = SUGGESTED_BUDGET
-  headThinking = 0
+  questions: ClarifyQ[] = []
+  questTitle = FARM.quest
+  signpostEdits: string[] = []
+  irreversible = { ...RECORDED.plan.irreversible }
   clarifyAnswers: Record<string, string> = {}
   planRevealT = -1
 
@@ -158,12 +166,42 @@ export class Engine {
 
   // ---- derived (all from the ledger) -------------------------------------------
 
+  // The head farmer is thinking while its clarify or plan call is out.
+  get headThinking() {
+    return (this.phase === 'clarify' && !this.out.clarify) || (this.phase === 'plan' && !this.out.plan) ? 1 : 0
+  }
+
+  get docsChecked() {
+    const { mine, theirs } = conflictDocs(this.task('draft').signposts)
+    return mine.length + theirs.length
+  }
+
+  get demoScenario() {
+    return /relay v2/i.test(this.goal)
+  }
+
   task(id: string) {
     return this.tasks.find((t) => t.id === id)!
   }
 
   get actions() {
     return this.ledger.filter((e) => e.kind === 'action').length
+  }
+
+  get liveCalls() {
+    return this.ledger.filter((e) => e.src === 'live').length
+  }
+
+  get replayCalls() {
+    return this.ledger.filter((e) => e.src === 'replay').length
+  }
+
+  get simSteps() {
+    return this.ledger.filter((e) => e.kind === 'action' && e.src === 'sim').length
+  }
+
+  get modelTokens() {
+    return this.ledger.reduce((s, e) => s + (e.src !== 'sim' ? e.tokens : 0), 0)
   }
 
   get energyUsed() {
@@ -201,17 +239,27 @@ export class Engine {
       return { x: p.x - 7, y: p.y - 5, w: p.w + 14, h: p.h + 9 }
     }
     const crowAsk = this.activeAsk?.id === 'crow' || this.replan?.status === 'open' || this.crow.state === 'flying'
-    if (crowAsk) return { x: 14, y: 3, w: 46, h: 21 }
+    if (crowAsk) return { x: 11, y: 4, w: 47, h: 17 }
     if (this.phase === 'plan') return { x: 2, y: 5, w: 32, h: 17 }
     return { x: 1, y: 1.5, w: 36, h: 21.5 }
   }
 
   private act(who: string, tokens: number, taskId?: string, n = 1) {
-    for (let i = 0; i < n; i++) this.ledger.push({ t: this.t, who, kind: 'action', tokens: tokens / n, taskId })
+    for (let i = 0; i < n; i++) this.ledger.push({ t: this.t, who, kind: 'action', tokens: tokens / n, taskId, src: 'sim' })
+  }
+
+  // One model call: one ledger entry with the tokens it really used (or the recorded run's).
+  private call(who: string, o: Outcome<unknown>, taskId?: string) {
+    this.ledger.push({ t: this.t, who, kind: 'action', tokens: o.tokens, taskId, src: o.provenance })
+    if (taskId) this.task(taskId).used += o.tokens
   }
 
   private human(who: string, taskId?: string) {
-    this.ledger.push({ t: this.t, who, kind: 'human', tokens: 0, taskId })
+    this.ledger.push({ t: this.t, who, kind: 'human', tokens: 0, taskId, src: 'sim' })
+  }
+
+  private attachedNames() {
+    return this.attachments.filter((a) => a.selected).map((a) => a.name)
   }
 
   // ---- brief, clarify, plan -------------------------------------------------------
@@ -233,11 +281,10 @@ export class Engine {
   }
 
   submitBrief() {
-    if (this.phase !== 'brief') return
+    if (this.phase !== 'brief' || !this.goal.trim()) return
     this.phase = 'clarify'
-    this.headThinking = 1.4
     const n = this.attachments.filter((a) => a.selected).length
-    this.act('Head farmer', 1_200, undefined, 4)
+    this.request('clarify', () => callAgent('clarify', { goal: this.goal, attached: this.attachedNames() }, RECORDED.clarify))
     this.addLog('Head farmer', `Read the brief and ${n} attachments`, 'info', undefined, 'A new head farmer starts every farm. It only knows the brief, its attachments and the seed library.')
     this.notify()
   }
@@ -248,17 +295,61 @@ export class Engine {
   }
 
   finishClarify() {
-    if (this.phase !== 'clarify') return
-    const skipped = CLARIFY.filter((q) => !this.clarifyAnswers[q.id])
-    for (const q of CLARIFY) this.clarifyAnswers[q.id] ??= q.options[0]
+    if (this.phase !== 'clarify' || this.headThinking) return
+    const skipped = this.questions.filter((q) => !this.clarifyAnswers[q.id])
+    for (const q of this.questions) this.clarifyAnswers[q.id] ??= q.options[0]
     if (skipped.length) this.addLog('Head farmer', `Assumed ${skipped.length} answer${skipped.length > 1 ? 's' : ''} you skipped`, 'auto', undefined, skipped.map((q) => `${q.q} → ${q.options[0]}`).join('; '))
     this.phase = 'plan'
-    this.headThinking = 1.6
-    this.planRevealT = this.clock + 1.6
-    this.act('Head farmer', 1_800, undefined, 11)
-    this.addLog('Head farmer', 'Proposed a quest plan: 5 tasks, a crew of 4', 'info', undefined, 'Split the brief into tasks one farmhand can finish with limited context.')
-    this.addLog('Head farmer', 'Planted a saved seed in the Scheduler’s card: lesson-webinar-timezones.md', 'auto', 'invites', 'It matched “webinar” and “pilot customers” in the brief.')
-    if (this.clarifyAnswers.webinar === 'On launch day') this.webinarDate = 'March 12'
+    const answers = Object.fromEntries(this.questions.map((q) => [q.q, this.clarifyAnswers[q.id]]))
+    this.request('plan', () => callAgent('plan', { goal: this.goal, answers, attached: this.attachedNames(), budget: this.budget }, RECORDED.plan))
+    this.notify()
+  }
+
+  get answersText() {
+    return this.questions.map((q) => `- ${q.q} ${this.clarifyAnswers[q.id] ?? q.options[0]}`).join('\n')
+  }
+
+  private applyPlan(p: PlanOut) {
+    const ids = ['research', 'draft', 'factcheck', 'brand', 'invites']
+    const attached = this.attachedNames()
+    SLOTS.forEach((slot, i) => {
+      const src = p.tasks[slot.key]
+      const t = this.task(ids[i])
+      if (!src) return
+      t.name = src.name || t.name
+      t.subtasks.forEach((s, k) => {
+        if (src.subtasks[k]) s.name = src.subtasks[k]
+      })
+      if (this.farmhands[src.assignee]) {
+        t.assignee = src.assignee
+        t.proposedAssignee = src.assignee
+      }
+      t.budget = Math.max(4_000, Math.min(40_000, Math.round(src.budget / 1000) * 1000 || t.budget))
+      const posts = src.signposts.filter((x) => attached.includes(x))
+      t.signposts = posts
+      t.proposalNote = src.note ?? undefined
+    })
+    this.questTitle = p.quest_title || this.questTitle
+    if (p.irreversible?.count) this.irreversible = { ...p.irreversible }
+    for (const fh of Object.values(this.farmhands)) {
+      fh.context = [...new Set(this.tasks.filter((t) => t.assignee === fh.id).flatMap((t) => t.signposts))]
+    }
+  }
+
+  // Plan review: the owner decides which documents each task may read.
+  toggleSignpost(taskId: string, name: string) {
+    if (this.phase !== 'plan' || this.headThinking) return
+    const t = this.task(taskId)
+    const removing = t.signposts.includes(name)
+    this.signpostEdits.push(`${removing ? 'Removed' : 'Added'} ${name} ${removing ? 'from' : 'to'} “${t.name}”`)
+    if (removing) t.signposts = t.signposts.filter((x) => x !== name)
+    else {
+      t.signposts = [...t.signposts, name]
+      const a = this.attachments.find((x) => x.name === name)
+      if (a && !a.selected) a.selected = true
+    }
+    const fh = this.farmhands[t.assignee]
+    fh.context = [...new Set(this.tasks.filter((x) => x.assignee === fh.id).flatMap((x) => x.signposts))]
     this.notify()
   }
 
@@ -277,8 +368,8 @@ export class Engine {
     this.t = 0
     this.human('You')
     const swapped = this.tasks.filter((t) => t.assignee !== t.proposedAssignee)
-    this.addLog('You', 'Approved the quest plan' + (swapped.length ? ` with ${swapped.length} change` : ''), 'answer', undefined,
-      swapped.length ? `Moved “${swapped[0].name}” to the ${this.farmhands[swapped[0].assignee].role}` : undefined)
+    const changes = [...swapped.map((t) => `Moved “${t.name}” to the ${this.farmhands[t.assignee].role}`), ...this.signpostEdits]
+    this.addLog('You', 'Approved the quest plan' + (changes.length ? ` with ${changes.length} change${changes.length > 1 ? 's' : ''}` : ''), 'answer', undefined, changes.join('; ') || undefined)
     this.addLog('Head farmer', 'Planted 5 plots and sent the crew out', 'info')
     this.notify()
   }
@@ -439,6 +530,13 @@ export class Engine {
 
   // ---- UI state --------------------------------------------------------------------------
 
+  startDemo() {
+    if (!this.intro) return
+    this.intro = false
+    this.view = 'farm'
+    this.notify()
+  }
+
   setView(v: View) {
     this.view = v
     if (v === 'valley') this.trace = null
@@ -516,29 +614,41 @@ export class Engine {
   }
 
   private onOutput(key: keyof Outputs) {
+    if (key === 'clarify') {
+      const c = this.out.clarify!
+      this.call('Head farmer', c)
+      this.questions = c.data.questions.slice(0, 3).map((q, i) => ({ id: q.id || `q${i}`, q: q.q, why: q.why, options: q.options.slice(0, 2) }))
+      this.addLog('Head farmer', `Asked ${this.questions.length} questions it couldn’t answer from the brief`, 'info', undefined, `${c.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'} · ${fmtTokens(c.tokens)}`)
+    }
+    if (key === 'plan') {
+      const p = this.out.plan!
+      this.call('Head farmer', p)
+      this.applyPlan(p.data)
+      this.planRevealT = this.clock
+      this.addLog('Head farmer', `Proposed a quest plan: 5 tasks, a crew of 4`, 'info', undefined, `${p.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'} · ${fmtTokens(p.tokens)}. Each task gets only the documents it needs.`)
+      if (/webinar|invite/i.test(this.goal)) this.addLog('Head farmer', 'Planted a saved seed in the Scheduler’s card: lesson-webinar-timezones.md', 'auto', 'invites', 'It matched “webinar” in the brief.')
+      if (Object.values(this.clarifyAnswers).some((a) => /launch day/i.test(a))) this.webinarDate = 'March 12'
+    }
     if (key === 'draft') {
       const d = this.out.draft!
-      const sub = this.task('draft').subtasks.find((s) => s.id === 'd2')!
-      sub.energy = d.tokens
-      this.launchDate = d.data.launch_date
+      this.call('Writer', d, 'draft')
+      if (d.data.launch_date) this.launchDate = d.data.launch_date
       const unsourced = d.data.claims.filter((c) => !c.source).length
       this.addLog('Writer', `Drafted “${d.data.headline}” (${d.data.claims.length} claims, ${unsourced} without a source)`, 'info', 'draft', `${d.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'} · ${fmtTokens(d.tokens)}`)
     }
     if (key === 'claims') {
-      const c = this.out.claims!
-      const sub = this.task('factcheck').subtasks.find((s) => s.id === 'f1')!
-      sub.energy = c.tokens
+      this.call('Reviewer', this.out.claims!, 'factcheck')
     }
     if (key === 'conflict') {
       const c = this.out.conflict!
-      this.act('Head farmer', c.tokens, 'draft', 3)
+      this.call('Head farmer', c, 'draft')
       if (c.data.conflict) {
         this.crow = { state: 'flying', t: 0, x: CROW_SPOT.x + 14, y: CROW_SPOT.y - 12 }
         this.neighbourDrought = true
         const other = c.data.dates.find((x) => x.farm !== 'Q1 Launch')
         this.addLog('Head farmer', `Found a conflict: ${c.data.dates.map((x) => x.date).join(' vs ')}`, 'info', 'draft', other ? `${other.source}: “${other.quote}”` : c.data.why)
       } else {
-        this.addLog('Head farmer', 'Cross-checked dates with neighbouring farms: no conflict', 'auto', 'draft')
+        this.addLog('Head farmer', `Cross-checked the date with ${this.docsChecked} documents on 2 farms: no conflict`, 'auto', 'draft', c.data.why)
         this.flags.add('dateResolved')
         this.flags.add('replanApplied')
       }
@@ -550,10 +660,6 @@ export class Engine {
   tick(rawDt: number) {
     const dt = Math.min(rawDt, 0.1)
     this.clock += dt
-    if (this.headThinking > 0) {
-      this.headThinking = Math.max(0, this.headThinking - dt)
-      if (this.headThinking === 0) this.notify()
-    }
     if (this.seedFly) {
       this.seedFly.t += dt / 1.1
       if (this.seedFly.t >= 1) this.seedFly = null
@@ -578,11 +684,19 @@ export class Engine {
     // Once the draft carries a date and the Reviewer's beetle is gone, the head farmer
     // cross-checks the date with the neighbouring farm. A crow appears only if the model finds a conflict.
     const draft = this.task('draft')
-    if (this.flags.has('dateUsed') && draft.pests.length === 0 && this.out.draft && this.flags.has('factcheckDone')) {
-      if (!this.requested.has('conflict')) this.addLog('Head farmer', 'Cross-checking the launch date with neighbouring farms', 'info', 'draft')
-      this.request('conflict', () =>
-        callAgent('conflict', { draftDate: this.out.draft!.data.launch_date, draftSource: this.out.draft!.data.launch_date_source }, RECORDED.conflict),
-      )
+    if (this.flags.has('dateUsed') && draft.pests.length === 0 && this.out.draft && this.flags.has('factcheckDone') && !this.flags.has('dateResolved')) {
+      const d = this.out.draft.data
+      if (!d.launch_date) {
+        // Nothing dated to cross-check.
+        this.flags.add('dateResolved')
+        this.flags.add('replanApplied')
+      } else {
+        if (!this.requested.has('conflict')) this.addLog('Head farmer', `Cross-checking ${d.launch_date} with ${this.docsChecked} documents on 2 farms`, 'info', 'draft')
+        const recorded = d.launch_date === 'March 26' ? RECORDED.noConflict : RECORDED.conflict
+        this.request('conflict', () =>
+          callAgent('conflict', { draftDate: d.launch_date, draftSource: d.launch_date_source ?? 'unknown', ourDocs: [...draft.signposts] }, recorded),
+        )
+      }
     }
     if (this.crow.state === 'flying') {
       this.crow.t += dt / CROW_FLIGHT
@@ -767,10 +881,16 @@ export class Engine {
         'The plot was at 75% of its energy. Reading 12 more posts would cost about 9k, ending 42% over budget. Without them the comparison stays qualitative.')
     }
     if (sub.id === 'd2') {
-      const audience = this.clarifyAnswers.audience ?? 'the 6 pilot customers'
-      this.request('draft', () => callAgent('draft', { audience, signposts: [...task.signposts, 'brand-voice.md'] }, RECORDED.draft))
+      // The model call is the work: no scripted steps on top of it.
+      sub.actions = 0
+      const signposts = [...task.signposts, ...this.farmhands[fh.id].almanac]
+      const sawEng = expandSignposts(signposts).includes('eng-standup-notes/2026-02-03.md')
+      this.request('draft', () =>
+        callAgent('draft', { goal: this.goal, task: task.name, answers: this.answersText, signposts }, sawEng ? RECORDED.draftWithEngNotes : RECORDED.draft),
+      )
     }
     if (sub.id === 'f1') {
+      sub.actions = 0
       this.request('claims', () => {
         const d = this.out.draft?.data ?? RECORDED.draft
         return callAgent('claims', { draft: `${d.headline}\n\n${d.paragraphs.join('\n\n')}` }, RECORDED.claims)
@@ -781,22 +901,26 @@ export class Engine {
     }
     if (sub.id === 'i3') {
       fh.status = 'asking'
-      const total = 42
+      const { action, audience, count: total } = this.irreversible
+      const demo = this.demoScenario
       this.raise({
         id: 'invites',
         label: 'Irreversible',
         from: fh.id,
         fromName: fh.role,
         taskId: task.id,
-        question: `Send the webinar invite to ${total} people at 6 pilot customers?`,
-        impact: [`≈ 1.5k energy`, `Sends ${total} emails from your address, with a calendar hold for ${this.webinarDate}`, 'Can’t be undone', 'Reaches 6 external companies'],
+        question: `${action} to ${total} ${audience}?`,
+        impact: demo
+          ? [`Sends ${total} emails from your address, with a calendar hold for ${this.webinarDate}`, 'Reaches 6 external companies', 'Can’t be undone']
+          : [`Reaches ${total} ${audience}`, 'Can’t be undone'],
         options: [
           { key: 'a', label: `Send to ${total}`, value: 'approve', kind: 'approve', recommended: true },
-          { key: '1', label: 'Send to Acme first (12)', value: 'acme-first', kind: 'alt' },
+          ...(demo ? [{ key: '1', label: 'Send to Acme first (12)', value: 'acme-first', kind: 'alt' as const }] : []),
           { key: 'd', label: 'Don’t send', value: 'deny', kind: 'deny' },
         ],
         confirm: `Confirm: send to ${total} recipients`,
         confidence: 'High',
+        basis: demo ? 'The list matches pilot-customers.csv, and the date is settled.' : 'The plan’s send step, after every other task is done.',
         provenance: 'replay',
         details: {
           reasoning: `The date is settled (${this.launchDate}) and the list matches pilot-customers.csv. Times use each recipient’s zone, from a saved seed.`,
@@ -812,7 +936,9 @@ export class Engine {
   private onSubDone(fh: Farmhand, task: Task, sub: Subtask) {
     if (sub.id === 'd2') {
       const d = this.out.draft!.data
-      this.addLog(fh.role, `Set the launch date to ${d.launch_date} in the draft`, 'auto', 'draft', `Source: ${d.launch_date_source}. No engineering notes were attached to this plot.`, 'date')
+      const sawEng = expandSignposts(task.signposts).some((x) => x.startsWith('eng-standup-notes/'))
+      if (d.launch_date)
+        this.addLog(fh.role, `Set the date to ${d.launch_date} in the draft`, 'auto', 'draft', `Source: ${d.launch_date_source}.${sawEng ? '' : ' No engineering notes were attached to this plot.'}`, sawEng ? undefined : 'date')
     }
     if (sub.id === 'f1') {
       const c = this.out.claims!
@@ -830,7 +956,7 @@ export class Engine {
     }
     if (sub.id === 'i3') {
       const ask = this.asks.find((a) => a.id === 'invites')
-      if (ask?.answer === 'approve') this.addLog(fh.role, 'Sent 42 invites and held the calendar', 'done', 'invites')
+      if (ask?.answer === 'approve') this.addLog(fh.role, `${this.irreversible.action}: ${this.irreversible.count} sent (simulated)`, 'done', 'invites')
     }
     if (sub.id === 'b1') this.addLog(fh.role, 'Tone check: removed “revolutionary” from the headline options', 'auto', 'brand', 'brand-voice.md bans it.')
     if (task.subtasks.every((s) => s.done)) this.addLog(fh.role, `${task.name}: ripe`, 'done', task.id)
@@ -848,7 +974,7 @@ export class Engine {
       fromName: 'Head farmer',
       taskId: 'draft',
       question: 'Two launch dates are in play. Which one should the announcement use?',
-      impact: ['Affects 2 crews: the announcement, the webinar date and the invite emails', 'Nothing has been sent yet', 'Can be undone until the invites go out'],
+      impact: [`Changes the announcement, the webinar date and the invite emails on your farm, and tells Priya’s crew`, 'Nothing has been sent yet', 'Can be undone until the invites go out'],
       sides: [
         { title: ours.date, who: 'Writer · Q1 Launch (your farm)', source: ours.source, quote: ours.quote },
         { title: theirs.date, who: 'Engineering crew · Auth SDK v2 (Priya)', source: theirs.source, quote: theirs.quote },
@@ -858,8 +984,9 @@ export class Engine {
         { key: '2', label: `Keep ${ours.date}`, value: 'keep', recommended: !recommendTheirs, kind: 'alt' },
       ],
       confidence: c.data.confidence,
+      basis: `Checked ${this.docsChecked} documents on 2 farms. ${c.data.why}`,
       provenance: c.provenance,
-      details: { reasoning: c.data.why, sources: c.data.dates.map((d) => d.source) },
+      details: { reasoning: `Checked ${this.docsChecked} documents on 2 farms. ${c.data.why}`, sources: c.data.dates.map((d) => d.source) },
     })
   }
 }

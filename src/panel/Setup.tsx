@@ -1,5 +1,5 @@
 // Brief → Clarify → Quest plan. The owner sets direction once; after that agents only ask when it matters.
-import { CLARIFY, ROLE_ORDER } from '../sim/scenario'
+import { ROLE_ORDER } from '../sim/scenario'
 import type { RoleId } from '../sim/types'
 import { Avatar, fmtK, Kbd, Sprite, Term, useEngine } from '../ui'
 
@@ -18,8 +18,11 @@ export function Brief() {
         </div>
       </div>
 
-      <div className="section-title">Goal</div>
-      <textarea className="goal" value={e.goal} onChange={(ev) => e.setGoal(ev.target.value)} aria-label="Goal" />
+      <div className="section-title">
+        <span>Goal</span>
+        {e.live === false && <span className="demo-tag">Demo scenario: replay mode has no model to read a new goal</span>}
+      </div>
+      <textarea className="goal" value={e.goal} readOnly={e.live === false} onChange={(ev) => e.setGoal(ev.target.value)} aria-label="Goal" />
 
       <div className="section-title">
         <span>Context for the crew</span>
@@ -69,10 +72,10 @@ export function Clarify() {
         <Avatar />
         <div className="bubble">
           <div className="who">Head farmer</div>
-          Three things I can’t work out from the brief. Answer or skip; I’ll assume the first option for anything you skip.
+          {e.questions.length} things I can’t work out from the brief. Answer or skip; I’ll assume the first option for anything you skip.
         </div>
       </div>
-      {CLARIFY.map((q, i) => (
+      {e.questions.map((q, i) => (
         <div className="q" key={q.id} style={{ animationDelay: `${i * 80}ms` }}>
           <h3>{q.q}</h3>
           <p>{q.why}</p>
@@ -108,13 +111,13 @@ export function Plan() {
         <Avatar />
         <div className="bubble">
           <div className="who">Head farmer</div>
-          Here’s the plan: 5 tasks, a crew of 4 and {fmtK(total)} of {fmtK(e.budget)} energy. Change anything, then approve. Nothing is planted before you do.
+          Here’s the plan: 5 tasks, a crew of 4 and {fmtK(total)} of {fmtK(e.budget)} energy. Each farmhand reads only its task’s signposts. Change anything, then approve. Nothing is planted before you do.
         </div>
       </div>
 
       <div className="section-title">
-        <span>Quest plan · {e.goal.split('.')[0].slice(0, 32)}…</span>
-        <span>in order</span>
+        <span>Quest plan · {e.questTitle}</span>
+        <span>chips: what it may read</span>
       </div>
       {e.tasks.map((t, i) => {
         const changed = t.assignee !== t.proposedAssignee
@@ -133,6 +136,29 @@ export function Plan() {
                   <li key={s.id}>{s.name}</li>
                 ))}
               </ul>
+              <div className="chips" aria-label={`Signposts for ${t.name}`}>
+                {t.signposts.map((p) => (
+                  <span className="chip" key={p}>
+                    {p}
+                    <button onClick={() => e.toggleSignpost(t.id, p)} aria-label={`Remove ${p}`}>
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {e.attachments.some((a) => !t.signposts.includes(a.name)) && (
+                  <select value="" onChange={(ev) => ev.target.value && e.toggleSignpost(t.id, ev.target.value)} aria-label={`Add a signpost to ${t.name}`}>
+                    <option value="">+ signpost</option>
+                    {e.attachments
+                      .filter((a) => !t.signposts.includes(a.name))
+                      .map((a) => (
+                        <option key={a.id} value={a.name}>
+                          {a.name}
+                          {a.selected ? '' : ' (not attached)'}
+                        </option>
+                      ))}
+                  </select>
+                )}
+              </div>
               <div className="assign">
                 <Term w="Farmhand" m="agent" />
                 <select value={t.assignee} onChange={(ev) => e.reassign(t.id, ev.target.value as RoleId)} aria-label={`Assign ${t.name}`}>

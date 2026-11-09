@@ -23,9 +23,7 @@ export function Panel() {
           <span>Q1 Launch · You (PM)</span>
           <span>{e.live === null ? 'checking…' : e.live ? 'Live · Claude' : 'Replay'}</span>
         </div>
-        <h1>
-          Launch <em>Relay v2</em>
-        </h1>
+        <h1>{e.phase === 'brief' || e.phase === 'clarify' ? 'Brief the head farmer' : e.questTitle}</h1>
         <ol className="steps">
           {STEPS.map((s, i) => (
             <li key={s.id} className={i < idx ? 'done' : i === idx ? 'now' : ''}>
@@ -43,8 +41,8 @@ export function Panel() {
       <footer className="panel-foot">
         {growing ? (
           <>
-            <span className="mono" style={{ fontSize: 12 }}>
-              {e.actions} agent actions · {e.neededYou} needed you
+            <span className="foot-sum">
+              {e.neededYou} needed you · {e.liveCalls ? `${e.liveCalls} live calls` : `${e.replayCalls} replayed calls`} · {e.simSteps} simulated steps
             </span>
             <button className="btn ghost" onClick={() => e.setView(e.view === 'valley' ? 'farm' : 'valley')}>
               {e.view === 'valley' ? 'Farm' : 'Valley'} <Kbd>V</Kbd>

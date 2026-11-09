@@ -47,7 +47,7 @@ export function MapView() {
             c.width = Math.round(W * dpr)
             c.height = Math.round(H * dpr)
           }
-          const target = fitCamera(engine.cameraTarget(), W, H)
+          const target = fitCamera(engine.cameraTarget(), W, H, engine.view === 'valley' ? 0 : 76)
           if (!cam.current) cam.current = target
           else {
             const k = 1 - Math.exp(-dt * 3.2)

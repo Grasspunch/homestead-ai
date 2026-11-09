@@ -400,12 +400,14 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
   }
 
   if (e.view === 'farm' && (showPlan || planned)) {
-    // Plot labels.
+    // Plot labels. Each one moves down until it clears the labels already placed.
+    const placed: { x: number; y: number; w: number; h: number }[] = []
     e.tasks.forEach((t, i) => {
       if (showPlan && reveal < i * 0.18 + 0.2) return
       const p = toScreen(t.plot.x + t.plot.w / 2, t.plot.y + t.plot.h + (planned ? 1.35 : 0.2))
       const sub = planned ? `${t.subtasks.filter((s) => s.done).length}/${t.subtasks.length}` : cap(t.assignee)
-      label(ctx, p.x, p.y + (showPlan ? 4 : 0), t.name, sub, t.dry ? '#e8a05a' : undefined, cam.scale)
+      const accent = planned ? e.farmhands[t.assignee].color : undefined
+      label(ctx, p.x, p.y + (showPlan ? 4 : 0), t.name, sub, t.dry ? '#e8a05a' : accent, cam.scale, placed)
     })
   }
 
@@ -523,7 +525,7 @@ function statsFor(e: Engine, name: string) {
     s.energyWeek = e.energyUsed
     s.pests = e.tasks.reduce((n, t) => n + t.pests.length, 0)
     s.waiting = e.openAsks.length
-    s.harvests = e.harvested ? 1 : 0
+    s.harvests = e.harvestReady ? 1 : 0
   }
   return s
 }
@@ -551,14 +553,17 @@ function nameTag(ctx: CanvasRenderingContext2D, x: number, y: number, text: stri
   ctx.restore()
 }
 
-function label(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, sub: string, accent: string | undefined, scale: number) {
-  if (scale < 1.6) return
+function label(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, sub: string, accent: string | undefined, scale: number, placed: { x: number; y: number; w: number; h: number }[]) {
+  if (scale < 1.2) return
   ctx.save()
   ctx.font = `16px ${FONT}`
   const t = `${text}  ·  ${sub}`
   const w = Math.ceil(ctx.measureText(t).width) + 12
   const rx = Math.round(x - w / 2)
-  const ry = Math.round(y)
+  let ry = Math.round(y)
+  const hits = (yy: number) => placed.some((r) => rx < r.x + r.w + 4 && rx + w + 4 > r.x && yy < r.y + r.h + 2 && yy + 15 + 2 > r.y)
+  while (hits(ry)) ry += 17
+  placed.push({ x: rx, y: ry, w, h: 15 })
   ctx.fillStyle = 'rgba(62,49,80,0.78)'
   ctx.fillRect(rx, ry, w, 15)
   if (accent) {
@@ -598,6 +603,7 @@ function valleyCard(ctx: CanvasRenderingContext2D, x: number, y: number, name: s
     `${s.agents} agents · ${fmtK(s.energyWeek)} energy this week`,
     `${s.harvests} harvest${s.harvests === 1 ? '' : 's'} · ${s.pests} pest${s.pests === 1 ? '' : 's'} · ${s.waiting} waiting on a human`,
     ...(s.unattended ? [s.unattended] : []),
+    ...(name === FARM.name ? [] : ['(simulated farm for the demo)']),
   ]
   ctx.font = `15px ${FONT}`
   const w = Math.max(...lines.map((l) => ctx.measureText(l).width), 160) + 28
@@ -637,16 +643,18 @@ function emote(ctx: CanvasRenderingContext2D, x: number, y: number, kind: 'alert
 
 // ---- camera ----------------------------------------------------------------------------
 
-export function fitCamera(target: Rect, W: number, H: number): Camera {
-  const scale = Math.min(W / (target.w * TILE), H / (target.h * TILE))
+// `inset` is the screen height the HUD covers at the top; the target is framed below it.
+export function fitCamera(target: Rect, W: number, H: number, inset = 0): Camera {
+  const scale = Math.min(W / (target.w * TILE), (H - inset) / (target.h * TILE))
   const cx = (target.x + target.w / 2) * TILE
-  const cy = (target.y + target.h / 2) * TILE
+  const cy = (target.y + target.h / 2) * TILE - inset / 2 / scale
   // Keep the view inside the world so no empty margin shows; centre if the world is smaller.
   const clamp = (v: number, view: number, world: number) => (view >= world ? (world - view) / 2 : Math.max(0, Math.min(world - view, v)))
   return {
     scale,
     x: clamp(cx - W / 2 / scale, W / scale, WORLD.w * TILE),
-    y: clamp(cy - H / 2 / scale, H / scale, WORLD.h * TILE),
+    // The world's top edge may sit just under the HUD, never further down.
+    y: H / scale >= WORLD.h * TILE ? (WORLD.h * TILE - H / scale) / 2 : Math.max(-inset / scale, Math.min(WORLD.h * TILE - H / scale, cy - H / 2 / scale)),
   }
 }
 

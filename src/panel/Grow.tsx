@@ -17,7 +17,7 @@ export function AskCard({ ask }: { ask: Ask }) {
       <div className="ask-head">
         <span className={`reason ${ask.label}`}>{ask.label}</span>
         <span>
-          {ask.fromName} · <Term w="Plot" m="task" /> {task.name}
+          {ask.fromName} · {task.name}
         </span>
         <span className={`prov ${ask.provenance}`} title={ask.provenance === 'live' ? 'Found by a live Claude call' : 'Scripted step or a recorded run'}>
           {ask.provenance === 'live' ? 'Live' : ask.id === 'crow' ? 'Replay' : 'Simulated'}
@@ -79,8 +79,8 @@ export function AskCard({ ask }: { ask: Ask }) {
                 <i key={n} className={n <= PIPS[ask.confidence] ? 'on' : ''} />
               ))}
             </span>
-            <span>· {ask.details.sources.length} sources</span>
           </div>
+          {ask.basis && <p className="basis">{ask.basis}</p>}
           <div className="actions">
             {ask.options.map((o) => (
               <button key={o.value} className={`btn ${o.kind === 'approve' ? 'primary' : ''} ${o.recommended ? 'rec' : ''}`} onClick={() => e.answer(ask.id, o.value)} data-testid={`opt-${o.value}`}>
@@ -169,7 +169,7 @@ export function TraceCard() {
             Stated reason: <i>“{entry?.reason ?? 'Source: customer-call-notes.md'}”</i>
           </li>
           <li className="missing">
-            <span className="mono">eng-standup-notes/</span> was in the brief’s picker but never attached, so no farmhand on this farm could see the delay.
+            <span className="mono">eng-standup-notes/</span> was in the brief’s picker but wasn’t attached, and plan review didn’t add it as a signpost. No farmhand on this farm could see the delay.
           </li>
         </ol>
         <div className="seed-card">

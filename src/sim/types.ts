@@ -128,6 +128,7 @@ export interface Ask {
   details: { reasoning: string; sources: string[]; preview?: string }
   sides?: AskSide[]
   confidence: 'High' | 'Medium' | 'Low'
+  basis?: string // what the confidence rests on, in one line
   provenance: 'live' | 'replay'
   status: 'open' | 'confirming' | 'resolved'
   answer?: string
@@ -174,5 +175,7 @@ export interface LedgerEvent {
   who: string
   kind: 'action' | 'human'
   tokens: number
+  // live: a real model call in this run; replay: a recorded model call; sim: a scripted step
+  src: 'live' | 'replay' | 'sim'
   taskId?: string
 }
