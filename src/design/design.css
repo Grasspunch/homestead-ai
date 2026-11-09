@@ -1,0 +1,304 @@
+/* The library's own chrome. It is built only from tokens, like the app. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--sheet);
+  color: var(--ink);
+  font: var(--body);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+.ds {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  height: 100vh;
+}
+
+/* ---- sidebar: same white as the page, a hairline divides them ---- */
+
+.ds-nav {
+  border-right: 1px solid var(--rule);
+  padding: var(--s-5) var(--s-3) var(--s-8);
+  overflow-y: auto;
+}
+
+.ds-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 0 var(--s-2) var(--s-5);
+  font: var(--title);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.ds-brand img {
+  image-rendering: pixelated;
+}
+
+.ds-nav-group + .ds-nav-group {
+  margin-top: var(--s-5);
+}
+
+.ds-nav h2 {
+  font: var(--caption);
+  font-weight: 700;
+  color: var(--ink-3);
+  margin: 0 0 var(--s-1);
+  padding: 0 var(--s-2);
+}
+
+.ds-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ds-nav a {
+  display: block;
+  padding: 6px var(--s-2);
+  border-radius: var(--r-2);
+  color: var(--ink-2);
+  text-decoration: none;
+  transition: background-color var(--t-quick) var(--ease);
+}
+
+.ds-nav a:hover {
+  background: var(--sheet-hover);
+  color: var(--ink);
+}
+
+.ds-nav a[aria-current='page'] {
+  background: var(--sheet-sunk);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* ---- page ---- */
+
+.ds-main {
+  overflow-y: auto;
+}
+
+.ds-page {
+  max-width: 1080px;
+  padding: var(--s-10) var(--s-12) var(--s-16);
+}
+
+.ds-head {
+  margin-bottom: var(--s-10);
+}
+
+.ds-head h1 {
+  font: var(--display);
+  letter-spacing: var(--track-display);
+  margin: 0;
+  text-wrap: balance;
+}
+
+.ds-head p {
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--ink-2);
+  margin: var(--s-2) 0 0;
+  max-width: 64ch;
+  text-wrap: pretty;
+}
+
+.ds-section {
+  margin-top: var(--s-12);
+}
+
+.ds-section h2 {
+  font: var(--heading);
+  letter-spacing: var(--track-heading);
+  margin: 0 0 var(--s-2);
+}
+
+.ds-section h3 {
+  font: var(--title);
+  margin: var(--s-6) 0 var(--s-2);
+}
+
+.ds-note {
+  color: var(--ink-2);
+  margin: 0 0 var(--s-5);
+  max-width: 68ch;
+  text-wrap: pretty;
+}
+
+.ds-rules {
+  margin: 0;
+  padding: 0 0 0 var(--s-5);
+  max-width: 72ch;
+}
+
+.ds-rules li + li {
+  margin-top: var(--s-2);
+}
+
+.ds-code {
+  font: var(--mono);
+  background: var(--sheet-sunk);
+  border-radius: var(--r-1);
+  padding: 1px 5px;
+}
+
+/* ---- specimen stage and grounds ---- */
+
+.ds-stage {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-3);
+  image-rendering: pixelated;
+}
+
+.ground-sheet {
+  background-color: var(--sheet);
+}
+
+.ground-grass {
+  background-color: var(--grass);
+}
+
+.ground-soil {
+  background-color: var(--soil);
+}
+
+.ground-wet {
+  background-color: var(--soil-wet);
+}
+
+.ground-water {
+  background-color: var(--water);
+}
+
+.ground-checker {
+  background-color: var(--sheet);
+  background-image: conic-gradient(var(--sheet-sunk) 25%, transparent 0 50%, var(--sheet-sunk) 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+
+/* Segmented picker (grounds, zoom). Flat: it is a setting, not the thing you act on. */
+.ds-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--sheet-sunk);
+  border-radius: var(--r-2);
+}
+
+.ds-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--caption);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ds-seg button:hover {
+  color: var(--ink);
+}
+
+.ds-seg button[aria-checked='true'] {
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--rule), 0 1px 2px rgba(36, 29, 51, 0.08);
+}
+
+.ds-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px var(--rule-strong);
+  image-rendering: pixelated;
+  background-size: 12px 12px;
+}
+
+/* Grid of specimens with a caption under each. */
+.ds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--cell, 200px), 1fr));
+  gap: var(--s-4);
+}
+
+.ds-cap {
+  margin-top: var(--s-2);
+}
+
+.ds-cap b {
+  display: block;
+  font: var(--label);
+}
+
+.ds-cap span {
+  display: block;
+  font: var(--caption);
+  color: var(--ink-3);
+}
+
+.ds-cap code {
+  font: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* Do / Don't pairs */
+.ds-dodont {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-4);
+}
+
+.ds-dodont > div > p {
+  margin: var(--s-2) 0 0;
+  color: var(--ink-2);
+}
+
+.ds-dodont > div > p b {
+  color: var(--ink);
+}
+
+@media (max-width: 760px) {
+  .ds {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .ds-nav {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .ds-page {
+    padding: var(--s-6) var(--s-4) var(--s-12);
+  }
+  .ds-dodont {
+    grid-template-columns: 1fr;
+  }
+}

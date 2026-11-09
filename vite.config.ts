@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { sproutLands } from './scripts/vite-sprout-lands'
 
 // Local stand-in for the server route on Lovable: POST /api/agent runs the same
 // prompts (src/agent/agents.ts) with ANTHROPIC_API_KEY from .env.local.
@@ -34,5 +35,11 @@ function agentApi(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), agentApi()],
+  plugins: [react(), agentApi(), sproutLands()],
+  build: {
+    rollupOptions: {
+      // The app, plus the design system library (npm run design).
+      input: { main: 'index.html', design: 'design.html' },
+    },
+  },
 })

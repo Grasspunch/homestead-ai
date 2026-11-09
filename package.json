@@ -10,7 +10,8 @@
     "typecheck": "tsc -b",
     "assets": "node scripts/import-assets.mjs",
     "test": "vitest run --exclude \"src/**/*.int.test.ts\"",
-    "test:int": "vitest run src/sim/__tests__/story.int.test.ts"
+    "test:int": "vitest run src/sim/__tests__/story.int.test.ts",
+    "design": "vite --open /design.html"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

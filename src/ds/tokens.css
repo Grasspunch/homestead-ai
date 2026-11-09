@@ -1,0 +1,127 @@
+/* Homestead design tokens. The single source for colour, type, space, shape and motion.
+   The farm is Sprout Lands pixel art and carries the colour; the sheet is white and carries the hierarchy.
+   Every text colour here clears WCAG AA (4.5:1) on --sheet and --sheet-sunk; scripts/check-contrast.mjs holds that.
+   Quieter text comes from size and weight, never from opacity or a paler grey than --ink-3. */
+
+@font-face {
+  font-family: 'SproutLands';
+  src: url('/fonts/sprout-lands.ttf') format('truetype');
+  font-display: block;
+}
+
+:root {
+  /* Sheet: the white panel and its interaction steps. No cream, parchment or beige. */
+  --sheet: #ffffff;
+  --sheet-hover: #f7f7f9;
+  --sheet-sunk: #f4f4f6;
+  --sheet-press: #ececf0;
+
+  /* Ink: one hue (Sprout Lands' darkest purple-black), three tiers. */
+  --ink: #241d33; /* 16.2:1 titles, values, body */
+  --ink-2: #5a5468; /* 7.2:1 supporting text */
+  --ink-3: #6b6578; /* 5.6:1 metadata, the quietest text allowed */
+
+  /* Rules: hairlines that disappear until you look for them. */
+  --rule-soft: rgba(36, 29, 51, 0.06);
+  --rule: rgba(36, 29, 51, 0.1);
+  --rule-strong: rgba(36, 29, 51, 0.2);
+
+  /* Sprout: the one action accent. Darkened from #4f8f3f (3.9:1) so text and white-on-green pass AA. */
+  --sprout-soft: #e6f0dc;
+  --sprout: #3d7531; /* 5.5:1 */
+  --sprout-strong: #2f5f26;
+  --sprout-deep: #22461b;
+  --on-sprout: #ffffff;
+
+  /* Out: only for things that reach people outside (deploy, send, the envelope). */
+  --out-soft: #e8eefa;
+  --out: #2d5da8; /* 6.5:1 */
+  --out-strong: #1f4682;
+  --out-deep: #16335f;
+  --on-out: #ffffff;
+
+  /* Fail: red means something failed. Never emphasis. */
+  --fail-soft: #f9e2dc;
+  --fail: #a8372a; /* 6.5:1 */
+  --fail-strong: #86281e;
+  --fail-deep: #5f1b14;
+  --on-fail: #ffffff;
+
+  /* Farm grounds, sampled from the Sprout Lands palette. For specimens and plates over the map. */
+  --grass: #9bcf6a;
+  --grass-deep: #78a158;
+  --soil: #e8cfa6;
+  --soil-wet: #b68962;
+  --water: #9bd4c3;
+  --sky: #a9d8ef;
+  --plate: rgba(255, 255, 255, 0.94); /* light plate behind glyphs and labels on the field */
+
+  /* Type: one sans for all UI text, mono for files, counts, tokens and timestamps, pixel font on the map only. */
+  --font-sans: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-pixel: 'SproutLands', 'JetBrains Mono', monospace;
+
+  /* Type roles: size / line / weight / tracking. A 1.25 step from a 14px body. */
+  --caption: 400 12px/16px var(--font-sans);
+  --body: 400 14px/20px var(--font-sans);
+  --label: 700 14px/20px var(--font-sans);
+  --title: 700 16px/22px var(--font-sans);
+  --heading: 800 20px/26px var(--font-sans);
+  --display: 800 28px/34px var(--font-sans);
+  --hero: 800 44px/48px var(--font-sans);
+  --mono: 400 13px/18px var(--font-mono); /* one step under the sans, tabular */
+  --track-heading: -0.01em;
+  --track-display: -0.02em;
+
+  /* Space: a 4px grid. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+
+  /* Controls */
+  --control: 40px;
+  --control-sm: 32px;
+  --hit: 40px;
+
+  /* Shape: small radii, no pill step. */
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 10px;
+
+  /* Pixel: the farm's integer scale. Pixel art is drawn at whole multiples of --px, never in between. */
+  --px: 3px;
+
+  /* Depth: flat rules everywhere; the ink border plus offset shadow is reserved for the one thing you act on. */
+  --raise-border: 2px solid var(--ink);
+  --raise-shadow: 0 3px 0 rgba(36, 29, 51, 0.25);
+  --float-shadow: 0 0 0 1px rgba(36, 29, 51, 0.08), 0 8px 24px -12px rgba(36, 29, 51, 0.35);
+  --focus: 0 0 0 2px var(--sheet), 0 0 0 4px var(--out);
+
+  /* Motion */
+  --t-press: 80ms;
+  --t-quick: 120ms;
+  --t-base: 220ms;
+  --t-slow: 360ms;
+  --t-scene: 680ms;
+  --t-hold: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-move: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-quick: 0ms;
+    --t-base: 0ms;
+    --t-slow: 0ms;
+    --t-scene: 0ms;
+  }
+}
