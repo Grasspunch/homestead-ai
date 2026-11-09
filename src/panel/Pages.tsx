@@ -1,6 +1,6 @@
 // The panel for the two pages that aren't a project's steps: Valleys (every project) and a farm (one agent).
 import { goPage } from '../sim/pages'
-import { FARM, NEIGHBOUR, OTHER_FARMS, VALLEY_STATS, type ValleyState } from '../sim/scenario'
+import { FARM, MISSING, NEIGHBOUR, OTHER_FARMS, VALLEY_STATS, type ValleyState } from '../sim/scenario'
 import { stepOf, STEP_LABEL } from '../sim/steps'
 import { agentTemplate, teamTemplate } from '../sim/templates'
 import type { RoleId } from '../sim/types'
@@ -92,7 +92,7 @@ export function FarmBody({ id }: { id: RoleId }) {
   const staffs = teamTemplate(e.crew, e.customTeams)?.staffs?.[id]
   const tpl = staffs ? agentTemplate(staffs) : agentTemplate(id)
   const ask = e.openAsks.find((a) => a.from === id)
-  const replan = e.replan?.status === 'open' && e.tasks.some((t) => t.assignee === id && t.id === 'frontend')
+  const replan = e.replan?.status === 'open' && e.tasks.some((t) => t.assignee === id && t.id === MISSING.taskId)
   const tasks = e.tasks.filter((t) => t.assignee === id)
   const context = Array.from(new Set(tasks.flatMap((t) => t.signposts)))
   const kinds = (k: 'file' | 'skill' | 'tool') => context.filter((n) => e.lib(n).kind === k)

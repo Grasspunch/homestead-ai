@@ -6,7 +6,7 @@ import { Panel } from './panel/Panel'
 import { AgentTree } from './panel/AgentTree'
 import { FarmPeek } from './panel/FarmPeek'
 import { BEATS, engine } from './sim/engine'
-import { FARM } from './sim/scenario'
+import { FARM, MISSING } from './sim/scenario'
 import { crumbsOf, goPage, pageOf, parsePath, pathOf } from './sim/pages'
 import { Kbd, useEngine } from './ui'
 
@@ -165,14 +165,17 @@ function onKey(ev: KeyboardEvent) {
   }
   if (mod || ev.altKey) return
   const k = ev.key.toLowerCase()
-  const ask = e.activeAsk
+  // Keys only answer the ask that is on screen: none on the Valleys page or another project's valley,
+  // and on a field page only that agent's own ask.
+  const onValleys = e.view === 'valley' || !!e.peekName
+  const ask = onValleys ? undefined : e.fieldPage ? e.openAsks.find((a) => a.from === e.fieldPage) : e.activeAsk
   const growing = e.phase === 'grow' || e.phase === 'harvest' || e.phase === 'ship'
 
   if (k === 'escape') {
     if (e.showHelp) e.showHelp = false
     else if (ask?.status === 'confirming') e.cancelConfirm(ask.id)
     else if (e.sendState === 'confirming') e.cancelSend()
-    else if (e.peekName) e.setView('farm')
+    else if (e.peekName) e.setView('valley')
     else if (e.back()) return
     else if (e.fieldPage) e.closeField()
     else if (e.view === 'valley') e.setView('farm')
@@ -207,7 +210,7 @@ function onKey(ev: KeyboardEvent) {
     else if (ask) {
       const rec = ask.options.find((o) => o.recommended) ?? ask.options[0]
       e.answer(ask.id, rec.value)
-    } else if (e.replan?.status === 'open') e.applyReplan()
+    } else if (e.replan?.status === 'open' && !onValleys && (!e.fieldPage || e.task(MISSING.taskId).assignee === e.fieldPage)) e.applyReplan()
     else if (e.phase === 'ship' && e.shipStage === 'held') e.requestDeploy()
     else if (e.harvestReady && e.phase === 'grow') e.openHarvest()
     return
@@ -256,7 +259,11 @@ export function App() {
   useEffect(() => {
     if (e.intro) return
     const want = pathOf(pageOf(e))
-    if (location.pathname !== want) history.pushState(null, '', want + location.search)
+    if (location.pathname === want) return
+    // An address that names no page (or a different one) is replaced, so Back never lands on it again.
+    const here = parsePath(location.pathname, engine)
+    if (!here || pathOf(here) !== location.pathname) history.replaceState(null, '', want + location.search)
+    else history.pushState(null, '', want + location.search)
   })
   // When the opening ends, the cursor waits in the brief.
   const wasIntro = useRef(true)

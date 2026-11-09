@@ -30,7 +30,7 @@ export function parsePath(path: string, e: Engine): Page | null {
   if (parts[0] !== 'v' || !parts[1]) return null
   const valley = VALLEYS().find((v) => slug(v) === parts[1])
   if (!valley) return null
-  if (parts[2] && valley === FARM.name && parts[2] in e.farmhands) return { kind: 'field', valley, id: parts[2] as RoleId }
+  if (parts[2] && valley === FARM.name && Object.prototype.hasOwnProperty.call(e.farmhands, parts[2])) return { kind: 'field', valley, id: parts[2] as RoleId }
   return { kind: 'valley', id: valley }
 }
 

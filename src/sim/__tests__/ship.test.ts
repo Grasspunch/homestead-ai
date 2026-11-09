@@ -42,6 +42,36 @@ describe('the rollback rule', () => {
     expect(e.activeAsk?.id).toBe('fix')
   })
 
+  it('keeps a failing canary on 5% when you say so, and rolls back from there', async () => {
+    const e = freshEngine()
+    e.setSetting('deploy', 'auto_rollback', false)
+    e.startCanary()
+    await until(e, () => e.activeAsk?.id === 'rollback', 'rollback ask', 30)
+    e.answer('rollback', 'keep')
+    expect(e.canaryKept).toBe(true)
+    expect(e.shipHeadline).toContain('still on 5%')
+    // Deploying again is not on offer: the only way on is putting the old page back.
+    e.requestDeploy()
+    await until(e, () => e.shipStage === 'rolledback', 'rolled back from the kept canary', 30)
+    expect(e.canaryKept).toBe(false)
+    expect(e.activeAsk?.id).toBe('fix')
+  })
+
+  it('asks for the redeploy again, not the fix, after Not now', async () => {
+    const e = freshEngine()
+    e.startCanary()
+    await until(e, () => e.activeAsk?.id === 'fix', 'fix ask', 30)
+    e.answer('fix', 'fix')
+    await until(e, () => e.activeAsk?.id === 'redeploy', 'redeploy ask', 30)
+    e.answer('redeploy', 'hold')
+    expect(e.shipStage).toBe('held')
+    expect(e.queryFixed).toBe(true)
+    expect(e.shipHeadline).toContain('redeploy waits')
+    e.requestDeploy()
+    expect(e.activeAsk?.id).toBe('redeploy')
+    expect(e.asks.filter((a) => a.id === 'fix' && a.status !== 'resolved')).toHaveLength(0)
+  })
+
   it('fixes the search, redeploys with the same confirm, then texts pet owners', async () => {
     const e = freshEngine()
     e.startCanary()

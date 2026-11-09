@@ -574,7 +574,13 @@ function GateView({ g }: { g: GateId }) {
             {e.hoursFrom === MISSING.file ? <ins>+ const hours = await rota.hours(from, to)</ins> : <span>+ const hours = sheet.hours('front-desk-hours.csv')</span>}
             {'\n\n'}
             src/api/bookings.ts{'\n'}
-            {e.fixSent ? <ins>+ const held = await db.slots.hold(slotId, owner, {'{ minutes: 5 }'}){'\n'}+ if (!held) return taken()</ins> : <span>+ if (slot.taken) return conflict()</span>}
+            {e.fixSent && e.harvestFix === 'refuse' ? (
+              <ins>+ const booked = await db.bookings.insertOnce(slotId, owner){'\n'}+ if (!booked) return taken()</ins>
+            ) : e.fixSent ? (
+              <ins>+ const held = await db.slots.hold(slotId, owner, {'{ minutes: 5 }'}){'\n'}+ if (!held) return taken()</ins>
+            ) : (
+              <span>+ if (slot.taken) return conflict()</span>
+            )}
           </pre>
           <p className="quiet">
             {OUTPUT.files} files, +{OUTPUT.added} −{OUTPUT.removed}.

@@ -121,6 +121,7 @@ export class Engine {
   // The whole run's gates at the harvest. The review runs here, on the whole diff.
   harvestGates: Record<GateId, GateResult> = Object.fromEntries(GATE_ORDER.map((g) => [g, { state: 'wait', text: 'Not run yet' }])) as Record<GateId, GateResult>
   private rerunAt = 0
+  harvestFix = '' // the fix you chose for the failed gate: hold or refuse
   fixSent = false // you answered the failed harvest gate, and its fix went back to the agent
   ticked = new Set<string>()
   approved = false
@@ -136,6 +137,8 @@ export class Engine {
   rollout = 0 // percent of users on the new version
   deploys = 0
   rolledBack = false
+  queryFixed = false // the slow search query is fixed, so a held redeploy only needs asking again
+  canaryKept = false // you chose to keep a failing canary at 5%
   // The cart that carries the harvest out of the valley: k runs 0..1 along its road.
   cart: { state: 'none' | 'loaded' | 'out' | 'back' | 'gate' | 'away'; k: number; crow: boolean } = { state: 'none', k: 0, crow: false }
   settings: Settings = defaultSettings()
@@ -857,6 +860,8 @@ export class Engine {
     this.nav = [...this.nav.filter((n) => n.kind !== 'trace'), { kind: 'trace' }]
     this.trace = id
     this.view = 'farm'
+    this.fieldPage = null
+    this.peekName = null
     this.notify()
   }
 
@@ -964,7 +969,7 @@ export class Engine {
 
   // One agent's field as its own page: the camera frames only that field and the panel opens on its work.
   openField(id: RoleId) {
-    if (!this.farmhands[id]) return
+    if (!Object.prototype.hasOwnProperty.call(this.farmhands, id)) return
     this.view = 'farm'
     this.peekName = null
     this.freeCam = null
@@ -1206,6 +1211,8 @@ export class Engine {
     this.phase = 'harvest'
     this.nav = []
     this.view = 'farm'
+    this.fieldPage = null
+    this.peekName = null
     this.harvestStage = 'map'
     this.harvestT = this.clock
     ROLE_ORDER.forEach((id, i) => {
@@ -1392,6 +1399,7 @@ export class Engine {
     const t = this.task(HARVEST_FAIL.taskId)
     const who = this.farmhands[t.assignee].role
     this.fixSent = true
+    this.harvestFix = value
     this.ticked.clear()
     for (const g of GATE_ORDER) this.harvestGates[g] = { state: 'run', text: 'Running again' }
     this.rerunAt = this.clock
@@ -1456,6 +1464,9 @@ export class Engine {
 
   private startShip() {
     this.phase = 'ship'
+    this.view = 'farm'
+    this.fieldPage = null
+    this.peekName = null
     this.shipStage = 'ci'
     this.shipT = 0
     this.ciIndex = 0
@@ -1568,7 +1579,8 @@ export class Engine {
 
   requestDeploy() {
     if (this.shipStage !== 'deploy' && this.shipStage !== 'held') return
-    if (this.shipStage === 'held' && this.rolledBack) return this.raiseFix()
+    if (this.shipStage === 'held' && this.rolledBack && !this.queryFixed) return this.raiseFix()
+    if (this.canaryKept) return this.rollbackNow()
     this.shipStage = 'deploy'
     const id = this.rolledBack ? 'redeploy' : this.deploys === 0 ? 'deploy' : `deploy-${this.deploys}`
     this.asks = this.asks.filter((a) => a.id !== id)
@@ -1615,6 +1627,7 @@ export class Engine {
     if (this.settings.deploy.auto_rollback) return this.startRollback(reading)
     // The switch is off: hold the canary and ask.
     this.shipStage = 'held'
+    this.asks = this.asks.filter((a) => a.id !== 'rollback')
     this.raise({
       id: 'rollback',
       label: 'Failure',
@@ -1631,6 +1644,15 @@ export class Engine {
       confidence: 'High',
       provenance: 'sim',
     })
+  }
+
+  // Put the old page back after choosing to keep the canary.
+  rollbackNow() {
+    if (!this.canaryKept) return
+    this.canaryKept = false
+    const h = HEALTH.find((x) => x.id === BREACH)!
+    this.startRollback(breachText(h, this.health[h.id].value))
+    this.notify()
   }
 
   private startRollback(reading: string) {
@@ -1678,6 +1700,7 @@ export class Engine {
   private updateFix() {
     if (this.shipT < SHIP_TIMES.fix) return
     this.addLog('Backend', 'Availability search loads all 8 weeks of diaries in one query. 0.3 s on staging with full diaries. CI passed on main.', 'done')
+    this.queryFixed = true
     this.shipStage = 'deploy'
     this.shipT = 0
     this.asks = this.asks.filter((a) => a.id !== 'redeploy')
@@ -1774,6 +1797,7 @@ export class Engine {
         const h = HEALTH.find((x) => x.id === BREACH)!
         return this.startRollback(breachText(h, this.health[h.id].value))
       }
+      this.canaryKept = true
       this.addLog('Head farmer', 'Kept the canary running at 5%', 'info')
       return
     }
@@ -1798,7 +1822,9 @@ export class Engine {
         return SHIP_TEXT.ciPassed
       case 'held':
         if (this.asks.some((a) => a.id === 'rollback' && a.status !== 'resolved')) return 'The canary is failing. It waits for you.'
-        return this.rolledBack ? 'The “Call us to book” page is live. The fix waits for you.' : SHIP_TEXT.held
+        if (this.canaryKept) return 'The canary is still on 5% of visitors, and search is slow.'
+        if (this.rolledBack) return this.queryFixed ? 'The “Call us to book” page is live. The redeploy waits for you.' : 'The “Call us to book” page is live. The fix waits for you.'
+        return SHIP_TEXT.held
       case 'canary':
         return SHIP_TEXT.canary
       case 'rollback':

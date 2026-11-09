@@ -270,3 +270,17 @@ describe('three steps', () => {
     expect(crewOrder(Object.values(e.farmhands))[0].id).toBe('backend')
   })
 })
+
+describe('page addresses', () => {
+  it('parses the three pages and refuses names that are not agents', async () => {
+    const { parsePath, pathOf } = await import('../pages')
+    const e = freshEngine()
+    expect(parsePath('/', e)).toEqual({ kind: 'region' })
+    expect(pathOf(parsePath('/v/vet-booking', e)!)).toBe('/v/vet-booking')
+    expect(pathOf(parsePath('/v/vet-booking/backend', e)!)).toBe('/v/vet-booking/backend')
+    expect(pathOf(parsePath('/v/vet-booking/constructor', e)!)).toBe('/v/vet-booking')
+    expect(parsePath('/foo', e)).toBeNull()
+    e.openField('constructor' as never)
+    expect(e.fieldPage).toBeNull()
+  })
+})

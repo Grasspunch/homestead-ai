@@ -46,13 +46,13 @@ export function ShipNow() {
   const e = useEngine()
   const st = e.shipStage
   const live = st === 'live' || st === 'announced'
-  const deploying = st === 'canary' || st === 'canary2' || st === 'rollback' || st === 'rolledback' || st === 'rollout' || (e.rolledBack && !live)
+  const deploying = st === 'canary' || st === 'canary2' || st === 'rollback' || st === 'rolledback' || st === 'rollout' || e.canaryKept || (e.rolledBack && !live)
   const waitingOnYou = e.openAsks.length > 0
   // Once CI passes it folds into one line, so the deploy stays in view.
   const ciDone = CI_JOBS.every((j) => e.ci[j.id].state === 'pass')
   const [showCi, setShowCi] = useState(false)
-  const release = live ? 'Everyone' : st === 'rollout' ? `${e.rollout}%` : st === 'canary' || st === 'canary2' ? '5% canary' : e.rolledBack ? 'Rolled back' : 'Not deployed'
-  const fixed = e.rolledBack && st !== 'rollback' && st !== 'rolledback' && st !== 'fixing' && !(st === 'held' && e.deploys < 2)
+  const release = live ? 'Everyone' : st === 'rollout' ? `${e.rollout}%` : st === 'canary' || st === 'canary2' || e.canaryKept ? '5% canary' : e.rolledBack ? 'Rolled back' : 'Not deployed'
+  const fixed = e.queryFixed
   const announce = e.asks.find((a) => a.id === 'announce')
   const textEnd = st === 'announced' ? 'Sent' : announce?.status === 'resolved' ? 'Not sent' : ANNOUNCE.cost
   return (
@@ -114,9 +114,13 @@ export function ShipNow() {
         </ul>
         {st === 'held' && !waitingOnYou && (
           <div className="send">
-            {e.rolledBack ? (
+            {e.canaryKept ? (
+              <button className="btn primary full" onClick={() => e.rollbackNow()} data-testid="rollback-now">
+                Put the old page back
+              </button>
+            ) : e.rolledBack ? (
               <button className="btn primary full" onClick={() => e.requestDeploy()} data-testid="deploy">
-                Fix and redeploy
+                {e.queryFixed ? 'Redeploy' : 'Fix and redeploy'}
               </button>
             ) : (
               <button className="btn out full" onClick={() => e.requestDeploy()} data-testid="deploy">
