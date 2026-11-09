@@ -196,14 +196,13 @@ function StepView({ id }: { id: string }) {
   if (id === 'harvest' && e.sendState === 'sent')
     return (
       <>
-        <p className="quiet">Every gate passed, you looked at {CHECKS.length} things and approved, then merged into {OUTPUT.base}.</p>
         <ul className="rows">
           <li>
-            <Row mark={<span className="kind pr">PR</span>} label={`Pull request #${OUTPUT.pr}`} sub={`Merged into ${OUTPUT.base}`} onClick={() => e.go({ kind: 'out', id: 'pr' })} />
+            <Row mark={<span className="kind pr">PR</span>} label={`Pull request #${OUTPUT.pr}`} end={`Merged into ${OUTPUT.base}`} onClick={() => e.go({ kind: 'out', id: 'pr' })} />
           </li>
           {GATE_ORDER.map((g) => (
             <li key={g}>
-              <Row mark={<GateMark s="pass" />} label={GATES[g].name} sub={e.harvestGates[g].text} end="Passed" tone="done" onClick={() => e.go({ kind: 'out', id: g })} />
+              <Row mark={<GateMark s="pass" />} label={GATES[g].name} end="Passed" tone="done" onClick={() => e.go({ kind: 'out', id: g })} />
             </li>
           ))}
         </ul>
@@ -727,14 +726,13 @@ function GuideView() {
   return (
     <div className="doc">
       <b>Google sign-in</b>
-      <p className="soft">Written by Docs. Steps 2 and 3 need a person who can sign in to the Google console.</p>
       <ol className="guide-steps">
         {GUIDE_STEPS.map((s, i) => (
           <li key={s.id} id={`guide-${s.id}`} className={focus && s.id === 'redirect' ? 'focus' : ''} data-testid={`guide-${s.id}`}>
             <b>
               {i + 1}. {s.text}
             </b>
-            <span>{s.who}</span>
+            {focus && s.id === 'redirect' && <span>{s.who}</span>}
           </li>
         ))}
       </ol>

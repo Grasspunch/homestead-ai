@@ -1,9 +1,10 @@
 // Draws the valley. The map shows state at a glance; every decision lives in the quest log.
 import { draw, frame as frameSize, hasFrame, animCounts, pixelSprite } from './atlas'
 import { cropTiles, type Engine } from '../sim/engine'
-import { CLASH, CROW_SPOT, FARM, INTRO_SIGNS, MISSING, NEIGHBOUR, NEIGHBOUR_PLOTS, OTHER_FARMS, PROPS, TILE, VALLEY_STATS, WORLD, type Prop } from '../sim/scenario'
+import { CLASH, CROW_SPOT, FARM, ROADS, type ValleyState, INTRO_SIGNS, MISSING, NEIGHBOUR, NEIGHBOUR_PLOTS, OTHER_FARMS, PROPS, TILE, VALLEY_STATS, WORLD, type Prop } from '../sim/scenario'
 import type { Dir, Farmhand, ReasonLabel, Rect, RoleId, Task } from '../sim/types'
 import { usd } from '../sim/settings'
+import type { FieldSlot } from '../sim/scenario'
 import { VALLEY_CREWS } from '../sim/templates'
 import { REVIEW_FAIL } from '../sim/review'
 import { cartBack, cartBarn, cartGate, cartOut } from '../sim/ship'
@@ -15,7 +16,7 @@ export interface Camera {
 }
 
 export interface Hit {
-  kind: 'plot' | 'farmhand' | 'head' | 'signpost' | 'pest' | 'crow' | 'neighbour' | 'nplot' | 'farm' | 'prop' | 'chicken' | 'sign' | 'crate'
+  kind: 'plot' | 'farmhand' | 'head' | 'signpost' | 'pest' | 'crow' | 'neighbour' | 'nplot' | 'farm' | 'prop' | 'chicken' | 'sign' | 'crate' | 'helper' | 'field'
   id: string
   rect: Rect // world px
   title: string
@@ -82,89 +83,101 @@ function wander(seed: number, t: number) {
   return (hash(seed, i) * (1 - k) + hash(seed, i + 1) * k) * 2 - 1
 }
 
-// Worn dirt paths, painted pixel by pixel: soft wandering edges, rounded junctions,
-// a shadow lip on the low side, specks, pebbles and grass poking in at the edges.
-function paintPaths(ctx: CanvasRenderingContext2D, W: number, H: number, off: number) {
-  const mask = new Uint8Array(W * H)
-  let seed = 1
-  // A rect in world px; each edge wanders by up to 1.5 px.
-  const rect = (x0: number, y0: number, x1: number, y1: number) => {
-    const sl = seed++ * 7
-    const sr = seed++ * 7
-    const st = seed++ * 7
-    const sb = seed++ * 7
-    const ax0 = Math.max(0, Math.floor(x0 + off - 2))
-    const ax1 = Math.min(W, Math.ceil(x1 + off + 2))
-    const ay0 = Math.max(0, Math.floor(y0 + off - 2))
-    const ay1 = Math.min(H, Math.ceil(y1 + off + 2))
-    for (let y = ay0; y < ay1; y++)
-      for (let x = ax0; x < ax1; x++) {
-        const wx = x - off
-        const wy = y - off
-        if (wx < x0 + Math.round(wander(sl, wy / 6) * 1.5)) continue
-        if (wx >= x1 + Math.round(wander(sr, wy / 6) * 1.5)) continue
-        if (wy < y0 + Math.round(wander(st, wx / 6) * 1.5)) continue
-        if (wy >= y1 + Math.round(wander(sb, wx / 6) * 1.5)) continue
+// Smooth 2D value noise, 0..1.
+function noise2(x: number, y: number) {
+  const ix = Math.floor(x)
+  const iy = Math.floor(y)
+  const fx = x - ix
+  const fy = y - iy
+  const sx = fx * fx * (3 - 2 * fx)
+  const sy = fy * fy * (3 - 2 * fy)
+  const a = hash(ix, iy) * (1 - sx) + hash(ix + 1, iy) * sx
+  const b = hash(ix, iy + 1) * (1 - sx) + hash(ix + 1, iy + 1) * sx
+  return a * (1 - sy) + b * sy
+}
+
+// Worn dirt paths, painted pixel by pixel onto a canvas: soft wandering edges, rounded inside
+// corners where paths meet, a shadow lip on the low side, specks, pebbles and grass at the edges.
+// rects are in tiles, in world coordinates; origin is where world (0, 0) sits on this canvas, in px.
+export function drawPaths(ctx: CanvasRenderingContext2D, rects: Rect[], origin = { x: 0, y: 0 }, round = 6) {
+  if (!rects.length) return
+  const T = TILE
+  const m = round + 4
+  // Work only inside the rects' bounds on this canvas.
+  const bx0 = Math.max(0, Math.floor(Math.min(...rects.map((r) => r.x)) * T + origin.x - m))
+  const by0 = Math.max(0, Math.floor(Math.min(...rects.map((r) => r.y)) * T + origin.y - m))
+  const bx1 = Math.min(ctx.canvas.width, Math.ceil(Math.max(...rects.map((r) => r.x + r.w)) * T + origin.x + m))
+  const by1 = Math.min(ctx.canvas.height, Math.ceil(Math.max(...rects.map((r) => r.y + r.h)) * T + origin.y + m))
+  const W = bx1 - bx0
+  const H = by1 - by0
+  if (W <= 0 || H <= 0) return
+  const ox = origin.x - bx0 // world px -> local px
+  const oy = origin.y - by0
+  let mask = new Uint8Array(W * H)
+  rects.forEach((r, k) => {
+    const s0 = (k + 1) * 31
+    const x0 = r.x * T
+    const x1 = (r.x + r.w) * T
+    const y0 = r.y * T
+    const y1 = (r.y + r.h) * T
+    for (let y = Math.max(0, Math.floor(y0 + oy - 2)); y < Math.min(H, Math.ceil(y1 + oy + 2)); y++)
+      for (let x = Math.max(0, Math.floor(x0 + ox - 2)); x < Math.min(W, Math.ceil(x1 + ox + 2)); x++) {
+        const wx = x - ox
+        const wy = y - oy
+        if (wx < x0 + Math.round(wander(s0, wy / 6) * 1.5)) continue
+        if (wx >= x1 + Math.round(wander(s0 + 1, wy / 6) * 1.5)) continue
+        if (wy < y0 + Math.round(wander(s0 + 2, wx / 6) * 1.5)) continue
+        if (wy >= y1 + Math.round(wander(s0 + 3, wx / 6) * 1.5)) continue
         mask[y * W + x] = 1
       }
-  }
-  // Round a concave corner at (cx, cy); (sx, sy) points into the grass quadrant.
-  const fillet = (cx: number, cy: number, sx: number, sy: number, R: number) => {
-    const ox = cx + sx * R
-    const oy = cy + sy * R
-    for (let j = 0; j < R; j++)
-      for (let i = 0; i < R; i++) {
-        const wx = sx < 0 ? cx - 1 - i : cx + i
-        const wy = sy < 0 ? cy - 1 - j : cy + j
-        if (Math.hypot(wx + 0.5 - ox, wy + 0.5 - oy) > R) {
-          const x = wx + off
-          const y = wy + off
-          if (x >= 0 && y >= 0 && x < W && y < H) mask[y * W + x] = 1
+  })
+  // Round the inside corners where paths meet: a closing (grow by round, then shrink by round).
+  const dist = (src: Uint8Array, want: number) => {
+    // Chamfer distance (in px) from each pixel to the nearest pixel whose value is want.
+    const d = new Float32Array(W * H)
+    const INF = 1e6
+    for (let i = 0; i < W * H; i++) d[i] = src[i] === want ? 0 : INF
+    const D = Math.SQRT2
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x
+        let v = d[i]
+        if (x > 0) v = Math.min(v, d[i - 1] + 1)
+        if (y > 0) {
+          v = Math.min(v, d[i - W] + 1)
+          if (x > 0) v = Math.min(v, d[i - W - 1] + D)
+          if (x < W - 1) v = Math.min(v, d[i - W + 1] + D)
         }
+        d[i] = v
       }
+    for (let y = H - 1; y >= 0; y--)
+      for (let x = W - 1; x >= 0; x--) {
+        const i = y * W + x
+        let v = d[i]
+        if (x < W - 1) v = Math.min(v, d[i + 1] + 1)
+        if (y < H - 1) {
+          v = Math.min(v, d[i + W] + 1)
+          if (x < W - 1) v = Math.min(v, d[i + W + 1] + D)
+          if (x > 0) v = Math.min(v, d[i + W - 1] + D)
+        }
+        d[i] = v
+      }
+    return d
   }
-  const T = TILE
-  const lx0 = 37 * T
-  const lx1 = 39 * T
-  const ly0 = 23.5 * T
-  const ly1 = 25.5 * T
-  // The two valley lanes, out past the world's edges.
-  rect(lx0, -off, lx1, H - off)
-  rect(-off, ly0, W - off, ly1)
-  for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) fillet(sx < 0 ? lx0 : lx1, sy < 0 ? ly0 : ly1, sx, sy, 7)
-  // Short spurs from each farm gate to its lane. at is the gate's centre in tiles.
-  const half = 14
-  const toLaneX = (gx: number, at: number) => {
-    const cy = (at + 0.5) * T
-    const west = gx < lx0
-    if (west) rect(gx, cy - half, lx0, cy + half)
-    else rect(lx1, cy - half, gx, cy + half)
-    const cx = west ? lx0 : lx1
-    const sx = west ? -1 : 1
-    fillet(cx, cy - half, sx, -1, 5)
-    fillet(cx, cy + half, sx, 1, 5)
-  }
-  const toLaneY = (gy: number, at: number) => {
-    const cx = (at + 0.5) * T
-    const north = gy < ly0
-    if (north) rect(cx - half, gy, cx + half, ly0)
-    else rect(cx - half, ly1, cx + half, gy)
-    const cy = north ? ly0 : ly1
-    const sy = north ? -1 : 1
-    fillet(cx - half, cy, -1, sy, 5)
-    fillet(cx + half, cy, 1, sy, 5)
-  }
-  for (const gt of farmGates()) {
-    const r = gt.rect
-    if (gt.side === 'e') toLaneX((r.x + r.w - 2) * T + 2, gt.at)
-    if (gt.side === 'w') toLaneX((r.x + 1) * T - 2, gt.at)
-    if (gt.side === 's') toLaneY((r.y + r.h - 2) * T + 2, gt.at)
-    if (gt.side === 'n') toLaneY((r.y + 1) * T + 14, gt.at)
+  if (round > 0) {
+    const toDirt = dist(mask, 1)
+    const grown = new Uint8Array(W * H)
+    for (let i = 0; i < W * H; i++) grown[i] = toDirt[i] <= round ? 1 : 0
+    const toGrass = dist(grown, 0)
+    const closed = new Uint8Array(W * H)
+    for (let i = 0; i < W * H; i++) closed[i] = mask[i] || toGrass[i] > round ? 1 : 0
+    // Keep the edges at the bounds square: a path that runs off the canvas stays open.
+    mask = closed
   }
 
-  const img = ctx.getImageData(0, 0, W, H)
+  const img = ctx.getImageData(bx0, by0, W, H)
   const d = img.data
-  const at = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : mask[y * W + x])
+  const at = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 1 : mask[y * W + x])
   const put = (x: number, y: number, c: number) => {
     const i = (y * W + x) * 4
     d[i] = c >> 16
@@ -180,12 +193,12 @@ function paintPaths(ctx: CanvasRenderingContext2D, W: number, H: number, off: nu
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       if (!mask[y * W + x]) continue
-      const wx = x - off
-      const wy = y - off
+      const wx = x - ox
+      const wy = y - oy
       const edge = !at(x - 1, y) || !at(x + 1, y) || !at(x, y - 1) || !at(x, y + 1)
       let c = BASE
       // Worn patches: a slow wash a shade darker.
-      if (wander(91, wx / 11 + wander(92, wy / 13) * 1.3) + wander(93, wy / 9) > 1.05) c = SPECK
+      if (noise2(wx / 13, wy / 9) > 0.7) c = SPECK
       const h = hash(wx * 3 + 11, wy * 5 + 7)
       if (h < 0.022) c = LIP
       else if (h < 0.034) c = LIGHT
@@ -196,14 +209,18 @@ function paintPaths(ctx: CanvasRenderingContext2D, W: number, H: number, off: nu
       put(x, y, c)
     }
   // Pebbles: a few per stretch, never on an edge.
-  for (let cy = 0; cy < H; cy += 9)
-    for (let cx = 0; cx < W; cx += 9) {
-      const h = hash(cx * 13 + 5, cy * 17 + 3)
+  const g0x = Math.floor(-ox / 9) * 9 + ox
+  const g0y = Math.floor(-oy / 9) * 9 + oy
+  for (let cy = g0y - 9 * Math.ceil(g0y / 9); cy < H; cy += 9)
+    for (let cx = g0x - 9 * Math.ceil(g0x / 9); cx < W; cx += 9) {
+      const wx = cx - ox
+      const wy = cy - oy
+      const h = hash(wx * 13 + 5, wy * 17 + 3)
       if (h > 0.13) continue
-      const x = cx + Math.floor(hash(cx, cy + 1) * 6)
-      const y = cy + Math.floor(hash(cx + 1, cy) * 6)
+      const x = cx + Math.floor(hash(wx, wy + 1) * 6)
+      const y = cy + Math.floor(hash(wx + 1, wy) * 6)
       let ok = true
-      for (let j = -2; j < 5 && ok; j++) for (let i = -2; i < 5 && ok; i++) if (!at(x + i, y + j)) ok = false
+      for (let j = -2; j < 5 && ok; j++) for (let i = -2; i < 5 && ok; i++) if (x + i < 0 || y + j < 0 || x + i >= W || y + j >= H || !mask[(y + j) * W + x + i]) ok = false
       if (!ok) continue
       const wide = h < 0.06
       put(x, y, 0xf3e6c8)
@@ -213,7 +230,32 @@ function paintPaths(ctx: CanvasRenderingContext2D, W: number, H: number, off: nu
       put(x + 1, y + 1, 0xb8966a)
       if (wide) put(x + 2, y + 1, 0xb8966a)
     }
-  ctx.putImageData(img, 0, 0)
+  ctx.putImageData(img, bx0, by0)
+}
+
+// The region's roads: north-south and east-west between the valleys, out past the world's edges,
+// and a short spur from each valley gate to its road. All in tiles.
+export function roadRects(): Rect[] {
+  const big = PAD + 2
+  const out: Rect[] = [
+    { x: ROADS.x, y: -big, w: ROADS.width, h: WORLD.h + big * 2 },
+    { x: -big, y: ROADS.y, w: WORLD.w + big * 2, h: ROADS.width },
+  ]
+  const half = 14 / TILE
+  const rx0 = ROADS.x
+  const rx1 = ROADS.x + ROADS.width
+  const ry0 = ROADS.y
+  const ry1 = ROADS.y + ROADS.width
+  for (const g of farmGates()) {
+    const r = g.rect
+    const c = g.at + 0.5
+    // From one tile inside the gate to the road.
+    if (g.side === 'e') out.push({ x: r.x + r.w - 2 + 0.125, y: c - half, w: rx0 - (r.x + r.w - 2 + 0.125), h: half * 2 })
+    if (g.side === 'w') out.push({ x: rx1, y: c - half, w: r.x + 1 - 0.125 - rx1, h: half * 2 })
+    if (g.side === 's') out.push({ x: c - half, y: r.y + r.h - 2 + 0.125, w: half * 2, h: ry0 - (r.y + r.h - 2 + 0.125) })
+    if (g.side === 'n') out.push({ x: c - half, y: ry1, w: half * 2, h: r.y + 1 + 0.875 - ry1 })
+  }
+  return out
 }
 
 // Farm fences and their gates. The gates face the lanes.
@@ -225,12 +267,48 @@ function farmGates() {
 
 function farmFences() {
   const [bl, br] = OTHER_FARMS
+  const ours = FARM.rect
+  const nb = NEIGHBOUR.rect
   return [
-    { rect: FARM.rect, gates: [{ side: 'e' as const, at: 12 }, { side: 's' as const, at: 19 }] },
-    { rect: NEIGHBOUR.rect, gates: [{ side: 'w' as const, at: 12 }, { side: 's' as const, at: 57 }] },
-    { rect: bl.rect, gates: [{ side: 'e' as const, at: bl.rect.y + 6 }, { side: 'n' as const, at: 19 }] },
-    { rect: br.rect, gates: [{ side: 'w' as const, at: br.rect.y + 6 }, { side: 'n' as const, at: 57 }] },
+    { rect: ours, gates: [{ side: 'e' as const, at: ours.y + 10 }, { side: 's' as const, at: ours.x + 17 }] },
+    { rect: nb, gates: [{ side: 'w' as const, at: nb.y + 10 }, { side: 's' as const, at: nb.x + 17 }] },
+    { rect: bl.rect, gates: [{ side: 'e' as const, at: bl.rect.y + 6 }, { side: 'n' as const, at: bl.rect.x + 17 }] },
+    { rect: br.rect, gates: [{ side: 'w' as const, at: br.rect.y + 6 }, { side: 'n' as const, at: br.rect.x + 17 }] },
   ]
+}
+
+// Past the padded ground (only very tall or wide windows get there) the roads carry on:
+// a stretch of each road is cut from the ground and repeated out to the edge of the view.
+function extendRoads(ctx: CanvasRenderingContext2D, ground: HTMLCanvasElement, cam: Camera, W: number, H: number) {
+  const T = TILE
+  const P = PAD * T
+  const vx0 = cam.x
+  const vy0 = cam.y
+  const vx1 = cam.x + W / cam.scale
+  const vy1 = cam.y + H / cam.scale
+  const seg = 64
+  // North-south road: its stretch from the top of the padding.
+  const sx = (ROADS.x - 1) * T
+  const sw = (ROADS.width + 2) * T
+  for (const [from, to] of [[vy0, -P], [WORLD.h * T + P, vy1]] as const)
+    for (let y = from < 0 ? -P - seg : WORLD.h * T + P; from < 0 ? y + seg > from : y < to; y += from < 0 ? -seg : seg)
+      ctx.drawImage(ground, sx + P, 2 * T, sw, seg, sx, y, sw, seg)
+  // East-west road: its stretch from the left of the padding.
+  const sy = (ROADS.y - 1) * T
+  const sh = (ROADS.width + 2) * T
+  for (const [from, to] of [[vx0, -P], [WORLD.w * T + P, vx1]] as const)
+    for (let x = from < 0 ? -P - seg : WORLD.w * T + P; from < 0 ? x + seg > from : x < to; x += from < 0 ? -seg : seg)
+      ctx.drawImage(ground, 2 * T, sy + P, seg, sh, x, sy, seg, sh)
+}
+
+// Fields in the neighbouring valleys, in world tiles. The Session API v2 fields are drawn live
+// (one of them dries up in the story); the others are painted once.
+function regionFields() {
+  const out: { plot: Rect; crop: string; stage: number; drawn: boolean }[] = []
+  for (const np of NEIGHBOUR_PLOTS) out.push({ plot: np.plot, crop: np.crop, stage: np.stage, drawn: true })
+  for (const o of OTHER_FARMS)
+    for (const fd of o.fields) out.push({ plot: { x: o.rect.x + fd.x, y: o.rect.y + fd.y, w: fd.w, h: fd.h }, crop: fd.crop, stage: fd.stage, drawn: false })
+  return out
 }
 
 function buildBackground() {
@@ -242,7 +320,7 @@ function buildBackground() {
       const n = hash(x, y)
       if (n < 0.16) draw(g.ctx, `grass_deco_${Math.floor(n * 75) % 12}`, (x + PAD) * TILE, (y + PAD) * TILE)
     }
-  paintPaths(g.ctx, g.c.width, g.c.height, PAD * TILE)
+  drawPaths(g.ctx, roadRects(), { x: PAD * TILE, y: PAD * TILE }, 7)
   g.ctx.translate(PAD * TILE, PAD * TILE)
   drawPond(g.ctx, 0)
   // Flowers in the grass.
@@ -250,27 +328,38 @@ function buildBackground() {
   draw(g.ctx, 'flower_4', 30.5 * TILE, 21.5 * TILE)
   draw(g.ctx, 'flower_6', 4 * TILE, 20 * TILE)
 
+  // The neighbouring valleys' fields: a bed of crops each, fenced, with a gate on the low side.
+  for (const fd of regionFields()) {
+    if (!fd.drawn) {
+      bed(g.ctx, fd.plot, false)
+      for (let j = 0; j < fd.plot.h; j++) for (let i = 0; i < fd.plot.w; i++) draw(g.ctx, `crop_${fd.crop}_${fd.stage}`, (fd.plot.x + i) * TILE, (fd.plot.y + j) * TILE)
+    }
+  }
   const f = layer()
   for (const fm of farmFences()) fenceRect(f.ctx, fm.rect, fm.gates)
+  for (const fd of regionFields()) fenceRect(f.ctx, { x: fd.plot.x - 2, y: fd.plot.y - 2, w: fd.plot.w + 4, h: fd.plot.h + 4 }, [{ side: 's', at: fd.plot.x + Math.floor(fd.plot.w / 2) }])
 
-  const b = layer()
+  const b = layer(PAD)
   // Trees along the valley edge.
-  const trees: [string, number, number][] = [
-    ['tree_big', 0, 0], ['tree', 35, 0.5], ['tree_small', 39.5, 22], ['tree', 74, 0.2], ['tree_big', 73, 20],
-    ['tree', 0, 21], ['tree_small', 36, 43], ['tree', 74, 43], ['tree_big', 0.2, 43],
-  ]
-  for (const [n, x, y] of trees) draw(b.ctx, n, x * TILE, y * TILE - 8)
-  // The first other farm is a flower garden; the second is an orchard.
-  const garden = OTHER_FARMS[0].rect
-  for (let y = garden.y + 6; y < garden.y + garden.h - 2; y += 2)
-    for (let x = garden.x + 4; x < garden.x + garden.w - 3; x += 2) {
-      const n = hash(x, y)
-      draw(b.ctx, n < 0.5 ? `crop_tulip_${n < 0.2 ? 2 : 3}` : `flower_${Math.floor(n * 8)}`, x * TILE, y * TILE)
+  // Trees along the region's edges and the roadsides, past the world too, so the edge never looks cut.
+  const trees: [string, number, number][] = []
+  for (let y = -PAD; y < WORLD.h + PAD; y += 3)
+    for (let x = -PAD; x < WORLD.w + PAD; x += 3) {
+      const inside = x > -2 && y > -2 && x < WORLD.w && y < WORLD.h - 1
+      const road = (x + 2 > ROADS.x - 1 && x < ROADS.x + ROADS.width + 1) || (y + 1 > ROADS.y - 1 && y - 1 < ROADS.y + ROADS.width + 1)
+      if (inside || road) continue
+      const n = hash(x * 7 + 3, y * 11 + 5)
+      if (n < 0.55) trees.push([n < 0.15 ? 'tree_big' : n < 0.35 ? 'tree' : 'tree_small', x + n * 1.5, y + hash(x, y) * 1.5])
     }
+  for (const [n, x, y] of trees) draw(b.ctx, n, (x + PAD) * TILE, (y + PAD) * TILE - 8)
+  b.ctx.translate(PAD * TILE, PAD * TILE)
+  // The garden valley keeps flowers by its house; the orchard valley keeps rows of fruit trees.
+  const garden = OTHER_FARMS[0]
+  for (let i = 0; i < 6; i++) draw(b.ctx, `flower_${(i * 5) % 12}`, (garden.house.x + i * 0.9) * TILE, (garden.house.y + 4.6 + (i % 2) * 0.4) * TILE)
   const orchard = OTHER_FARMS[1].rect
   const fruit = ['tree_apple', 'tree_orange', 'tree_pear', 'tree_peach']
-  for (let y = orchard.y + 6; y < orchard.y + orchard.h - 3; y += 4)
-    for (let x = orchard.x + 3; x < orchard.x + orchard.w - 4; x += 4) draw(b.ctx, fruit[(x + y) % 4], x * TILE, y * TILE - 8)
+  for (let y = orchard.y + 8; y < orchard.y + orchard.h - 3; y += 4)
+    for (let x = orchard.x + 21; x < orchard.x + orchard.w - 3; x += 4) draw(b.ctx, fruit[(x + y) % 4], x * TILE, y * TILE - 8)
   // Houses that never react. Your farmhouse is a prop and is drawn live.
   for (const h of [FARM.barn, NEIGHBOUR.house, ...OTHER_FARMS.map((o) => o.house)]) draw(b.ctx, h.sprite, h.x * TILE, h.y * TILE)
   layers = { ground: g.c, fences: f.c, buildings: b.c }
@@ -453,12 +542,13 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     ctx.fillRect(Math.floor(cam.x / TILE) * TILE - TILE, Math.floor(cam.y / TILE) * TILE - TILE, W / cam.scale + TILE * 3, H / cam.scale + TILE * 3)
   }
   ctx.drawImage(L.ground, -PAD * TILE, -PAD * TILE)
+  extendRoads(ctx, L.ground, cam, W, H)
   drawPond(ctx, Math.floor(clock * 2.5) % 4)
   ctx.globalAlpha = fade(0.35)
   ctx.drawImage(L.fences, 0, 0)
   const built = fade(0.7)
   ctx.globalAlpha = built
-  ctx.drawImage(L.buildings, 0, 0)
+  ctx.drawImage(L.buildings, -PAD * TILE, -PAD * TILE)
   ctx.globalAlpha = 1
 
   const replay = !!e.trace
@@ -478,19 +568,22 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     hits.push({ kind: 'nplot', id: np.name, rect: px(np.plot), title: np.name, body: `${NEIGHBOUR.name}${dry ? ', retired /v1/session' : ''}` })
   }
 
-  // During an ask (or the re-plan it leads to), everything but the asking plot, its farmhand and the crow dims.
-  const ask = e.activeAsk
-  const focusTask = e.phase === 'grow' && e.replan?.status === 'open' ? MISSING.taskId : e.phase === 'grow' && ask && ask.from !== 'head' ? ask.taskId : null
-  const focusFh: RoleId | null = focusTask ? (ask && ask.from !== 'head' ? ask.from : e.task(focusTask).assignee) : null
+  // Two pages share this map. The valley page shows each field as its agent, one big character standing on it.
+  // A farm page is one agent's field, filling the view with its plots, its farmhand and its helpers.
+  const farmPage = e.view === 'farm' && e.fieldPage ? e.fieldOf(e.fieldPage) : null
+  const big = e.view === 'farm' && !farmPage && !(e.intro && e.beat < 2)
+  // During an ask (or the re-plan it leads to), only the asking agent's field stays lit, with the crow.
+  const focusField = farmPage ? null : focusOf(e)
+  const focusRoles: RoleId[] = focusField?.roles ?? []
+  const fieldTasks = (f: FieldSlot) => e.tasks.filter((t) => f.roles.includes(t.assignee))
+  const fieldDone = (f: FieldSlot) => planned && fieldTasks(f).length > 0 && fieldTasks(f).every((t) => e.taskRipe(t)) && !(e.phase === 'harvest' && e.harvestStage === 'map')
 
   // Plots. During Plan the head farmer tills them one by one. Finished plots fade back.
   const drawPlot = (t: Task, i: number, again = false) => {
     const r = t.plot
     const bedRect = { x: r.x - 1, y: r.y - 1, w: r.w + 2, h: r.h + 2 }
     let shown = planned
-    const doneDim = planned && !again && e.taskRipe(t) && !(e.phase === 'harvest' && e.harvestStage === 'map') ? 0.6 : 1
     ctx.save()
-    ctx.globalAlpha = doneDim
     if (planning) {
       const k = i < e.planShown ? 1 : i === e.planShown ? (e.head.till[i] ?? 0) : 0
       if (k <= 0) return ctx.restore()
@@ -548,36 +641,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       // Picked plots go quiet, except a failed gate: its cross stays through the harvest.
       const em0 = plotEmote(e, t)
       const em = (e.picked.has(t.id) && em0 !== 'cross') || (em0 !== 'check' && em0 !== 'cross') ? null : em0
-      if (em) worldEmote(ctx, sx + 8, sy - 1, em, clock)
-    }
-
-    // Files, skills and tools the task uses, along the left edge. The column tightens to fit them all.
-    const slots = t.signposts.length + (replay && t.id === MISSING.taskId && !t.signposts.includes(MISSING.file) ? 1 : 0)
-    const step = Math.min(0.7, (r.h + 0.7) / Math.max(1, slots))
-    t.signposts.forEach((s, k) => {
-      const px0 = (r.x - 2) * TILE
-      const py0 = (r.y + k * step + 0.3) * TILE
-      const kind = e.lib(s).kind
-      draw(ctx, 'sign_blank', px0, py0)
-      if (kind === 'tool') {
-        // An MCP tool: a small teal plate on the sign, so tools read apart from files and skills.
-        ctx.fillStyle = '#2f6b5e'
-        ctx.fillRect(px0 + 5, py0 + 4, 6, 4)
-      }
-      const verb = kind === 'tool' ? 'Called by' : kind === 'skill' ? 'Used by' : 'Read by'
-      const added = s === MISSING.file && e.flags.has('replanApplied')
-      if (!again) hits.push({ kind: 'signpost', id: `${t.id}:${s}`, rect: { x: px0, y: py0, w: 16, h: 16 }, title: s, body: added ? 'Added by the re-plan' : `${verb} ${t.name}` })
-    })
-    if (replay && t.id === MISSING.taskId && !t.signposts.includes(MISSING.file)) {
-      // The missing file: what this task's agent never saw.
-      const k = t.signposts.length
-      const px0 = (r.x - 2) * TILE
-      const py0 = (r.y + k * step + 0.3) * TILE
-      ctx.save()
-      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(clock * 5)
-      ctx.strokeStyle = '#d9715f'
-      ctx.strokeRect(px0 + 1.5, py0 + 1.5, 13, 13)
-      ctx.restore()
+      if (em) worldEmote(ctx, (bedRect.x + bedRect.w / 2) * TILE, sy + 6, em, clock)
     }
 
     // Pests.
@@ -613,8 +677,74 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       body: planned ? `${e.farmhands[t.assignee].role}. ${st.text}. ${cost}.` : `Proposed for ${e.farmhands[t.assignee].role}`,
     })
   }
-  e.tasks.forEach((t, i) => drawPlot(t, i))
 
+  // Dependencies between agents are paths between fields: dotted while waiting, solid once the upstream draft is ready.
+  if ((planning || planned) && !e.intro) drawDeps(ctx, e)
+
+  // The fields: one per agent, fenced in its colours, with its plots and the files, skills and tools on its top rail.
+  const drawField = (f: FieldSlot, again = false) => {
+    const r = f.rect
+    ctx.save()
+    if (!again && !farmPage && fieldDone(f)) ctx.globalAlpha *= 0.6
+    fieldFence(ctx, r, f.style.fence)
+    if (big) {
+      // One patch of the field's crop, as ripe as its least-grown task, for the big character to stand on.
+      const ts = fieldTasks(f)
+      if (ts.length && (planning || planned)) {
+        const patch = { x: r.x + 2, y: r.y + 2, w: r.w - 4, h: 2 }
+        bed(ctx, patch, false)
+        if (planned) {
+          const p = Math.min(...ts.map((t) => (e.taskRipe(t) ? 1 : t.subtasks.reduce((n, x) => n + (x.done ? 1 : x.progress), 0) / t.subtasks.length)))
+          const st = p >= 1 ? 3 : p > 0.55 ? 2 : p > 0 ? 1 : 0
+          for (let j = 0; j < patch.h; j++) for (let i = 0; i < patch.w; i++) draw(ctx, `crop_${ts[0].crop}_${st}`, (patch.x + i) * TILE, (patch.y + j) * TILE)
+        }
+      }
+      ctx.restore()
+      if (!again) hits.push({ kind: 'field', id: f.id, rect: px(r), title: f.name, body: f.roles.length ? 'Open this farm' : 'No task in this plan' })
+      return
+    }
+    if (planning || planned) {
+      const posts: { t: Task; s: string; missing?: boolean }[] = []
+      for (const t of fieldTasks(f)) {
+        for (const sp of t.signposts) if (!posts.some((p) => p.s === sp)) posts.push({ t, s: sp })
+        if (replay && t.id === MISSING.taskId && !t.signposts.includes(MISSING.file)) posts.push({ t, s: MISSING.file, missing: true })
+      }
+      const step = Math.min(0.75, (r.w - 2.4) / Math.max(1, posts.length))
+      posts.forEach((p, k) => {
+        const px0 = Math.round((r.x + r.w - 1.15 - k * step) * TILE)
+        const py0 = Math.round((r.y - 0.85) * TILE)
+        if (p.missing) {
+          // The missing file: what this agent never saw.
+          ctx.save()
+          ctx.globalAlpha *= 0.5 + 0.3 * Math.sin(clock * 5)
+          ctx.strokeStyle = '#d9715f'
+          ctx.strokeRect(px0 + 1.5, py0 + 1.5, 13, 13)
+          ctx.restore()
+          return
+        }
+        const kind = e.lib(p.s).kind
+        draw(ctx, 'sign_blank', px0, py0)
+        if (kind === 'tool') {
+          // An MCP tool: a small teal plate on the sign, so tools read apart from files and skills.
+          ctx.fillStyle = '#2f6b5e'
+          ctx.fillRect(px0 + 5, py0 + 4, 6, 4)
+        }
+        const verb = kind === 'tool' ? 'Called by' : kind === 'skill' ? 'Used by' : 'Read by'
+        const added = p.s === MISSING.file && e.flags.has('replanApplied')
+        if (!again) hits.push({ kind: 'signpost', id: `${p.t.id}:${p.s}`, rect: { x: px0, y: py0, w: 16, h: 16 }, title: p.s, body: added ? 'Added by the re-plan' : `${verb} ${f.name}` })
+      })
+    }
+    e.tasks.forEach((t, i) => {
+      if (f.roles.includes(t.assignee)) drawPlot(t, i, again)
+    })
+    ctx.restore()
+    if (!again) hits.push({ kind: 'field', id: f.id, rect: px(r), title: f.name, body: fieldTasks(f).length ? fieldTasks(f).map((t) => t.name).join(', ') : 'No task in this plan' })
+  }
+  if (!e.intro || e.beat >= 2) for (const f of e.fields) drawField(f)
+  // A task whose agent has no field of its own still gets its plot.
+  e.tasks.forEach((t, i) => {
+    if (!e.fieldOf(t.assignee)) drawPlot(t, i)
+  })
   // ---- things that sit on the ground, sorted with the characters by their feet ----
   type Drawable = { y: number; fn: () => void }
   const list: Drawable[] = []
@@ -630,11 +760,12 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     hits.push({ kind: 'prop', id: p.id, rect: px({ x: p.x, y: p.y, w: p.w, h: p.h }), title: '' })
   }
 
-  // The shipping crate, where the harvest goes. Bigger than the file chest and marked with a sign,
-  // and it sits above the spots where the crew stops, so nobody stands on it.
+  // The shipping crate in front of the barn, where the harvest waits for the cart. Same size as the other props.
   const sh = FARM.shipping
-  const shipOpen = e.phase === 'harvest' && e.harvestStage === 'map'
+  const shipK = reactK(e.pokes.shipping, clock)
+  const shipOpen = shipK >= 0 || (e.phase === 'harvest' && e.harvestStage === 'map')
   list.push({ y: sh.y + 0.55, fn: () => drawCrate(ctx, sh.x, sh.y, shipOpen, e.picked.size) })
+  hits.push({ kind: 'crate', id: 'shipping', rect: { x: sh.x * TILE - 10, y: sh.y * TILE - 6, w: 20, h: 16 }, title: 'Shipping crate', body: 'Ripe crops wait here for the cart.' })
 
   // Ship: the cart with the harvest drives out along the valley road, and comes back on a rollback.
   const cartPos = cartSpot(e)
@@ -653,40 +784,59 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
   hits.push({ kind: 'head', id: 'head', rect: { x: hf.x * TILE - 8, y: hf.y * TILE - 18, w: 16, h: 20 }, title: 'Head farmer', body: headStatus(e) })
 
   for (const fh of Object.values(e.farmhands)) {
-    if (fh.inside || (e.intro && e.beat < 2)) continue
+    if (fh.inside || (e.intro && e.beat < 2) || (big && e.fieldOf(fh.id) && !e.carrying[fh.id])) continue
     list.push({ y: fh.y, fn: () => drawFarmhand(ctx, e, fh, clock) })
     // The hit box is the body; collision elsewhere uses only the feet.
     hits.push({ kind: 'farmhand', id: fh.id, rect: { x: fh.x * TILE - 8, y: fh.y * TILE - 18, w: 16, h: 20 }, title: fh.role, body: e.fhStatus(fh) })
   }
 
-  // The neighbouring crew, wandering between its plots.
-  const lead = { x: 64.5 + Math.sin(clock * 0.3) * 0.4, y: 8.6 }
-  list.push({ y: lead.y, fn: () => drawChar(ctx, lead.x, lead.y, 'idle', 'down', clock, { body: '#d7c6f0', shade: '#a596c9' }) })
-  hits.push({ kind: 'neighbour', id: 'lead', rect: { x: lead.x * TILE - 8, y: lead.y * TILE - 18, w: 16, h: 20 }, title: `${NEIGHBOUR.name} head farmer`, body: NEIGHBOUR.team })
-  NEIGHBOUR_PLOTS.slice(0, 3).forEach((np, i) => {
-    const ph = clock * 0.22 + i * 2.1
-    const k = (Math.sin(ph) + 1) / 2
-    const x = np.plot.x + 0.5 + k * (np.plot.w - 1)
-    const y = np.plot.y + np.plot.h + 0.55
-    const moving = Math.abs(Math.cos(ph)) > 0.25
-    const dir: Dir = moving ? (Math.cos(ph) > 0 ? 'right' : 'left') : 'up'
-    list.push({ y, fn: () => drawChar(ctx, x, y, moving ? 'walk' : 'water', dir, clock, { body: '#c9d3dc', shade: '#9aa6b2' }, 0.75) })
-  })
-
-  // Other farms in the valley: a couple of farmhands each.
-  OTHER_FARMS.forEach((f, fi) => {
-    for (let i = 0; i < 2; i++) {
-      const ph = clock * 0.18 + i * 3 + fi
-      const x = f.rect.x + 8 + i * 9 + Math.sin(ph) * 3
-      const y = f.rect.y + 9 + i * 3
-      list.push({ y, fn: () => drawChar(ctx, x, y, 'walk', Math.cos(ph) > 0 ? 'right' : 'left', clock, { body: '#e7dcc4', shade: '#c4b79a' }, 0.8) })
+  // Helpers: a subagent the agent started, smaller, at the other end of the plot. It leaves when its subtask is done.
+  if (!big)
+    for (const t of e.tasks) {
+      const sub = e.helperOn(t)
+      if (!sub) continue
+      const fh = e.farmhands[t.assignee]
+      const left = fh.x > t.plot.x + t.plot.w / 2
+      const hx = left ? t.plot.x + 0.35 : t.plot.x + t.plot.w - 0.35
+      const hy = t.plot.y + t.plot.h + 0.55
+      list.push({ y: hy, fn: () => drawSmallChar(ctx, hx, hy, 'water', 'up', clock + 1.7, { body: fh.color, shade: fh.colorDark }, 0.7) })
+      hits.push({ kind: 'helper', id: `${t.id}:helper`, rect: { x: hx * TILE - 6, y: hy * TILE - 13, w: 12, h: 14 }, title: `${fh.role}'s helper`, body: `A subagent working on ${sub.name}. It leaves when that's done.` })
     }
-  })
+  // An agent with no builder role in this crew still stands on its field.
+  if (!big && (planning || planned))
+    for (const f of e.fields) {
+      if (f.roles.length) continue
+      const x = f.rect.x + f.rect.w / 2
+      const y = f.rect.y + 4.55
+      list.push({ y, fn: () => drawChar(ctx, x, y, 'idle', 'down', clock + f.rect.x, { body: f.style.body, shade: f.style.shade }, 0.85) })
+    }
 
-  // Chickens. Clicked: a hop and a heart. Three clicks and it runs off.
+  // The neighbouring valleys' crews: one farmhand per field, working along it in a loop.
+  // In the region view their head farmers stand big in the middle instead (drawn later, on screen).
+  const region = e.view === 'valley' && !e.intro
+  const lead = { x: NEIGHBOUR.house.x - 1.5 + Math.sin(clock * 0.3) * 0.4, y: NEIGHBOUR.house.y + 5.6 }
+  if (!region) {
+    list.push({ y: lead.y, fn: () => drawChar(ctx, lead.x, lead.y, 'idle', 'down', clock, { body: '#d7c6f0', shade: '#a596c9' }) })
+    hits.push({ kind: 'neighbour', id: 'lead', rect: { x: lead.x * TILE - 8, y: lead.y * TILE - 18, w: 16, h: 20 }, title: `${NEIGHBOUR.name} head farmer`, body: NEIGHBOUR.team })
+  }
+  const crews = [
+    { tint: { body: '#c9d3dc', shade: '#9aa6b2' }, plots: NEIGHBOUR_PLOTS.map((np) => np.plot) },
+    ...OTHER_FARMS.map((o, oi) => ({
+      tint: oi === 0 ? { body: '#e7dcc4', shade: '#c4b79a' } : { body: '#d9e6c4', shade: '#aebd96' },
+      plots: o.fields.map((fd) => ({ x: o.rect.x + fd.x, y: o.rect.y + fd.y, w: fd.w, h: fd.h })),
+    })),
+  ]
+  crews.forEach((c, ci) =>
+    c.plots.forEach((plot, i) => {
+      const pose = fieldWork(plot, clock, ci * 5 + i)
+      list.push({ y: pose.y, fn: () => drawChar(ctx, pose.x, pose.y, pose.anim, pose.dir, clock + i, c.tint) })
+    }),
+  )
+
+  // Chickens. Clicked: a heart over it, no hop. Three clicks and it runs off.
   e.chickens.forEach((c, i) => {
     const k = reactK(e.pokes[`chicken-${i}`], clock)
-    const hop = k >= 0 ? Math.sin(k * Math.PI) * 5 : 0
+    const hop = 0
     const moving = Math.hypot(c.tx - c.x, c.ty - c.y) > 0.05 && c.wait <= 0
     list.push({
       y: c.y,
@@ -702,16 +852,30 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
 
   list.sort((a, b) => a.y - b.y).forEach((d) => d.fn())
 
-  // Focus on an ask: a dark veil over the farm, then the asking plot and its farmhand again on top.
-  if (focusTask) {
+  // A farm page: everything outside the one field sits under a solid veil, so the field reads as its own page.
+  if (farmPage) {
+    const r = farmPage.rect
+    ctx.save()
+    ctx.fillStyle = 'rgba(52, 44, 62, 0.72)'
+    ctx.beginPath()
+    ctx.rect(-PAD * TILE, -PAD * TILE, (WORLD.w + PAD * 2) * TILE, (WORLD.h + PAD * 2) * TILE)
+    ctx.rect((r.x - 0.25) * TILE, (r.y - 1.1) * TILE, (r.w + 0.5) * TILE, (r.h + 1.35) * TILE)
+    ctx.fill('evenodd')
+    ctx.restore()
+  }
+
+  // Focus on an ask: a dark veil over the valley, then the asking field and its farmhand again on top.
+  if (focusField) {
     ctx.save()
     ctx.fillStyle = 'rgba(46, 36, 58, 0.42)'
-    ctx.fillRect(0, 0, WORLD.w * TILE, WORLD.h * TILE)
+    ctx.fillRect(-PAD * TILE, -PAD * TILE, (WORLD.w + PAD * 2) * TILE, (WORLD.h + PAD * 2) * TILE)
     ctx.restore()
-    const ti = e.tasks.findIndex((t) => t.id === focusTask)
-    if (ti >= 0) drawPlot(e.tasks[ti], ti, true)
-    const ffh = focusFh ? e.farmhands[focusFh] : null
-    if (ffh && !ffh.inside) drawFarmhand(ctx, e, ffh, clock)
+    drawField(focusField, true)
+    if (!big)
+      for (const r of focusRoles) {
+        const ffh = e.farmhands[r]
+        if (!ffh.inside) drawFarmhand(ctx, e, ffh, clock)
+      }
   }
 
   // Pond: a ripple where you clicked, and now and then a fish.
@@ -818,43 +982,75 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
 
   if (e.view === 'farm' && !(e.intro && e.beat < 2)) {
     const placed: Box[] = []
-    const dimOf = (id: RoleId | 'head') => (focusTask && id !== focusFh ? 0.45 : 1)
+    const dimOf = (id: RoleId | 'head') => (focusField && !(id !== 'head' && focusRoles.includes(id)) ? 0.45 : 1)
+    // Each field's name on a plate over its top rail at the left, with a bar in the field's colour.
+    if (!e.intro || e.beat >= 2)
+      for (const f of e.fields) {
+        if (farmPage && f !== farmPage) continue
+        const p = toScreen(f.rect.x + 0.1, f.rect.y + 0.25)
+        if (p.x > W || p.y > H || p.x < -200 || p.y < -40) continue
+        p.y -= 11
+        const a = (focusField && focusField !== f ? 0.45 : 1) * (fieldDone(f) && !farmPage ? 0.75 : 1)
+        nameLine(ctx, p.x, p.y, f.name, '', a, placed, false, 'left', f.style.fence)
+      }
+    // Zoomed out: one big character per field is the field's status.
+    if (big)
+      for (const f of e.fields) {
+        const st = fieldState(e, f)
+        const feet = toScreen(f.rect.x + f.rect.w / 2, f.rect.y + 4.7)
+        const S = Math.max(4, Math.min(6, Math.round(cam.scale * 2.5)))
+        const key = `${f.id}:${st.state}`
+        const prev = bigSince.get(f.id)
+        if (!prev || prev.key !== key) bigSince.set(f.id, { key, t: clock })
+        const a = focusField && focusField !== f ? 0.45 : 1
+        ctx.save()
+        ctx.globalAlpha = a
+        drawBigChar(ctx, Math.round(feet.x), Math.round(feet.y), st.state, f.roles.length ? { body: e.farmhands[f.roles[0]].color, shade: e.farmhands[f.roles[0]].colorDark } : { body: f.style.body, shade: f.style.shade }, clock, S, { reason: st.reason, age: clock - bigSince.get(f.id)!.t, anim: st.anim })
+        ctx.restore()
+        hits.push({ kind: 'field', id: f.id, rect: { x: (f.rect.x + 0.5) * TILE, y: (f.rect.y + 0.2) * TILE, w: (f.rect.w - 1) * TILE, h: (f.rect.h - 0.2) * TILE }, title: f.name, body: `${st.words}. ${f.roles.length ? 'Click to open this farm.' : ''}` })
+        nameLine(ctx, feet.x, feet.y + 4, f.name, st.words, a, placed)
+      }
     // The head farmer: its line, and the ask glyph when the ask is its own.
     const hfeet = toScreen(hf.x, hf.y)
     const inView = (p: { x: number; y: number }) => p.x > 0 && p.x < W && p.y > 0 && p.y < H + 24
-    if (!e.intro && inView(hfeet)) {
+    if (!e.intro && !farmPage && inView(hfeet)) {
       const asking = headWaiting(e)
       const g: Glyph | null = asking ? { kind: 'ask', reason: e.activeAsk?.from === 'head' ? e.activeAsk.label : 'Anomaly' } : e.headThinking > 0 ? { kind: 'work' } : null
       const a = dimOf('head')
-      if (g) glyph(ctx, hfeet.x, hfeet.y - 18 * cam.scale, g, glyphPulse('head', g, clock), clock, a)
+      if (g) glyph(ctx, hfeet.x, hfeet.y - (HEAD + 2) * cam.scale, g, glyphPulse('head', g, clock), clock, a)
       nameLine(ctx, hfeet.x, hfeet.y + 3, 'Head farmer', asking ? 'Needs you' : '', a, placed)
     }
     for (const fh of Object.values(e.farmhands)) {
-      if (fh.inside || fh.fade <= 0.05) continue
+      if (fh.inside || fh.fade <= 0.05 || (big && e.fieldOf(fh.id) && !e.carrying[fh.id])) continue
+      if (farmPage && !farmPage.roles.includes(fh.id)) continue
       const feet = toScreen(fh.x, fh.y)
       if (!inView(feet)) continue
       const g = fhGlyph(e, fh)
-      const a = dimOf(fh.id) * (g?.kind === 'sleep' ? 0.6 : 1) * fh.fade
-      const top = feet.y - 18 * cam.scale
+      const a = dimOf(fh.id) * (g?.kind === 'done' ? 0.6 : 1) * fh.fade
+      // The head's top: the body spans frame rows 16 to 32 with the feet at 33, so 17 world px above the feet.
+      const head = feet.y - HEAD * cam.scale
       const reacting = clock - fh.react < REACT * 2
       if (reacting) {
+        // A heart just above the head, rising a little as it fades.
+        const k = (clock - fh.react) / (REACT * 2)
         ctx.save()
         ctx.imageSmoothingEnabled = false
-        pixel(ctx, 'heart', feet.x, top - 10 - (reduced ? 0 : ((clock - fh.react) / (REACT * 2)) * 8), 1, Math.max(1, cam.scale * 0.6))
+        pixel(ctx, 'heart', Math.round(feet.x), Math.round(head - 6 * cam.scale - (reduced ? 0 : k * 4 * cam.scale)), 1 - k * 0.5, cam.scale * 0.75)
         ctx.restore()
-      } else if (g && !e.carrying[fh.id]) glyph(ctx, feet.x, top, g, glyphPulse(fh.id, g, clock), clock, a)
+      } else if (g && !e.carrying[fh.id]) glyph(ctx, feet.x, head - 2 * cam.scale, g, glyphPulse(fh.id, g, clock), clock, a)
       nameLine(ctx, feet.x, feet.y + 3, fh.role, stateLine(e, fh), a, placed, e.selected === fh.id)
     }
-    if (e.crow.state === 'landed') {
-      const p = toScreen(CROW_SPOT.x, CROW_SPOT.y - 1.5)
+    if (e.crow.state === 'landed' && (!farmPage || farmPage.roles.includes('tests'))) {
+      const p = toScreen(CROW_SPOT.x, CROW_SPOT.y - 1.2)
       glyph(ctx, p.x, p.y, { kind: 'ask', reason: 'Anomaly' }, glyphPulse('crow', { kind: 'ask', reason: 'Anomaly' }, clock), clock, 1)
     }
     // The task name for the plot in focus, just above its bed, right of the crop sign.
-    if (planning || planned)
+    if ((planning || planned) && !big)
       e.tasks.forEach((t, i) => {
-        if (!focusIds.has(t.id) || (planning && i >= e.planShown)) return
+        if (farmPage ? !farmPage.roles.includes(t.assignee) : !focusIds.has(t.id)) return
+        if (planning && i >= e.planShown) return
         const p = toScreen(t.plot.x + 0.35, t.plot.y - 1.05)
-        nameLine(ctx, p.x, p.y - 19, t.name, '', focusTask && t.id !== focusTask ? 0.45 : 1, placed, false, 'left')
+        nameLine(ctx, p.x, p.y - 19, t.name, '', focusField && !focusRoles.includes(t.assignee) ? 0.45 : 1, placed, false, 'left')
       })
   }
 
@@ -881,11 +1077,13 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     const p = toScreen(f.rect.x + f.rect.w / 2, f.rect.y + 0.1)
     ctx.save()
     ctx.globalAlpha = nameAlpha
-    if (e.view === 'valley' && !e.intro) valleyCard(ctx, p.x, toScreen(0, f.rect.y + f.rect.h / 2).y, f.name, statsFor(e, f.name))
-    else if (e.intro || f.name === FARM.name || f.name === NEIGHBOUR.name) banner(ctx, p.x, p.y, f.name)
+    if (e.view === 'valley' && !e.intro) regionValley(ctx, e, f.name, f.rect, cam, toScreen, clock)
+    else if (e.intro || f.name === FARM.name || f.name === NEIGHBOUR.name || f.name === e.peekName) banner(ctx, p.x, p.y, f.name)
     ctx.restore()
     hits.push({ kind: 'farm', id: f.name, rect: px(f.rect), title: f.name, body: f.team })
   }
+  // Over the valleys' veils: the dependency between our project and Session API v2.
+  if (e.view === 'valley' && !e.intro) dependencyPath(ctx, e, toScreen, clock)
 
   // Opening beat 2: what each farm has promised.
   if (e.intro && e.beat === 1) {
@@ -901,7 +1099,31 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     ctx.restore()
   }
 
+  if (farmPage) {
+    const r = px({ x: farmPage.rect.x - 0.25, y: farmPage.rect.y - 1.1, w: farmPage.rect.w + 0.5, h: farmPage.rect.h + 1.35 })
+    return { hits: hits.filter((h) => h.rect.x + h.rect.w > r.x && h.rect.x < r.x + r.w && h.rect.y + h.rect.h > r.y && h.rect.y < r.y + r.h) }
+  }
   return { hits }
+}
+
+// A farmhand working a field in a loop: walk to a spot along the field's low edge, water or till
+// there facing the crop for a few seconds, then on to the next. Facing always matches the motion.
+function fieldWork(plot: Rect, clock: number, seed: number): { x: number; y: number; anim: string; dir: Dir } {
+  const spots = [0.2, 0.55, 0.85, 0.55].map((k) => plot.x + 0.5 + k * (plot.w - 1))
+  const y = plot.y + plot.h + 0.55
+  const WALK = 1.4
+  const WORK = 3.2
+  const leg = WALK + WORK
+  const t = (clock + hash(seed, 7) * leg * spots.length) % (leg * spots.length)
+  const i = Math.floor(t / leg)
+  const u = t - i * leg
+  const from = spots[(i + spots.length - 1) % spots.length]
+  const to = spots[i]
+  if (u < WALK && Math.abs(to - from) > 0.01) {
+    const k = u / WALK
+    return { x: from + (to - from) * (k * k * (3 - 2 * k)), y, anim: 'walk', dir: to > from ? 'right' : 'left' }
+  }
+  return { x: to, y, anim: seed % 3 === 1 ? 'till' : 'water', dir: 'up' }
 }
 
 // ---- small drawing helpers ----------------------------------------------------------
@@ -937,43 +1159,310 @@ function drawFarmhand(ctx: CanvasRenderingContext2D, e: Engine, fh: Farmhand, cl
     ctx.restore()
   }
   // Resting farmhands fade back so the ones at work stand out.
-  const resting = fhGlyph(e, fh)?.kind === 'sleep'
+  const resting = fhGlyph(e, fh)?.kind === 'done'
   drawChar(ctx, fh.x, fh.y, anim, dir, t, tint, fh.fade * (fh.paused ? 0.55 : 1) * (resting ? 0.6 : 1))
 }
 
-// The shipping crate: a 1.5x chest on a pallet with a small sign, lid open while crops arrive.
-function drawCrate(ctx: CanvasRenderingContext2D, tx: number, ty: number, open: boolean, filled: number) {
-  const s = 1.5
-  const w = 16 * s
-  const x = Math.round(tx * TILE - w / 2)
-  const bottom = Math.round((ty + 0.55) * TILE)
-  const y = bottom - Math.round(14 * s)
+// The head's top: the body spans frame rows 16 to 32 with the feet at 33, so 17 world px above the feet.
+const HEAD = 17
+
+// A smaller character (a helper subagent) at world (x, y), feet on the ground.
+function drawSmallChar(ctx: CanvasRenderingContext2D, x: number, y: number, anim: string, dir: Dir, clock: number, tint: { body: string; shade: string }, s: number) {
   ctx.save()
-  // Pallet.
-  ctx.fillStyle = '#7a5236'
-  ctx.fillRect(x - 3, bottom - 2, w + 6, 3)
   ctx.fillStyle = 'rgba(40,40,60,0.18)'
-  ctx.fillRect(x - 3, bottom + 1, w + 6, 2)
-  draw(ctx, open ? 'chest_open' : 'chest', x, y, { scale: s })
+  ctx.beginPath()
+  ctx.ellipse(x * TILE, y * TILE - 1, 6 * s, 2.5 * s, 0, 0, Math.PI * 2)
+  ctx.fill()
+  draw(ctx, charFrame(anim, dir, clock), Math.round(x * TILE - 24 * s), Math.round(y * TILE - 33 * s), { tint, scale: s })
+  ctx.restore()
+}
+
+// A field's fence in its agent's colour: posts at every tile, two rails, and a gate gap top and bottom.
+function fieldFence(ctx: CanvasRenderingContext2D, r: Rect, color: string) {
+  const x0 = r.x * TILE
+  const y0 = r.y * TILE
+  const x1 = (r.x + r.w) * TILE
+  const y1 = (r.y + r.h) * TILE
+  const g0 = Math.floor(r.x + r.w / 2 - 0.5) * TILE
+  const g1 = g0 + TILE
+  ctx.save()
+  // The ground inside reads a touch lighter than the paths around it.
+  ctx.fillStyle = 'rgba(255, 250, 220, 0.10)'
+  ctx.fillRect(x0, y0, x1 - x0, y1 - y0)
+  const rail = (ax: number, bx: number, y: number) => {
+    ctx.fillStyle = color
+    ctx.fillRect(ax, y - 6, bx - ax, 2)
+    ctx.fillRect(ax, y - 2, bx - ax, 2)
+    ctx.fillStyle = 'rgba(40, 28, 36, 0.35)'
+    ctx.fillRect(ax, y - 4, bx - ax, 1)
+    ctx.fillRect(ax, y, bx - ax, 1)
+  }
+  const post = (x: number, y: number) => {
+    ctx.fillStyle = 'rgba(40, 28, 36, 0.45)'
+    ctx.fillRect(x - 2, y - 9, 4, 10)
+    ctx.fillStyle = color
+    ctx.fillRect(x - 1, y - 8, 2, 8)
+  }
+  for (const y of [y0 + 4, y1 - 2]) {
+    rail(x0, g0, y)
+    rail(g1, x1, y)
+  }
+  for (const x of [x0 + 1, x1 - 1]) {
+    ctx.fillStyle = color
+    ctx.fillRect(x - 1, y0 + 4, 2, y1 - y0 - 6)
+    ctx.fillStyle = 'rgba(40, 28, 36, 0.35)'
+    ctx.fillRect(x + 1, y0 + 4, 1, y1 - y0 - 6)
+  }
+  for (let i = 0; i <= r.w; i++) {
+    const x = Math.min(x1 - 1, Math.max(x0 + 1, x0 + i * TILE))
+    if (x > g0 && x < g1) continue
+    post(x, y0 + 4)
+    post(x, y1 - 2)
+  }
+  for (let j = 1; j < r.h; j++) {
+    post(x0 + 1, y0 + j * TILE + 4)
+    post(x1 - 1, y0 + j * TILE + 4)
+  }
+  ctx.restore()
+}
+
+// Dependencies between agents, as paths between their fields through the gaps around them:
+// dotted while the downstream agent waits, solid once the upstream draft (or the file it sets) is there.
+function drawDeps(ctx: CanvasRenderingContext2D, e: Engine) {
+  const edges = new Map<string, { from: FieldSlot; to: FieldSlot; ready: boolean }>()
+  for (const t of e.tasks) {
+    const to = e.fieldOf(t.assignee)
+    if (!to) continue
+    for (const sub of t.subtasks)
+      for (const f of sub.needs ?? [])
+        for (const o of e.tasks) {
+          if (o === t || !o.subtasks.some((x) => x.sets?.includes(f))) continue
+          const from = e.fieldOf(o.assignee)
+          if (!from || from === to) continue
+          const key = `${from.id}>${to.id}`
+          const ready = e.flags.has(f) || !!e.draftFor(o.id)
+          const prev = edges.get(key)
+          edges.set(key, { from, to, ready: (prev?.ready ?? true) && ready })
+        }
+  }
+  let n = 0
+  for (const { from, to, ready } of edges.values()) {
+    const a = from.rect
+    const b = to.rect
+    const off = (n++ % 3) * 0.3 - 0.3
+    const ax = a.x + a.w / 2 + off
+    const bx = b.x + b.w / 2 + off
+    const pts: [number, number][] = []
+    if (a.y < b.y) {
+      const gy = a.y + a.h + 0.5 + off * 0.5
+      pts.push([ax, a.y + a.h - 0.2], [ax, gy], [bx, gy], [bx, b.y + 0.2])
+    } else if (a.y > b.y) {
+      const gy = a.y - 0.5 + off * 0.5
+      pts.push([ax, a.y + 0.2], [ax, gy], [bx, gy], [bx, b.y + b.h - 0.2])
+    } else {
+      const gy = a.y + a.h + 0.5 + off * 0.5
+      pts.push([ax, a.y + a.h - 0.2], [ax, gy], [bx, gy], [bx, b.y + b.h - 0.2])
+    }
+    ctx.save()
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
+    const path = () => {
+      ctx.beginPath()
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * TILE, y * TILE) : ctx.moveTo(x * TILE, y * TILE)))
+    }
+    if (ready) {
+      ctx.strokeStyle = 'rgba(92, 64, 40, 0.45)'
+      ctx.lineWidth = 5
+      path()
+      ctx.stroke()
+      ctx.strokeStyle = '#d8b27a'
+      ctx.lineWidth = 3
+    } else {
+      ctx.strokeStyle = '#b98a55'
+      ctx.lineWidth = 2
+      ctx.setLineDash([3, 4])
+    }
+    path()
+    ctx.stroke()
+    // An arrowhead into the field that waits.
+    const [ex, ey] = pts[pts.length - 1]
+    const py0 = pts[pts.length - 2][1]
+    const d = Math.sign(ey - py0) || 1
+    ctx.setLineDash([])
+    ctx.fillStyle = ready ? '#d8b27a' : '#b98a55'
+    ctx.beginPath()
+    ctx.moveTo(ex * TILE - 4, ey * TILE - d * 4)
+    ctx.lineTo(ex * TILE + 4, ey * TILE - d * 4)
+    ctx.lineTo(ex * TILE, ey * TILE + d * 1)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+  }
+}
+
+// What a field's big character shows on the valley page.
+function fieldState(e: Engine, f: FieldSlot): { state: ValleyState; reason?: ReasonLabel; anim?: string; words: string } {
+  const fhs = f.roles.map((r) => e.farmhands[r])
+  const ts = e.tasks.filter((t) => f.roles.includes(t.assignee))
+  for (const fh of fhs) {
+    const g = fhGlyph(e, fh)
+    if (g?.kind !== 'ask') continue
+    if (g.reason === 'Failure' && e.phase === 'harvest') return { state: 'failed', words: 'Review failed' }
+    return { state: 'needs', reason: g.reason, words: 'Needs you' }
+  }
+  if (focusOf(e) === f) return { state: 'needs', reason: e.activeAsk?.label ?? 'Anomaly', words: 'Needs you' }
+  const bad = ts.find((t) => e.taskStatus(t).tone === 'fail')
+  if (bad) return { state: 'failed', words: e.taskStatus(bad).text }
+  const working = fhs.find((fh) => fh.status === 'working' || fhGlyph(e, fh)?.kind === 'work')
+  if (working) {
+    const job = working.job
+    const first = job?.kind === 'sub' && e.task(job.taskId).subtasks[0]?.id === job.subId
+    return { state: 'working', anim: job?.kind === 'fix' ? 'chop' : first ? 'till' : 'water', words: stateLine(e, working) }
+  }
+  const grown = e.phase === 'grow' || e.phase === 'harvest' || e.phase === 'ship'
+  if (grown && ts.length && ts.every((t) => e.taskRipe(t))) return { state: 'done', words: 'Done' }
+  return { state: 'idle', words: fhs[0] ? stateLine(e, fhs[0]) : 'No task' }
+}
+
+function focusOf(e: Engine) {
+  return e.askingField() ?? (e.phase === 'grow' && e.replan?.status === 'open' ? e.fieldOf(e.task(MISSING.taskId).assignee) : null)
+}
+
+// When each field's big character last changed state, so a new "needs" bounces once.
+const bigSince = new Map<string, { key: string; t: number }>()
+
+// One oversized character for a field or a whole valley, standing with its feet at screen (x, y), scale S.
+// Working plays its work animation; idle stands; needs bounces once then holds, with the reason glyph;
+// done whistles, bobbing, with ink music notes drifting up; failed slumps under a red cross.
+// Returns the y of the top of its head. Shared with the Valleys page.
+export function drawBigChar(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  state: ValleyState,
+  tint: { body: string; shade: string } | undefined,
+  clock: number,
+  S: number,
+  opts: { reason?: ReasonLabel; age?: number; anim?: string } = {},
+) {
+  const age = opts.age ?? 99
+  ctx.save()
+  ctx.imageSmoothingEnabled = false
+  const anim = state === 'working' ? (opts.anim ?? 'till') : 'idle'
+  let dy = 0
+  let squash = 1
+  if (state === 'needs' && !reduced && age < 0.6) dy = -Math.round(Math.sin((age / 0.6) * Math.PI) * S * 3)
+  if (state === 'done' && !reduced) dy = Math.round((Math.sin(clock * 3.2) - 1) * S * 0.4)
+  if (state === 'failed') squash = 0.86
+  ctx.fillStyle = 'rgba(40,40,60,0.2)'
+  ctx.beginPath()
+  ctx.ellipse(x, y - S, 6 * S, 2.4 * S, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.translate(x, y)
+  ctx.scale(1, squash)
+  if (state === 'failed') ctx.rotate(0.06)
+  draw(ctx, charFrame(anim, 'down', reduced ? 0 : clock, anim === 'idle' ? 5 : 8), -24 * S, -33 * S + dy, { tint, scale: S })
+  ctx.restore()
+  const head = Math.round(y - HEAD * S * squash + dy)
+  if (state === 'needs') glyph(ctx, x, head - 4, { kind: 'ask', reason: opts.reason ?? 'Anomaly' }, -1, clock, 1)
+  if (state === 'failed') glyph(ctx, x, head - 4, { kind: 'ask', reason: 'Failure' }, -1, clock, 1)
+  if (state === 'working') glyph(ctx, x, head - 4, { kind: 'work' }, -1, clock, 1)
+  if (state === 'done') {
+    // Whistling: ink pixel notes drifting up and away from the head.
+    const u = Math.max(2, Math.round(S / 2))
+    for (let i = 0; i < 3; i++) {
+      const k = reduced ? 0.3 + i * 0.25 : (clock * 0.45 + i / 3) % 1
+      const nx = Math.round(x + 3 * S + Math.sin(k * 6 + i) * 2 * S + i * S)
+      const ny = Math.round(head - k * 10 * S)
+      ctx.save()
+      ctx.globalAlpha *= 1 - k * 0.9
+      ctx.fillStyle = INK
+      const rows = i % 2 ? BITS.notes : NOTE
+      rows.forEach((row, j) => {
+        for (let c = 0; c < row.length; c++) if (row[c] === '#') ctx.fillRect(nx + c * u, ny + j * u, u, u)
+      })
+      ctx.restore()
+    }
+  }
+  return head
+}
+
+// One eighth note.
+const NOTE = ['..##.', '..#.#', '..#..', '..#..', '###..', '###..']
+
+// The shipping crate: a chest at 1x on a small pallet, lid open while crops arrive.
+function drawCrate(ctx: CanvasRenderingContext2D, tx: number, ty: number, open: boolean, filled: number) {
+  const x = Math.round(tx * TILE - 8)
+  const bottom = Math.round((ty + 0.55) * TILE)
+  const y = bottom - 14
+  ctx.save()
+  ctx.fillStyle = 'rgba(40,40,60,0.18)'
+  ctx.fillRect(x - 2, bottom + 1, 20, 2)
+  ctx.fillStyle = '#7a5236'
+  ctx.fillRect(x - 2, bottom - 1, 20, 2)
+  draw(ctx, open ? 'chest_open' : 'chest', x, y)
   // Crops already shipped peek out of the open lid.
   if (open && filled > 0) {
     ctx.fillStyle = '#94b85c'
-    for (let i = 0; i < Math.min(4, filled); i++) ctx.fillRect(x + 5 + i * 4, y + 4, 3, 3)
+    for (let i = 0; i < Math.min(3, filled); i++) ctx.fillRect(x + 3 + i * 4, y + 3, 2, 2)
   }
-  // A little sign post to the right, so it reads as the shipping crate.
-  const px = x + w + 3
-  ctx.fillStyle = '#7a5236'
-  ctx.fillRect(px + 4, bottom - 14, 2, 14)
-  ctx.fillStyle = '#e6c08a'
-  ctx.fillRect(px, bottom - 20, 10, 8)
-  ctx.strokeStyle = '#7a4a2b'
-  ctx.lineWidth = 1
-  ctx.strokeRect(px + 0.5, bottom - 19.5, 9, 7)
-  // An arrow on the sign: "in here".
-  ctx.fillStyle = '#5a3520'
-  ctx.fillRect(px + 2, bottom - 17, 4, 2)
-  ctx.fillRect(px + 6, bottom - 18, 1, 4)
   ctx.restore()
+}
+
+// The well's bucket: it goes down on its rope, out of sight into the water, and comes back up full,
+// with the crank turning while it rises and a drip or two at the top. (sx, sy) is the sprite's top-left;
+// the sprite is 31x29 with the roof's underside at y 9 and the front rim at y 14.
+function drawWellBucket(ctx: CanvasRenderingContext2D, sx: number, sy: number, clock: number) {
+  const CYCLE = 7
+  const t = reduced ? 5.5 : (clock + 1.3) % CYCLE
+  const TOP = 10 // bucket top at its highest, just under the roof
+  const LOW = 19 // fully under the rim
+  const ease = (v: number) => v * v * (3 - 2 * v)
+  // 0-1.6 down, 1.6-2.6 under water, 2.6-4.8 up while the crank turns, 4.8-7 resting at the top.
+  let by = TOP
+  let full = true
+  if (t < 1.6) {
+    by = TOP + (LOW - TOP) * ease(t / 1.6)
+    full = false
+  } else if (t < 2.6) by = LOW
+  else if (t < 4.8) by = LOW - (LOW - TOP) * ease((t - 2.6) / 2.2)
+  const cranking = t >= 2.6 && t < 4.8
+  const cx = sx + 15
+  const top = sy + 9
+  const yb = Math.round(sy + by)
+  ctx.save()
+  // The crank on the right post: a small handle that turns while the bucket rises.
+  const ang = cranking ? (t - 2.6) * 6 : 0
+  const hx = sx + 27
+  const hy = sy + 11
+  ctx.fillStyle = '#5a3520'
+  ctx.fillRect(hx - 1, hy - 1, 2, 2)
+  ctx.fillRect(Math.round(hx + Math.cos(ang) * 3) - 1, Math.round(hy + Math.sin(ang) * 3) - 1, 2, 2)
+  // Everything below the front rim is hidden, so the bucket sinks into the well.
+  ctx.beginPath()
+  ctx.rect(sx, sy, 31, 14)
+  ctx.clip()
+  // Rope.
+  ctx.fillStyle = '#c8a46a'
+  ctx.fillRect(cx, top, 1, Math.max(0, yb - top))
+  // Bucket: 5 wide, 4 tall, a wooden pail with a metal band, water on top when full.
+  ctx.fillStyle = '#7a4a2b'
+  ctx.fillRect(cx - 2, yb, 5, 4)
+  ctx.fillStyle = '#9b6a3f'
+  ctx.fillRect(cx - 1, yb + 1, 3, 2)
+  ctx.fillStyle = '#5c4e64'
+  ctx.fillRect(cx - 2, yb + 2, 5, 1)
+  if (full) {
+    ctx.fillStyle = '#7cc3e8'
+    ctx.fillRect(cx - 1, yb, 3, 1)
+  }
+  ctx.restore()
+  // A drip falls back in while the full bucket rests at the top.
+  if (!reduced && t > 4.8 && t < 6.2) {
+    const d = ((t - 4.8) % 0.7) / 0.7
+    ctx.fillStyle = `rgba(124,195,232,${1 - d})`
+    ctx.fillRect(cx + 1, Math.round(sy + TOP + 4 + d * 5), 1, 1)
+  }
 }
 
 // A thing on the farm and its click reaction (k is 0..1 through it, or -1).
@@ -1004,6 +1493,7 @@ function drawProp(ctx: CanvasRenderingContext2D, e: Engine, p: Prop, k: number, 
     }
     case 'well': {
       draw(ctx, p.sprite, x, y - 4)
+      drawWellBucket(ctx, x, y - 4, clock)
       if (k >= 0)
         for (let i = 0; i < 5; i++) {
           const a = -Math.PI / 2 + (i - 2) * 0.5
@@ -1077,14 +1567,14 @@ function statsFor(e: Engine, name: string) {
   return s
 }
 
-const FONT = '"SproutLands", "JetBrains Mono", monospace'
+// Every label on the map uses the panel's font, on a solid plate, at whole pixels.
 const SANS = "'Atkinson Hyperlegible Next', system-ui, sans-serif"
 const INK = '#241d33'
 const FAIL = '#b0412e'
 const OUT = '#2d5da8'
 
 type Box = { x: number; y: number; w: number; h: number }
-export type Glyph = { kind: 'work' } | { kind: 'sleep' } | { kind: 'ask'; reason: ReasonLabel }
+export type Glyph = { kind: 'work' } | { kind: 'done' } | { kind: 'ask'; reason: ReasonLabel }
 
 // The one glyph over a farmhand. The engine's glyph, with the harvest's own moments on top:
 // nothing while the crew carries crops in, a red cross on the farmhand whose code failed review.
@@ -1099,7 +1589,7 @@ function fhGlyph(e: Engine, fh: Farmhand): Glyph | null {
     if (fh.id === 'reviewer' && e.harvestGates.review.state === 'run') return { kind: 'work' }
   }
   const g = e.glyphOf(fh)
-  return g ? (g.kind === 'ask' ? { kind: 'ask', reason: g.reason } : { kind: g.kind }) : null
+  return g ? (g.kind === 'ask' ? { kind: 'ask', reason: g.reason } : g.kind === 'sleep' ? { kind: 'done' } : { kind: 'work' }) : null
 }
 
 // What the line under a farmhand says after its name: short, like the panel's rows.
@@ -1129,16 +1619,17 @@ function stateLine(e: Engine, fh: Farmhand): string {
 
 // One line under a farmhand in the panel's sans: the name in bold, a thin divider, then the state.
 // Lines that would overlap move down until they clear the ones already placed.
-function nameLine(ctx: CanvasRenderingContext2D, x: number, y: number, name: string, state: string, alpha: number, placed: Box[], selected = false, align: 'center' | 'left' = 'center') {
+function nameLine(ctx: CanvasRenderingContext2D, x: number, y: number, name: string, state: string, alpha: number, placed: Box[], selected = false, align: 'center' | 'left' = 'center', bar?: string) {
   ctx.save()
   ctx.globalAlpha = alpha
-  ctx.font = `700 13px ${SANS}`
+  ctx.font = `700 14px ${SANS}`
   const wName = Math.ceil(ctx.measureText(name).width)
-  ctx.font = `400 13px ${SANS}`
+  ctx.font = `400 14px ${SANS}`
   const wState = state ? Math.ceil(ctx.measureText(state).width) : 0
   const gap = 13
-  const w = wName + (state ? gap + wState : 0) + 14
-  const h = 20
+  const lead = bar ? 5 : 0
+  const w = wName + (state ? gap + wState : 0) + 16 + lead
+  const h = 22
   let rx = Math.round(align === 'center' ? x - w / 2 : x)
   rx = Math.max(4, Math.min(viewW - w - 4, rx))
   let ry = Math.round(y)
@@ -1152,17 +1643,22 @@ function nameLine(ctx: CanvasRenderingContext2D, x: number, y: number, name: str
   ctx.roundRect(rx + 0.5, ry + 0.5, w - 1, h - 1, 5)
   ctx.fill()
   ctx.stroke()
-  ctx.textBaseline = 'middle'
+  if (bar) {
+    ctx.fillStyle = bar
+    ctx.fillRect(rx + 1, ry + 1, 4, h - 2)
+  }
+  // Alphabetic baseline on a whole pixel, so the text stays sharp.
+  ctx.textBaseline = 'alphabetic'
   ctx.textAlign = 'left'
   ctx.fillStyle = INK
-  ctx.font = `700 13px ${SANS}`
-  ctx.fillText(name, rx + 7, ry + h / 2 + 0.5)
+  ctx.font = `700 14px ${SANS}`
+  ctx.fillText(name, rx + 8 + lead, ry + 16)
   if (state) {
-    ctx.fillStyle = 'rgba(36, 29, 51, 0.22)'
-    ctx.fillRect(rx + 7 + wName + Math.floor(gap / 2), ry + 5, 1, h - 10)
-    ctx.fillStyle = state === 'Needs you' ? '#8a5410' : '#4a4358'
-    ctx.font = `400 13px ${SANS}`
-    ctx.fillText(state, rx + 7 + wName + gap, ry + h / 2 + 0.5)
+    ctx.fillStyle = 'rgba(36, 29, 51, 0.25)'
+    ctx.fillRect(rx + 8 + lead + wName + Math.floor(gap / 2), ry + 5, 1, h - 10)
+    ctx.fillStyle = state === 'Needs you' ? '#7a4a0c' : '#3d3649'
+    ctx.font = `400 14px ${SANS}`
+    ctx.fillText(state, rx + 8 + lead + wName + gap, ry + 16)
   }
   ctx.restore()
 }
@@ -1174,7 +1670,8 @@ const BITS: Record<string, string[]> = {
   cross: ['##...##', '###.###', '.#####.', '..###..', '.#####.', '###.###', '##...##'],
   coin: ['..#####..', '.##...##.', '##..#..##', '#..###..#', '#...#...#', '#..###..#', '##..#..##', '.##...##.', '..#####..'],
   envelope: ['#########', '##.....##', '#.#...#.#', '#..#.#..#', '#...#...#', '#.......#', '#########'],
-  sleep: ['#####....', '...#.....', '..#..####', '.#.....#.', '#####.#..', '.....####'],
+  // Two beamed eighth notes: whistling, done.
+  notes: ['..#######', '..#######', '..#.....#', '..#.....#', '..#.....#', '###...###', '###...###', '###...###'],
 }
 
 const pulses = new Map<string, { key: string; t: number }>()
@@ -1228,7 +1725,7 @@ function glyph(ctx: CanvasRenderingContext2D, x: number, y: number, g: Glyph, pu
       ctx.fillRect(-9 + i * 7, Math.round(cy + 1 - hop), 4, 4)
     }
   } else {
-    const name = g.kind === 'sleep' ? 'sleep' : { Anomaly: 'question', Failure: 'cross', Risk: 'bang', Cost: 'coin', Irreversible: 'envelope' }[g.reason]
+    const name = g.kind === 'done' ? 'notes' : { Anomaly: 'question', Failure: 'cross', Risk: 'bang', Cost: 'coin', Irreversible: 'envelope' }[g.reason]
     const rows = BITS[name]
     ctx.fillStyle = g.kind === 'ask' && g.reason === 'Failure' ? FAIL : g.kind === 'ask' && g.reason === 'Irreversible' ? OUT : INK
     const u = 2
@@ -1241,53 +1738,236 @@ function glyph(ctx: CanvasRenderingContext2D, x: number, y: number, g: Glyph, pu
   ctx.restore()
 }
 
-function banner(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, size = 20) {
+// A headline on a solid light plate: bold sans, dark ink, whole pixels.
+function banner(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, size = 16) {
   ctx.save()
-  ctx.font = `${size}px ${FONT}`
-  const w = Math.ceil(ctx.measureText(text).width) + 22
+  ctx.font = `700 ${size}px ${SANS}`
+  const w = Math.ceil(ctx.measureText(text).width) + 28
+  const h = size + 14
   const rx = Math.round(x - w / 2)
-  const ry = Math.round(y - 12)
-  ctx.fillStyle = '#c99a5b'
-  ctx.fillRect(rx, ry, w, 22)
-  ctx.fillStyle = '#e6c08a'
-  ctx.fillRect(rx + 2, ry + 2, w - 4, 16)
-  ctx.strokeStyle = '#7a4a2b'
-  ctx.lineWidth = 2
-  ctx.strokeRect(rx + 1, ry + 1, w - 2, 20)
-  ctx.fillStyle = '#5a3520'
+  const ry = Math.round(y - h / 2)
+  ctx.fillStyle = 'rgba(36, 29, 51, 0.18)'
+  ctx.beginPath()
+  ctx.roundRect(rx + 1, ry + 2, w, h, 7)
+  ctx.fill()
+  ctx.fillStyle = '#fffcf2'
+  ctx.strokeStyle = 'rgba(36, 29, 51, 0.35)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.roundRect(rx + 0.5, ry + 0.5, w - 1, h - 1, 7)
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = INK
   ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(text, Math.round(x), ry + 10)
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillText(text, Math.round(x), ry + Math.round(h / 2 + size * 0.36))
   ctx.restore()
 }
 
-function valleyCard(ctx: CanvasRenderingContext2D, x: number, y: number, name: string, s: ReturnType<typeof statsFor>) {
+// A valley's overall state: ours follows the work; the others come from their data.
+function valleyState(e: Engine, name: string): { state: ValleyState; reason?: ReasonLabel } {
+  if (name !== FARM.name) {
+    const v = VALLEY_STATS[name]
+    return { state: v?.state ?? 'idle', reason: v?.reason }
+  }
+  const ask = e.activeAsk
+  if (ask) return { state: 'needs', reason: ask.label }
+  if (e.replan?.status === 'open') return { state: 'needs', reason: 'Anomaly' }
+  const st = e.shipStage
+  if (st === 'live') return { state: 'done' }
+  if (e.gateFailed || st === 'rollback' || st === 'rolledback' || st === 'cifailed') return { state: 'failed' }
+  if (e.phase === 'grow' || e.phase === 'harvest' || e.phase === 'ship') return { state: 'working' }
+  return { state: 'idle' }
+}
+
+const STATE_WORDS: Record<ValleyState, string> = { working: 'Working', idle: 'Idle', needs: 'Needs attention', done: 'Done', failed: 'Failed' }
+const since = new Map<string, { key: string; t: number }>()
+
+// The region view of one valley: a light veil over its detail, its head farmer drawn big in the
+// valley's state, and a card with its name and numbers under the feet. All on screen, in whole pixels.
+function regionValley(ctx: CanvasRenderingContext2D, e: Engine, name: string, r: Rect, cam: Camera, toScreen: (x: number, y: number) => { x: number; y: number }, clock: number) {
+  const a = toScreen(r.x + 0.5, r.y + 0.5)
+  const b = toScreen(r.x + r.w - 0.5, r.y + r.h - 0.5)
+  ctx.fillStyle = 'rgba(255, 251, 238, 0.42)'
+  ctx.fillRect(Math.round(a.x), Math.round(a.y), Math.round(b.x - a.x), Math.round(b.y - a.y))
+  const { state, reason } = valleyState(e, name)
+  const key = `${state}:${reason ?? ''}`
+  const prev = since.get(name)
+  if (!prev || prev.key !== key) since.set(name, { key, t: clock })
+  const t0 = since.get(name)!.t
+  const feet = toScreen(r.x + r.w / 2, r.y + r.h * 0.56)
+  const S = Math.max(3, Math.round(cam.scale * 5))
+  const tint = name === FARM.name ? undefined : name === NEIGHBOUR.name ? { body: '#d7c6f0', shade: '#a596c9' } : name === OTHER_FARMS[0].name ? { body: '#e7dcc4', shade: '#c4b79a' } : { body: '#d9e6c4', shade: '#aebd96' }
+  const top = bigChar(ctx, Math.round(feet.x), Math.round(feet.y), S, state, reason, clock, clock - t0, tint)
+  // The card under the feet, and on ours a count of the asks waiting for you.
+  const card = valleyCard(ctx, Math.round(feet.x), Math.round(feet.y + S * 2 + 6), name, statsFor(e, name), state)
+  const asks = name === FARM.name ? e.openAsks.length : 0
+  if (asks > 0) askBadge(ctx, card.x + card.w - 4, card.y + 4, asks)
+  return top
+}
+
+// One oversized character for a whole valley or field, standing at (x, y) on screen with scale S.
+// Returns the y of the top of its head. Local stand-in until the shared drawBigChar is in.
+function bigChar(ctx: CanvasRenderingContext2D, x: number, y: number, S: number, state: ValleyState, reason: ReasonLabel | undefined, clock: number, age: number, tint?: { body: string; shade: string }) {
+  ctx.save()
+  ctx.imageSmoothingEnabled = false
+  let anim = 'idle'
+  let dy = 0
+  let squash = 1
+  if (state === 'working') anim = 'till'
+  if (state === 'needs' && !reduced && age < 0.6) dy = -Math.round(Math.sin((age / 0.6) * Math.PI) * S * 3)
+  if (state === 'done' && !reduced) dy = Math.round(Math.sin(clock * 3.2) * S * 0.6)
+  if (state === 'failed') squash = 0.84
+  // Shadow.
+  ctx.fillStyle = 'rgba(40,40,60,0.2)'
+  ctx.beginPath()
+  ctx.ellipse(x, y, 6 * S, 2.4 * S, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.translate(x, y)
+  ctx.scale(1, squash)
+  if (state === 'failed') ctx.rotate(0.06)
+  draw(ctx, charFrame(anim, 'down', reduced ? 0 : clock, anim === 'idle' ? 5 : 8), -24 * S, -33 * S + dy, { tint, scale: S })
+  ctx.restore()
+  const head = y - Math.round(17 * S * squash) + dy
+  if (state === 'needs' && reason) glyph(ctx, x, head - 4, { kind: 'ask', reason }, -1, clock, 1)
+  if (state === 'failed') glyph(ctx, x, head - 4, { kind: 'ask', reason: 'Failure' }, -1, clock, 1)
+  if (state === 'working') glyph(ctx, x, head - 4, { kind: 'work' }, -1, clock, 1)
+  if (state === 'done' && !reduced) {
+    // Whistling: ink music notes drifting up and away.
+    for (let i = 0; i < 3; i++) {
+      const k = (clock * 0.45 + i / 3) % 1
+      ctx.save()
+      ctx.globalAlpha = 1 - k
+      ctx.fillStyle = INK
+      ctx.font = `700 ${15 + i * 2}px ${SANS}`
+      ctx.textAlign = 'center'
+      ctx.fillText(i % 2 ? '\u266B' : '\u266A', Math.round(x + 4 * S + Math.sin(k * 6 + i) * 6), Math.round(head + 6 - k * 34))
+      ctx.restore()
+    }
+  }
+  return head
+}
+
+// A valley's card: its name in bold, then its crew, its numbers and its state, on a solid light plate.
+// A round count of the asks waiting in a valley, pinned to its card's corner.
+function askBadge(ctx: CanvasRenderingContext2D, x: number, y: number, n: number) {
+  ctx.save()
+  const r = 12
+  ctx.fillStyle = '#b8741a'
+  ctx.beginPath()
+  ctx.arc(Math.round(x), Math.round(y), r, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = '#fffcf3'
+  ctx.lineWidth = 2
+  ctx.stroke()
+  ctx.fillStyle = '#fff'
+  ctx.font = `700 14px ${SANS}`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(String(n), Math.round(x), Math.round(y) + 1)
+  ctx.restore()
+}
+
+// A dependency between projects: Google sign-in calls Session API v2. Dotted while ours still
+// calls the retired /v1/session, solid once the re-plan switches it to /v2/session.
+function dependencyPath(ctx: CanvasRenderingContext2D, e: Engine, toScreen: (x: number, y: number) => { x: number; y: number }, clock: number) {
+  const ours = FARM.rect
+  const theirs = NEIGHBOUR.rect
+  const a = toScreen(ours.x + ours.w * 0.72, ours.y + ours.h * 0.2)
+  const b = toScreen(theirs.x + theirs.w * 0.12, theirs.y + theirs.h * 0.2)
+  const fixed = e.flags.has('sessionV2')
+  const mx = (a.x + b.x) / 2
+  const my = Math.min(a.y, b.y) - 70
+  ctx.save()
+  ctx.lineCap = 'round'
+  // A light halo under the line so it reads on grass and road.
+  ctx.strokeStyle = 'rgba(255, 252, 243, 0.9)'
+  ctx.lineWidth = 7
+  ctx.setLineDash([])
+  ctx.beginPath()
+  ctx.moveTo(a.x, a.y)
+  ctx.quadraticCurveTo(mx, my, b.x, b.y)
+  ctx.stroke()
+  ctx.strokeStyle = INK
+  ctx.lineWidth = 3
+  ctx.setLineDash(fixed ? [] : [2, 7])
+  if (!fixed && !reduced) ctx.lineDashOffset = -clock * 12
+  ctx.beginPath()
+  ctx.moveTo(a.x, a.y)
+  ctx.quadraticCurveTo(mx, my, b.x, b.y)
+  ctx.stroke()
+  // Arrowhead into Session API v2.
+  ctx.setLineDash([])
+  const ang = Math.atan2(b.y - my, b.x - mx)
+  ctx.fillStyle = INK
+  ctx.beginPath()
+  ctx.moveTo(b.x, b.y)
+  ctx.lineTo(b.x - Math.cos(ang - 0.45) * 11, b.y - Math.sin(ang - 0.45) * 11)
+  ctx.lineTo(b.x - Math.cos(ang + 0.45) * 11, b.y - Math.sin(ang + 0.45) * 11)
+  ctx.closePath()
+  ctx.fill()
+  // What the dependency is, on a plate at the top of the curve.
+  const text = fixed ? 'Calls /v2/session' : 'Calls /v1/session, retired'
+  ctx.font = `700 13px ${SANS}`
+  const w = Math.ceil(ctx.measureText(text).width) + 16
+  const lx = Math.round(mx - w / 2)
+  const ly = Math.round((a.y + b.y) / 4 + my / 2 - 12)
+  ctx.fillStyle = '#fffcf3'
+  ctx.strokeStyle = INK
+  ctx.lineWidth = 1
+  ctx.fillRect(lx, ly, w, 22)
+  ctx.strokeRect(lx + 0.5, ly + 0.5, w - 1, 21)
+  ctx.fillStyle = INK
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'center'
+  ctx.fillText(text, Math.round(mx), ly + 11.5)
+  ctx.restore()
+}
+
+function valleyCard(ctx: CanvasRenderingContext2D, x: number, top: number, name: string, s: ReturnType<typeof statsFor>, state: ValleyState) {
   ctx.save()
   const lines = [
     ...(s.crew ? [`Crew: ${s.crew}`] : []),
     `${s.agents} agents, ${s.waiting} waiting on a human`,
     ...(s.unattended ? [s.unattended] : []),
   ]
-  ctx.font = `15px ${FONT}`
-  const w = Math.max(...lines.map((l) => ctx.measureText(l).width), 160) + 28
-  const h = 36 + lines.length * 17
+  ctx.font = `400 14px ${SANS}`
+  const wLines = Math.max(...lines.map((l) => ctx.measureText(l).width))
+  ctx.font = `700 16px ${SANS}`
+  const word = STATE_WORDS[state]
+  const wName = ctx.measureText(name).width
+  ctx.font = `700 13px ${SANS}`
+  const wWord = ctx.measureText(word).width + 14
+  const w = Math.ceil(Math.max(wLines, wName + 10 + wWord)) + 24
+  const h = 34 + lines.length * 19
   const rx = Math.round(x - w / 2)
-  const ry = Math.round(y - h / 2)
-  ctx.fillStyle = 'rgba(62,49,80,0.25)'
-  ctx.fillRect(rx + 4, ry + 4, w, h)
-  ctx.fillStyle = '#fbf6df'
+  const ry = Math.round(top)
+  ctx.fillStyle = 'rgba(36,29,51,0.18)'
+  ctx.fillRect(rx + 2, ry + 3, w, h)
+  ctx.fillStyle = '#fffcf3'
   ctx.fillRect(rx, ry, w, h)
-  ctx.strokeStyle = '#5c4e92'
-  ctx.lineWidth = 2
-  ctx.strokeRect(rx + 1, ry + 1, w - 2, h - 2)
+  ctx.strokeStyle = INK
+  ctx.lineWidth = 1
+  ctx.strokeRect(rx + 0.5, ry + 0.5, w - 1, h - 1)
   ctx.textAlign = 'left'
-  ctx.textBaseline = 'top'
-  ctx.fillStyle = '#3e3150'
-  ctx.font = `22px ${FONT}`
-  ctx.fillText(name, rx + 14, ry + 10)
-  ctx.font = `15px ${FONT}`
-  lines.forEach((l, i) => ctx.fillText(l, rx + 14, ry + 34 + i * 17))
+  ctx.textBaseline = 'alphabetic'
+  ctx.fillStyle = INK
+  ctx.font = `700 16px ${SANS}`
+  ctx.fillText(name, rx + 12, ry + 24)
+  // The state as a small pill beside the name: red only when it failed.
+  const px0 = Math.round(rx + 12 + wName + 10)
+  ctx.fillStyle = state === 'failed' ? FAIL : state === 'needs' ? '#f6e3b4' : '#ece7da'
+  ctx.beginPath()
+  ctx.roundRect(px0, ry + 10, Math.ceil(wWord), 19, 9.5)
+  ctx.fill()
+  ctx.fillStyle = state === 'failed' ? '#fff' : INK
+  ctx.font = `700 13px ${SANS}`
+  ctx.fillText(word, px0 + 7, ry + 24)
+  ctx.font = `400 14px ${SANS}`
+  ctx.fillStyle = '#3b3350'
+  lines.forEach((l, i) => ctx.fillText(l, rx + 12, ry + 46 + i * 19))
   ctx.restore()
+  return { x: rx, y: ry, w, h }
 }
 
 // ---- camera ----------------------------------------------------------------------------

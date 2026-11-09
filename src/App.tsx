@@ -4,25 +4,33 @@ import { useEffect, useRef } from 'react'
 import { MapView } from './map/MapView'
 import { Panel } from './panel/Panel'
 import { AgentTree } from './panel/AgentTree'
+import { FarmPeek } from './panel/FarmPeek'
 import { BEATS, engine } from './sim/engine'
 import { FARM } from './sim/scenario'
+import { crumbsOf, goPage, pageOf, parsePath, pathOf } from './sim/pages'
 import { Kbd, useEngine } from './ui'
 
 function Hud() {
   const e = useEngine()
   const growing = e.phase === 'grow'
   if (e.intro) return null
+  const crumbs = crumbsOf(e, pageOf(e))
   return (
     <div className="hud">
-      <div className="crumbs" role="group" aria-label="Map view">
-        <button aria-pressed={e.view === 'valley'} onClick={() => e.setView('valley')} data-testid="view-valley" title="Every project in your organisation (V)">
-          Region
-        </button>
-        <span className="sep">/</span>
-        <button aria-pressed={e.view === 'farm'} onClick={() => e.setView('farm')} data-testid="view-farm">
-          {FARM.name}
-        </button>
-      </div>
+      <nav className="crumbs" aria-label="Where you are">
+        {crumbs.map((c, i) => {
+          const last = i === crumbs.length - 1
+          const id = c.page.kind === 'region' ? 'view-valley' : c.page.kind === 'valley' && c.page.id === FARM.name ? 'view-farm' : `crumb-${i}`
+          return (
+            <span key={i} className="crumb">
+              {i > 0 && <span className="sep">/</span>}
+              <button aria-pressed={last} aria-current={last ? 'page' : undefined} onClick={() => goPage(e, c.page)} data-testid={id} title={c.page.kind === 'region' ? 'Every project in your organisation (V)' : undefined}>
+                {c.label}
+              </button>
+            </span>
+          )
+        })}
+      </nav>
       <div className="meters">
         {growing && (
           <button className="pause-btn" aria-pressed={e.paused} onClick={() => e.togglePause()} data-testid="pause">
@@ -166,7 +174,9 @@ function onKey(ev: KeyboardEvent) {
     if (e.showHelp) e.showHelp = false
     else if (ask?.status === 'confirming') e.cancelConfirm(ask.id)
     else if (e.sendState === 'confirming') e.cancelSend()
+    else if (e.peekName) e.setView('farm')
     else if (e.back()) return
+    else if (e.fieldPage) e.closeField()
     else if (e.view === 'valley') e.setView('farm')
     e.notify()
     return
@@ -231,6 +241,25 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
   const e = useEngine()
+  // Each page has its own address. A deep link skips the opening; Back and Forward move between pages.
+  useEffect(() => {
+    const deep = parsePath(location.pathname, engine)
+    if (location.pathname !== '/' && deep) {
+      engine.skipIntro()
+      goPage(engine, deep)
+    }
+    const onPop = () => {
+      const p = parsePath(location.pathname, engine)
+      if (p) goPage(engine, p)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+  useEffect(() => {
+    if (e.intro) return
+    const want = pathOf(pageOf(e))
+    if (location.pathname !== want) history.pushState(null, '', want + location.search)
+  })
   // When the opening ends, the cursor waits in the brief.
   const wasIntro = useRef(true)
   useEffect(() => {
@@ -243,6 +272,7 @@ export function App() {
         <MapView />
         <Hud />
         <Toasts />
+        <FarmPeek />
         <Caption />
         {e.paused && (
           <div className="paused-veil">

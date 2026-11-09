@@ -134,7 +134,7 @@ export function AgentTree() {
   const headSub = headAsk ? 'Needs you' : e.headThinking > 0 ? 'Thinking' : e.phase === 'plan' && !e.planReady ? 'Tilling a patch per task' : 'Watching the crew'
 
   const rows: TreeRow[] = [
-    { id: 'region', depth: 0, label: 'Region', sub: `${2 + OTHER_FARMS.length} valleys`, go: jump(() => e.setView('valley')) },
+    { id: 'region', depth: 0, label: 'Valleys', sub: `${2 + OTHER_FARMS.length} projects`, go: jump(() => e.setView('valley')) },
     {
       id: 'valley',
       depth: 1,
@@ -169,10 +169,7 @@ export function AgentTree() {
           label: fh.role,
           sub: fh.status === 'asking' ? 'Needs you' : e.fhStatus(fh),
           glyph: g && (g.kind === 'ask' ? { kind: 'ask' as const, reason: g.reason } : g),
-          go: jump(() => {
-            e.setView('farm')
-            e.openFarmhand(fh.id)
-          }),
+          go: jump(() => e.openField(fh.id)),
         },
         ...plots.map((t) => ({
           id: `plot-${t.id}`,
@@ -180,14 +177,14 @@ export function AgentTree() {
           label: t.name,
           sub: stepOf(e.phase) === 'plant' ? 'Planned' : e.taskStatus(t).text,
           go: jump(() => {
-            e.setView('farm')
+            e.openField(t.assignee)
             e.openTask(t.id)
           }),
         })),
       ]
     }),
-    { id: 'neighbour', depth: 1, label: NEIGHBOUR.name, sub: farmSub(NEIGHBOUR.name), go: jump(() => e.setView('valley')) },
-    ...OTHER_FARMS.map((f) => ({ id: f.name, depth: 1, label: f.name, sub: farmSub(f.name), go: jump(() => e.setView('valley')) })),
+    { id: 'neighbour', depth: 1, label: NEIGHBOUR.name, sub: farmSub(NEIGHBOUR.name), go: jump(() => e.peekFarm(NEIGHBOUR.name)) },
+    ...OTHER_FARMS.map((f) => ({ id: f.name, depth: 1, label: f.name, sub: farmSub(f.name), go: jump(() => e.peekFarm(f.name)) })),
   ]
   const at = Math.min(sel, rows.length - 1)
 

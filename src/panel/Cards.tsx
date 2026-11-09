@@ -24,9 +24,11 @@ export function AskOptions({ ask }: { ask: Ask }) {
   if (ask.status === 'confirming')
     return (
       <div className="confirm">
-        <p>
-          <b>{ask.confirm}</b>
-        </p>
+        {!ask.confirmList && (
+          <p>
+            <b>{ask.confirm}</b>
+          </p>
+        )}
         {ask.confirmList && (
           <ul className="confirm-list" data-testid="confirm-list">
             {ask.confirmList.map((l) => (

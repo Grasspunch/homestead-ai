@@ -11,7 +11,7 @@ import { Row } from './Overview'
 type E = ReturnType<typeof useEngine>
 
 const harness = (id: string) => HARNESSES.find((h) => h[0] === id)?.[1] ?? id
-const steps = (xs: string[]) => xs.map((s) => STEP_NAME[s as keyof typeof STEP_NAME] ?? s).join(', ')
+const steps = (xs: string[]) => xs.map((s) => STEP_NAME[s as keyof typeof STEP_NAME] ?? s).filter((s, i, a) => a.indexOf(s) === i).join(', ')
 
 // Settings ids: 'templates', 'templates:team:<id>', 'templates:agent:<id>'.
 export function templatesName(id: string): string {

@@ -6,7 +6,7 @@ export type Step = 'brief' | 'clarify' | 'plan' | 'grow' | 'harvest' | 'ship'
 export type GateKey = 'shots' | 'unit' | 'integration' | 'e2e' | 'review' | 'security'
 export type Perm = 'read' | 'write' | 'run'
 
-export const STEP_NAME: Record<Step, string> = { brief: 'Brief', clarify: 'Clarify', plan: 'Plan', grow: 'Grow', harvest: 'Harvest', ship: 'Ship' }
+export const STEP_NAME: Record<Step, string> = { brief: 'Plant', clarify: 'Plant', plan: 'Plant', grow: 'Grow', harvest: 'Harvest', ship: 'Harvest' }
 export const GATE_NAME: Record<GateKey, string> = {
   shots: 'Screenshots',
   unit: 'Unit tests',

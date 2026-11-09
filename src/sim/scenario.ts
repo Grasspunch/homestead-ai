@@ -3,30 +3,33 @@
 // Every word an agent says in the demo lives here, so the script can be tuned in one place.
 
 import type { CropKind, Farmhand, Flag, Rect, RoleId, Seed, Task } from './types'
+import { AGENT_TEMPLATES, type FieldStyle, type TeamTemplate } from './templates'
 
 export const TILE = 16
 
+// Our valley is the project. A shared farmstead sits in the middle (the head farmer's house and the barn),
+// with one fenced field per agent around it: see layoutFields below. The rect is sized for the biggest crew.
 export const FARM = {
   name: 'Google sign-in',
   team: 'Web team',
   repo: 'web-app',
   branch: 'homestead/google-sign-in',
-  rect: { x: 2, y: 2, w: 34, h: 21 } as Rect,
-  house: { x: 4, y: 3, sprite: 'house_0' },
-  headFarmer: { x: 7.5, y: 8.4 },
-  // The farmhouse door: farmhands wait for you on the porch.
-  door: { x: 5.95, y: 7.1 },
+  rect: { x: 2, y: 2, w: 35, h: 32 } as Rect,
+  house: { x: 15, y: 11.2, sprite: 'house_0' },
+  headFarmer: { x: 18.6, y: 16.55 },
+  // The farmhouse door.
+  door: { x: 16.95, y: 15.3 },
   porch: [
-    { x: 5.3, y: 7.7 },
-    { x: 6.6, y: 7.7 },
+    { x: 16.3, y: 15.9 },
+    { x: 17.6, y: 15.9 },
   ],
-  // The crew sleeps in the barn and goes back inside when its work is done.
-  barn: { x: 20, y: 3, sprite: 'house_1', door: { x: 21.95, y: 7.15 } },
-  seedLibrary: { x: 12, y: 6 },
-  // Ripe crops are carried here at the harvest: the middle of the plots, between the two rows.
-  shipping: { x: 18.4, y: 15.3 },
+  // The crew sleeps in the barn and goes back to it when its work is done.
+  barn: { x: 20, y: 11.2, sprite: 'house_1', door: { x: 21.95, y: 15.35 } },
+  seedLibrary: { x: 19.0, y: 14.0 },
+  // Ripe crops are carried here at the harvest, in front of the barn.
+  shipping: { x: 22.7, y: 16.0 },
   // Where the head farmer stands to lift files out of the chest.
-  chestSpot: { x: 12.5, y: 7.9 },
+  chestSpot: { x: 19.55, y: 15.6 },
   budget: 120_000,
 }
 
@@ -70,10 +73,9 @@ export const OTHER_FARMS = [
     house: { x: FARM.rect.x + 2, y: SOUTH_Y + 1, sprite: 'house_5' },
     kind: 'garden' as const,
     fields: [
-      { x: 4, y: 7, w: 6, h: 3, crop: 'carrot', stage: 3 },
-      { x: 13, y: 7, w: 6, h: 3, crop: 'cabbage', stage: 2 },
-      { x: 22, y: 7, w: 6, h: 3, crop: 'tulip', stage: 3 },
-      { x: 13, y: 12, w: 6, h: 2, crop: 'wheat', stage: 1 },
+      { x: 4, y: 9, w: 5, h: 3, crop: 'carrot', stage: 3 },
+      { x: 13, y: 9, w: 5, h: 3, crop: 'cabbage', stage: 3 },
+      { x: 22, y: 9, w: 5, h: 3, crop: 'tulip', stage: 3 },
     ] as RegionField[],
   },
   {
@@ -83,9 +85,8 @@ export const OTHER_FARMS = [
     house: { x: EAST_X + 26, y: SOUTH_Y + 1, sprite: 'house_2' },
     kind: 'orchard' as const,
     fields: [
-      { x: 4, y: 7, w: 5, h: 3, crop: 'pumpkin', stage: 2 },
-      { x: 12, y: 7, w: 5, h: 3, crop: 'wheat', stage: 3 },
-      { x: 4, y: 12, w: 5, h: 2, crop: 'carrot', stage: 1 },
+      { x: 3, y: 8, w: 5, h: 3, crop: 'pumpkin', stage: 1 },
+      { x: 12, y: 8, w: 5, h: 3, crop: 'wheat', stage: 2 },
     ] as RegionField[],
   },
 ]
@@ -93,8 +94,55 @@ export const OTHER_FARMS = [
 // The whole region, with a two-tile margin of grass around the valleys.
 export const WORLD = { w: NEIGHBOUR.rect.x + NEIGHBOUR.rect.w + 2, h: SOUTH_Y + OTHER_FARMS[0].rect.h + 2 }
 
-// The crow lands on a post just east of the Tests plot, so the ask, its plot and its farmhand fit one frame.
-export const CROW_SPOT = { x: 28.6, y: 19.4 }
+// The crow lands on a fence post of the asking agent's field. The engine moves it when the valley is laid out.
+export const CROW_SPOT = { x: 13.5, y: 18.15 }
+
+// ---- The valley's fields ----------------------------------------------------------
+// Three columns of fields with one-tile paths between them. The middle column is wider:
+// it holds the farmstead, and the fields above and below it.
+export const VALLEY_COLS = [
+  { x: 7, w: 7 },
+  { x: 15, w: 9 },
+  { x: 25, w: 7 },
+]
+export const FIELD_H = 6
+export const FIELD_PITCH = 7 // a field and the path below it
+export const FARMSTEAD = { x: 15, y: 11, w: 9, h: 6 } as Rect
+
+export interface FieldSlot {
+  id: string // the agent template
+  name: string
+  roles: RoleId[] // the farmhands that work this field (none for an agent with no builder role)
+  style: FieldStyle
+  rect: Rect
+}
+
+// A team template is a valley layout: one field per agent, in member order, around the farmstead.
+// Up to five fields fit in two rows; more add rows above and below.
+export function layoutFields(team: TeamTemplate): FieldSlot[] {
+  const ids: string[] = []
+  for (const m of team.members) {
+    const a = AGENT_TEMPLATES.find((x) => x.id === m.agent)
+    if (a && !a.farmstead && !ids.includes(a.id)) ids.push(a.id)
+  }
+  for (const r of ROLE_ORDER) if (team.staffs[r] && !ids.includes(team.staffs[r])) ids.push(team.staffs[r])
+  const rows = Math.max(2, Math.ceil((ids.length + 1) / 3))
+  const above = Math.floor((rows - 1) / 2)
+  const cells: { c: number; r: number }[] = []
+  for (let r = 0; r < rows; r++) for (let c = 0; c < 3; c++) if (!(r === above && c === 1)) cells.push({ c, r: r - above })
+  return ids.map((id, i) => {
+    const a = AGENT_TEMPLATES.find((x) => x.id === id)
+    const cell = cells[i] ?? { c: i % 3, r: Math.floor(i / 3) + rows - above }
+    const col = VALLEY_COLS[cell.c]
+    return {
+      id,
+      name: a?.name ?? id,
+      roles: ROLE_ORDER.filter((r) => team.staffs[r] === id),
+      style: a?.style ?? { fence: '#a8774a', body: '#f3f2c0', shade: '#ddd5de', crop: 'wheat' },
+      rect: { x: col.x, y: FARMSTEAD.y + cell.r * FIELD_PITCH, w: col.w, h: FIELD_H },
+    }
+  })
+}
 
 // ---- Things on the farm ---------------------------------------------------------
 // Clicking one plays a short reaction. None of them change the work.
@@ -112,22 +160,22 @@ export interface Prop {
 
 export const PROPS: Prop[] = [
   { id: 'house', kind: 'house', sprite: FARM.house.sprite, x: FARM.house.x, y: FARM.house.y, w: 3.9, h: 3.9 },
-  { id: 'chest', kind: 'chest', sprite: 'chest', x: FARM.seedLibrary.x, y: FARM.seedLibrary.y, w: 1.5, h: 1.2 },
-  { id: 'well', kind: 'well', sprite: 'well', x: 17, y: 4, w: 2, h: 1.9 },
-  { id: 'pond', kind: 'pond', sprite: '', x: 28, y: 4, w: 5, h: 3 },
-  // Decor sits at the yard edges, outside the plots' frame. It stays clickable when you pan.
-  { id: 'apple-tree', kind: 'tree', sprite: 'tree_apple', x: 32.5, y: 15.2, w: 2, h: 2 },
-  { id: 'nap-tree', kind: 'tree', sprite: 'tree', x: 4.5, y: 15.5, w: 2, h: 2 },
-  { id: 'bush-a', kind: 'bush', sprite: 'bush_1', x: 26, y: 4, w: 1, h: 1 },
-  { id: 'bush-b', kind: 'bush', sprite: 'bush_0', x: 34.2, y: 9.2, w: 1, h: 1 },
-  { id: 'sunflower', kind: 'sunflower', sprite: 'sunflower', x: 3.2, y: 12.5, w: 1, h: 2 },
-  { id: 'house-flowers', kind: 'flowers', sprite: 'flower_2', x: 3, y: 7.2, w: 1, h: 1 },
-  { id: 'workstation', kind: 'workstation', sprite: 'workstation', x: 9.2, y: 4.8, w: 1.9, h: 1.3 },
-  { id: 'basket', kind: 'basket', sprite: 'basket', x: 33.6, y: 20, w: 1, h: 1 },
+  { id: 'chest', kind: 'chest', sprite: 'chest', x: FARM.seedLibrary.x, y: FARM.seedLibrary.y, w: 1.2, h: 1.1 },
+  { id: 'workstation', kind: 'workstation', sprite: 'workstation', x: 15.1, y: 15.85, w: 1.9, h: 1.3 },
+  // Decor sits at the valley's edges, outside the fields. It stays clickable when you pan.
+  { id: 'well', kind: 'well', sprite: 'well', x: 3.2, y: 5, w: 2, h: 1.9 },
+  { id: 'pond', kind: 'pond', sprite: '', x: 32.2, y: 4, w: 4.6, h: 3 },
+  { id: 'apple-tree', kind: 'tree', sprite: 'tree_apple', x: 33.6, y: 13, w: 2, h: 2 },
+  { id: 'nap-tree', kind: 'tree', sprite: 'tree', x: 3.0, y: 14, w: 2, h: 2 },
+  { id: 'bush-a', kind: 'bush', sprite: 'bush_1', x: 5.4, y: 3.4, w: 1, h: 1 },
+  { id: 'bush-b', kind: 'bush', sprite: 'bush_0', x: 35.2, y: 17.2, w: 1, h: 1 },
+  { id: 'sunflower', kind: 'sunflower', sprite: 'sunflower', x: 3.6, y: 19, w: 1, h: 2 },
+  { id: 'house-flowers', kind: 'flowers', sprite: 'flower_2', x: 5.4, y: 22.6, w: 1, h: 1 },
+  { id: 'basket', kind: 'basket', sprite: 'basket', x: 33.4, y: 22.2, w: 1, h: 1 },
 ]
 
 // Chickens wander inside this pen.
-export const CHICKEN_PEN = { x: 31.2, y: 11.6, w: 3.4, h: 0.9 }
+export const CHICKEN_PEN = { x: 32.6, y: 9.4, w: 3.4, h: 0.9 }
 
 // What a farmhand does once its tasks are done, so it never just stands there.
 // Each chore uses frames the sprite sheet already has.
@@ -142,21 +190,26 @@ export interface Chore {
 }
 
 export const CHORES: Chore[] = [
-  { id: 'feed', label: 'Feeding the chickens', spot: { x: 30.2, y: 12.1 }, dir: 'right', anim: 'water' },
-  { id: 'flowers', label: 'Watering the flowers', spot: { x: 3.5, y: 9.0 }, dir: 'up', anim: 'water' },
-  { id: 'chop', label: 'Chopping wood', spot: { x: 10.1, y: 7.2 }, dir: 'up', anim: 'chop' },
-  { id: 'fruit', label: 'Picking apples', spot: { x: 33.5, y: 17.9 }, dir: 'up', anim: 'idle', emote: 'check' },
-  { id: 'nap', label: 'Napping under the tree', spot: { x: 5.5, y: 18.0 }, dir: 'down', anim: 'idle', emote: 'sleep' },
-  { id: 'pond', label: 'Looking at the pond', spot: { x: 30.5, y: 7.7 }, dir: 'up', anim: 'idle' },
-  { id: 'chat-a', label: 'Chatting', spot: { x: 16.4, y: 7.3 }, dir: 'right', anim: 'idle', partner: 'chat-b' },
-  { id: 'chat-b', label: 'Chatting', spot: { x: 17.7, y: 7.3 }, dir: 'left', anim: 'idle', partner: 'chat-a' },
+  // Near the farmstead.
+  { id: 'chop', label: 'Chopping wood', spot: { x: 16.05, y: 17.6 }, dir: 'up', anim: 'chop' },
+  { id: 'chat-a', label: 'Chatting', spot: { x: 19.4, y: 17.55 }, dir: 'right', anim: 'idle', partner: 'chat-b' },
+  { id: 'chat-b', label: 'Chatting', spot: { x: 20.6, y: 17.55 }, dir: 'left', anim: 'idle', partner: 'chat-a' },
+  // At the valley's edges.
+  { id: 'feed', label: 'Feeding the chickens', spot: { x: 32.0, y: 10.3 }, dir: 'right', anim: 'water' },
+  { id: 'flowers', label: 'Watering the flowers', spot: { x: 5.9, y: 24.2 }, dir: 'up', anim: 'water' },
+  { id: 'fruit', label: 'Picking apples', spot: { x: 34.6, y: 15.6 }, dir: 'up', anim: 'idle', emote: 'check' },
+  { id: 'nap', label: 'Napping under the tree', spot: { x: 4.0, y: 16.6 }, dir: 'down', anim: 'idle', emote: 'sleep' },
+  { id: 'pond', label: 'Looking at the pond', spot: { x: 34.5, y: 7.6 }, dir: 'up', anim: 'idle' },
 ]
 
-export const VALLEY_STATS: Record<string, { agents: number; energyWeek: number; pests: number; waiting: number; harvests: number; unattended?: string }> = {
+// A valley's overall state, shown in the region view by its head farmer, drawn big.
+export type ValleyState = 'working' | 'idle' | 'needs' | 'done' | 'failed'
+
+export const VALLEY_STATS: Record<string, { agents: number; energyWeek: number; pests: number; waiting: number; harvests: number; unattended?: string; state?: ValleyState; reason?: 'Cost' | 'Risk' | 'Irreversible' | 'Failure' | 'Anomaly'; doing?: string }> = {
   [FARM.name]: { agents: 6, energyWeek: 0, pests: 0, waiting: 0, harvests: 0 },
-  [NEIGHBOUR.name]: { agents: 4, energyWeek: 412_000, pests: 3, waiting: 1, harvests: 2 },
-  'Billing webhooks': { agents: 3, energyWeek: 168_000, pests: 0, waiting: 0, harvests: 4, unattended: '1 sprinkler: nightly dependency updates' },
-  'Mobile app 4.2': { agents: 2, energyWeek: 96_000, pests: 1, waiting: 0, harvests: 31, unattended: '1 beehive: flaky test triage' },
+  [NEIGHBOUR.name]: { agents: 4, energyWeek: 412_000, pests: 3, waiting: 1, harvests: 2, state: 'needs', reason: 'Risk', doing: 'Retired /v1/session yesterday. Two clients still call it.' },
+  'Billing webhooks': { agents: 3, energyWeek: 168_000, pests: 0, waiting: 0, harvests: 4, unattended: '1 sprinkler: nightly dependency updates', state: 'done', doing: 'Shipped retries for failed webhooks on Monday.' },
+  'Mobile app 4.2': { agents: 2, energyWeek: 96_000, pests: 1, waiting: 0, harvests: 31, unattended: '1 beehive: flaky test triage', state: 'working', doing: 'Building the 4.2 release: offline mode and the new onboarding.' },
 }
 
 // ---- Opening -------------------------------------------------------------------
@@ -259,7 +312,7 @@ export const TASKS: TaskSeed[] = [
     id: 'backend',
     name: 'OAuth callback route',
     crop: 'wheat',
-    plot: plot(13, 11, 4, 2),
+    plot: plot(9, 13, 3, 2),
     budget: 24_000,
     assignee: 'backend',
     proposedAssignee: 'backend',
@@ -274,7 +327,7 @@ export const TASKS: TaskSeed[] = [
     id: 'frontend',
     name: 'Sign-in button and page',
     crop: 'carrot',
-    plot: plot(21, 11, 5, 2),
+    plot: plot(27, 13, 3, 2),
     budget: 30_000,
     assignee: 'frontend',
     proposedAssignee: 'frontend',
@@ -289,7 +342,7 @@ export const TASKS: TaskSeed[] = [
     id: 'tests',
     name: 'End-to-end sign-in tests',
     crop: 'cabbage',
-    plot: plot(21, 18, 4, 2),
+    plot: plot(9, 20, 3, 2),
     budget: 18_000,
     assignee: 'tests',
     proposedAssignee: 'tests',
@@ -304,7 +357,7 @@ export const TASKS: TaskSeed[] = [
     id: 'docs',
     name: 'Setup guide',
     crop: 'tulip',
-    plot: plot(13, 18, 3, 2),
+    plot: plot(18, 20, 3, 2),
     budget: 8_000,
     assignee: 'docs',
     proposedAssignee: 'docs',
@@ -331,10 +384,10 @@ export const CLASH = {
 
 // Neighbour farm: drawn and animated, never simulated in depth.
 export const NEIGHBOUR_PLOTS: { name: string; crop: CropKind; plot: Rect; stage: number; drought?: boolean }[] = [
-  { name: 'Migrate clients to /v2', crop: 'cabbage', plot: plot(NEIGHBOUR.rect.x + 4, NEIGHBOUR.rect.y + 10, 5, 3), stage: 2 },
-  { name: 'Retire /v1/session', crop: 'wheat', plot: plot(NEIGHBOUR.rect.x + 12, NEIGHBOUR.rect.y + 10, 4, 3), stage: 3, drought: true },
-  { name: 'Load tests', crop: 'carrot', plot: plot(NEIGHBOUR.rect.x + 19, NEIGHBOUR.rect.y + 10, 4, 3), stage: 3 },
-  { name: 'Changelog', crop: 'tulip', plot: plot(NEIGHBOUR.rect.x + 12, NEIGHBOUR.rect.y + 15, 4, 2), stage: 2 },
+  { name: 'Migrate clients to /v2', crop: 'cabbage', plot: plot(NEIGHBOUR.rect.x + 3, NEIGHBOUR.rect.y + 8, 5, 3), stage: 2 },
+  { name: 'Retire /v1/session', crop: 'wheat', plot: plot(NEIGHBOUR.rect.x + 13, NEIGHBOUR.rect.y + 8, 4, 3), stage: 3, drought: true },
+  { name: 'Load tests', crop: 'carrot', plot: plot(NEIGHBOUR.rect.x + 3, NEIGHBOUR.rect.y + 15, 4, 2), stage: 3 },
+  { name: 'Changelog', crop: 'tulip', plot: plot(NEIGHBOUR.rect.x + 13, NEIGHBOUR.rect.y + 15, 4, 2), stage: 2 },
 ]
 
 // ---- Seeds ------------------------------------------------------------------

@@ -181,6 +181,12 @@ button {
   color: var(--sheet);
 }
 
+.crumbs .crumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .crumbs .sep {
   color: var(--ink-faint);
   font-family: var(--font-body);

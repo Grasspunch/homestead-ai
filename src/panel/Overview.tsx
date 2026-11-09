@@ -352,7 +352,6 @@ export function StaysWithYou() {
   const e = useEngine()
   return (
     <>
-    <h4 className="group">Stays with you</h4>
     <ul className="rows">
       <li>
         <Row label={OUTPUT.guide.title} sub={<span className="mono">{OUTPUT.guide.file}</span>} onClick={() => e.go({ kind: 'out', id: 'guide' })} />

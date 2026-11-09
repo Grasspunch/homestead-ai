@@ -4,7 +4,7 @@ import { clampCamera, fitCamera, render, type Camera, type Hit } from './render'
 import { engine } from '../sim/engine'
 import { useEngine } from '../ui'
 
-const ORDER: Hit['kind'][] = ['crow', 'crate', 'chicken', 'farmhand', 'head', 'pest', 'sign', 'signpost', 'prop', 'plot', 'neighbour', 'nplot', 'farm']
+const ORDER: Hit['kind'][] = ['crow', 'crate', 'chicken', 'farmhand', 'helper', 'head', 'pest', 'sign', 'signpost', 'prop', 'plot', 'field', 'neighbour', 'nplot', 'farm']
 
 export function MapView() {
   const e = useEngine()
@@ -21,7 +21,11 @@ export function MapView() {
     let raf = 0
     let last = performance.now()
     let alive = true
-    Promise.all([loadAtlas(), document.fonts.load('16px SproutLands').catch(() => null)]).then(() => {
+    Promise.all([
+      loadAtlas(),
+      document.fonts.load('400 14px "Atkinson Hyperlegible Next"').catch(() => null),
+      document.fonts.load('700 14px "Atkinson Hyperlegible Next"').catch(() => null),
+    ]).then(() => {
       if (!alive) return
       setReady(true)
       engine.markReady()
@@ -42,11 +46,11 @@ export function MapView() {
           const free = engine.freeCam
           if (free) cam.current = free
           else {
-            const target = fitCamera(engine.cameraTarget(), W, H, engine.view === 'valley' || engine.intro ? 0 : 76, engine.cameraInteger)
+            const target = fitCamera(engine.cameraTarget(), W, H, engine.view === 'valley' || engine.intro ? 0 : 44, engine.cameraInteger)
             if (!cam.current) cam.current = target
             else {
-              // The opening pans slowly; everything else settles quickly.
-              const k = 1 - Math.exp(-dt * (engine.intro ? 1.6 : 3.2))
+              // The opening pans slowly; everything else, a page change included, settles in about 0.4s.
+              const k = 1 - Math.exp(-dt * (engine.intro ? 1.6 : 6))
               cam.current = {
                 scale: cam.current.scale + (target.scale - cam.current.scale) * k,
                 x: cam.current.x + (target.x - cam.current.x) * k,
@@ -84,13 +88,30 @@ export function MapView() {
   const click = (h: Hit) => {
     if (engine.intro) return
     if (engine.phase === 'harvest' && engine.harvestStage === 'map') return engine.skipHarvestMap()
+    // On the valley page a field, its big character, its plots and its farmhand all open that farm's page.
+    const valleyPage = engine.view === 'farm' && !engine.fieldPage
+    const roleOf = (id: string) => engine.fields.find((f) => f.id === id)?.roles[0]
     switch (h.kind) {
+      case 'field': {
+        const role = roleOf(h.id)
+        return role && valleyPage && engine.openField(role)
+      }
       case 'plot':
+        if (valleyPage) return engine.openField(engine.task(h.id).assignee)
         return engine.openTask(h.id)
       case 'crate':
+        if (h.id === 'shipping') {
+          // The shipping crate: its lid opens, and the panel shows the Grow review before the harvest, its root after.
+          engine.poke('shipping')
+          engine.setPanel(true)
+          return engine.setNav(engine.phase === 'plan' || engine.phase === 'grow' ? [{ kind: 'step', id: 'grow' }] : [])
+        }
         return engine.openDraft(h.id)
       case 'farmhand':
+        if (valleyPage && engine.fieldOf(h.id as never)) return engine.openField(h.id as never)
         return engine.pokeFarmhand(h.id as never)
+      case 'helper':
+        return engine.openTask(h.id.split(':')[0])
       case 'pest': {
         const t = engine.tasks.find((x) => x.pests.some((p) => p.id === h.id))
         return t && engine.openTask(t.id)
@@ -110,7 +131,8 @@ export function MapView() {
         engine.setPanel(true)
         return engine.setNav([{ kind: 'task', id: h.id.split(':')[0] }, { kind: 'lib', id: h.id.split(':').slice(1).join(':') }])
       case 'farm':
-        if (engine.view === 'valley' && h.id === engine.questTitle) engine.setView('farm')
+        // In the region view: ours opens as before; another project's valley opens read-only.
+        if (engine.view === 'valley') engine.peekFarm(h.id)
         return
     }
   }
@@ -145,7 +167,7 @@ export function MapView() {
         const h = pick(ev.clientX, ev.clientY)
         engine.hover(h?.kind === 'plot' ? h.id : null)
         const r = w.getBoundingClientRect()
-        const tip = h && (h.kind === 'plot' || h.kind === 'farmhand' || h.kind === 'nplot' || h.kind === 'neighbour' || h.kind === 'head' || (h.kind === 'farm' && engine.view === 'valley') || h.kind === 'signpost' || h.kind === 'crow' || h.kind === 'crate')
+        const tip = h && (h.kind === 'plot' || h.kind === 'farmhand' || h.kind === 'nplot' || h.kind === 'neighbour' || h.kind === 'head' || (h.kind === 'farm' && engine.view === 'valley') || h.kind === 'signpost' || h.kind === 'crow' || h.kind === 'crate' || h.kind === 'helper' || h.kind === 'field')
         setHover(h ? { hit: tip ? h : { ...h, title: '' }, x: ev.clientX - r.left, y: ev.clientY - r.top } : null)
       }}
       onPointerUp={(ev) => {
@@ -158,6 +180,8 @@ export function MapView() {
         const h = pick(ev.clientX, ev.clientY)
         if (h) click(h)
         else if (engine.phase === 'harvest' && engine.harvestStage === 'map') engine.skipHarvestMap()
+        // A farm page: a click outside its field goes back to the valley.
+        else if (engine.view === 'farm' && engine.fieldPage && !engine.intro) engine.closeField()
       }}
       onPointerCancel={() => {
         drag.current = null

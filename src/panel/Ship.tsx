@@ -3,7 +3,7 @@
 // Deploying is the one outbound step, so it alone is drawn in blue.
 import './ship.css'
 import { useState } from 'react'
-import { CI_JOBS, HEALTH, PIPELINE, RELEASE, fmtHealth } from '../sim/ship'
+import { CI_JOBS, HEALTH, RELEASE, fmtHealth } from '../sim/ship'
 import { OUTPUT } from '../sim/review'
 import { useEngine } from '../ui'
 import { Envelope } from './Cards'
@@ -42,12 +42,13 @@ export function shipSub(e: E): string {
 export function ShipNow() {
   const e = useEngine()
   const st = e.shipStage
-  const deploying = st === 'canary' || st === 'canary2' || st === 'rollback' || st === 'rolledback' || st === 'rollout' || st === 'live' || (st === 'deploy' && e.rolledBack) || (st === 'held' && e.deploys > 0)
+  const deploying = st === 'canary' || st === 'canary2' || st === 'rollback' || st === 'rolledback' || st === 'rollout' || (st === 'deploy' && e.rolledBack) || (st === 'held' && e.deploys > 0)
   const live = st === 'live'
   const waitingOnYou = e.openAsks.length > 0
   // Once CI passes it folds into one line, so the deploy stays in view.
   const ciDone = CI_JOBS.every((j) => e.ci[j.id].state === 'pass')
   const [showCi, setShowCi] = useState(false)
+  const release = live ? `${RELEASE.users} users` : st === 'rollout' ? `${e.rollout}%` : e.rollout ? '5% canary' : e.rolledBack ? 'Rolled back' : 'Not deployed'
   return (
     <>
       <p className="headline" data-testid="ship-headline">
@@ -55,116 +56,58 @@ export function ShipNow() {
       </p>
       <ul className="rows">
         <li>
-          <Row
-            mark={<span className="kind pr">PR</span>}
-            label={`Pull request #${OUTPUT.pr}`}
-            sub={`Merged into ${OUTPUT.base}. Every gate passed and you approved.`}
-            end="Merged"
-            tone="done"
-            onClick={() => e.go({ kind: 'step', id: 'harvest' })}
-            testId="out-pr-merged"
-          />
+          <Row mark={<span className="kind pr">PR</span>} label={`Pull request #${OUTPUT.pr}`} end={`Merged into ${OUTPUT.base}`} tone="done" onClick={() => e.go({ kind: 'step', id: 'harvest' })} testId="out-pr-merged" />
         </li>
+        {ciDone && !showCi ? (
+          <li>
+            <Row mark={<GateMark s="pass" />} label={`CI on ${OUTPUT.base}`} end={`${CI_JOBS.length} of ${CI_JOBS.length} passed`} tone="done" onClick={() => setShowCi(true)} testId="ci-summary" />
+          </li>
+        ) : (
+          CI_JOBS.map((j) => {
+            const r = e.ci[j.id]
+            const mark = r.state === 'pass' ? 'pass' : r.state === 'fail' ? 'fail' : r.state === 'wait' ? 'wait' : 'run'
+            const end = r.state === 'pass' ? (j.outcome === 'flaky' ? `${j.time}, retried once` : j.time) : r.state === 'fail' ? 'Failed' : r.state === 'retry' ? 'Retrying a flaky test' : r.state === 'run' ? 'Running' : 'Waiting'
+            return (
+              <li key={j.id}>
+                <Row mark={<GateMark s={mark} />} label={`CI: ${j.name}`} end={end} tone={r.state === 'pass' ? 'done' : r.state === 'fail' ? 'fail' : ''} testId={`ci-${j.id}`} />
+              </li>
+            )
+          })
+        )}
       </ul>
-      {ciDone && !showCi ? (
+      <div className={`outbox deploybox ${live ? 'sent' : ''}`} data-testid="deploy-box">
         <ul className="rows">
           <li>
-            <Row
-              mark={<GateMark s="pass" />}
-              label={`CI on ${OUTPUT.base}`}
-              sub={`${CI_JOBS.length} of ${CI_JOBS.length} jobs passed. 1 known flaky test retried on its own.`}
-              end="Passed"
-              tone="done"
-              onClick={() => setShowCi(true)}
-              testId="ci-summary"
-            />
+            <Row mark={<Envelope />} label={`${RELEASE.app} ${RELEASE.version} to production`} end={release} tone={live ? 'done' : ''} />
           </li>
-        </ul>
-      ) : (
-        <>
-          <p className="sublabel">CI on {OUTPUT.base}</p>
-          <ul className="rows ci-rows" data-testid="ci-rows">
-            {CI_JOBS.map((j) => {
-              const r = e.ci[j.id]
-              const mark = r.state === 'pass' ? 'pass' : r.state === 'fail' ? 'fail' : r.state === 'wait' ? 'wait' : 'run'
-              const end = r.state === 'pass' ? 'Passed' : r.state === 'fail' ? 'Failed' : r.state === 'retry' ? 'Retrying' : r.state === 'run' ? 'Running' : 'Waiting'
+          {live && (
+            <li>
+              <Row mark={<GateMark s="pass" />} label="Canary health" end={`${HEALTH.length} of ${HEALTH.length} passed`} tone="done" testId="health-summary" />
+            </li>
+          )}
+          {deploying &&
+            HEALTH.map((h) => {
+              const r = e.health[h.id]
+              const watching = st === 'canary' || st === 'canary2'
               return (
-                <li key={j.id}>
-                  <Row
-                    mark={<GateMark s={mark} />}
-                    label={j.name}
-                    sub={r.state === 'pass' || r.state === 'fail' ? r.text : r.state === 'retry' ? `${j.flaky?.test}, retried once on its own` : r.text}
-                    end={end}
-                    tone={r.state === 'pass' ? 'done' : r.state === 'fail' ? 'fail' : ''}
-                    testId={`ci-${j.id}`}
-                  />
+                <li key={h.id}>
+                  <Row mark={<GateMark s={!r.ok ? 'fail' : watching ? 'run' : 'pass'} />} label={h.name} end={r.ok ? fmtHealth(h, r.value) : `${fmtHealth(h, r.value)}, needs ${h.threshold.replace(/^At least /, '')}`} tone={!r.ok ? 'fail' : watching ? '' : 'done'} testId={`health-${h.id}`} />
                 </li>
               )
             })}
-          </ul>
-          <p className="fine-line">
-            {PIPELINE.provider}, <span className="mono">{PIPELINE.workflow}</span>
-          </p>
-        </>
-      )}
-      <div className={`outbox deploybox ${live ? 'sent' : ''}`} data-testid="deploy-box">
-        <div className="out-line">
-          <Envelope />
-          <span>{live ? `Live for ${RELEASE.users} users` : `Deploy to production reaches ${RELEASE.users} users`}</span>
-        </div>
-        <ul className="rows">
-          <li>
-            <Row label={`${RELEASE.app} ${RELEASE.version}`} sub={`PR #${OUTPUT.pr}, merged into ${OUTPUT.base}`} end={live ? '100%' : st === 'rollout' ? `${e.rollout}%` : e.rollout ? '5%' : e.rolledBack ? 'Rolled back' : 'Not deployed'} />
-          </li>
+          {e.rolledBack && (
+            <li>
+              <Row label={`Rolled back to ${RELEASE.previous}`} end="5% of users, 6 min" onClick={() => e.go({ kind: 'log', tab: 'auto' })} testId="rollback-row" />
+            </li>
+          )}
         </ul>
-        {live && (
-          <ul className="rows">
-            <li>
-              <Row mark={<GateMark s="pass" />} label="Canary health" sub={`${HEALTH.length} of ${HEALTH.length} checks passed on 5% of users, then it rolled out to everyone`} end="Passed" tone="done" testId="health-summary" />
-            </li>
-          </ul>
-        )}
-        {deploying && !live && (
-          <>
-            <p className="sublabel">Canary health, 5% of users</p>
-            <ul className="rows" data-testid="health-rows">
-              {HEALTH.map((h) => {
-                const r = e.health[h.id]
-                const failed = !r.ok
-                const watching = st === 'canary' || st === 'canary2'
-                const end = failed ? 'Failed' : watching ? (r.seen ? 'Watching' : 'Starting') : 'Passed'
-                return (
-                  <li key={h.id}>
-                    <Row
-                      mark={<GateMark s={failed ? 'fail' : watching ? 'run' : 'pass'} />}
-                      label={h.name}
-                      sub={`${fmtHealth(h, r.value)}, needs ${h.threshold.toLowerCase()}`}
-                      end={end}
-                      tone={failed ? 'fail' : watching ? '' : 'done'}
-                      testId={`health-${h.id}`}
-                    />
-                  </li>
-                )
-              })}
-            </ul>
-          </>
-        )}
-        {e.rolledBack && (
-          <ul className="rows">
-            <li>
-              <Row label={`Rolled back to ${RELEASE.previous} on its own`} sub={`Sign-in failed for ${RELEASE.exposure}. Logged under Decided without you.`} onClick={() => e.go({ kind: 'log', tab: 'auto' })} testId="rollback-row" />
-            </li>
-          </ul>
-        )}
         {st === 'held' && !waitingOnYou && (
           <div className="send">
             <button className="btn out full" onClick={() => e.requestDeploy()} data-testid="deploy">
               Deploy to production
             </button>
-            <p className="quiet">You’ll see the release, the rollout plan and the rollback rule before it goes.</p>
           </div>
         )}
-        {live && <p className="out-done">Live for {RELEASE.users} users.</p>}
       </div>
       <StaysWithYou />
     </>

@@ -42,8 +42,6 @@ export function settingsStatus(id: string | undefined, _e: E): string | undefine
       return 'Production secrets never reach an agent.'
     case 'ask':
       return 'Everything else, agents decide and log under Decided without you.'
-    case 'deploy':
-      return 'Deploying to production always asks you. Rolling back only restores what was live before.'
     case 'config':
       return 'Changes here open a pull request on the file.'
     default:
@@ -113,8 +111,8 @@ function Root() {
     { id: 'sandbox', label: 'Sandbox', sub: 'Where agents run, network, secrets' },
     { id: 'limits', label: 'Limits', sub: `${k(S.run.budget_tokens)} tokens, $${S.run.budget_usd}, ${S.run.timeout_min} min per run` },
     { id: 'ask', label: 'When agents ask you', sub: 'Rules for interrupting, and where' },
-    { id: 'deploy', label: 'Deploy', sub: `${S.deploy.pipeline}, ${S.deploy.canary_pct}% canary, ${S.deploy.auto_rollback ? 'rolls back on its own' : 'asks before rolling back'}` },
-    { id: 'templates', label: 'Templates', sub: `Agent and team templates. This farm uses ${e.team.name}`, end: String(e.customTeams.length + 4) },
+    { id: 'deploy', label: 'Deploy', sub: '', end: S.deploy.auto_rollback ? 'Rolls back on its own' : 'Asks before rolling back' },
+    { id: 'templates', label: 'Templates', sub: `Agent and team templates. This valley uses ${e.team.name}`, end: String(e.customTeams.length + 4) },
     { id: 'keys', label: 'Keyboard', sub: 'J and K to move, Enter to open' },
     { id: 'config', label: 'homestead.toml', sub: 'All of this as a file, and the CLI' },
   ]
@@ -312,70 +310,55 @@ function Deploy() {
   const e = useEngine()
   const D = e.settings.deploy
   const monitors = tools(e).filter((t) => t.name === 'Sentry' || t.name === 'GitHub Actions')
+  const cap = (n: string) => n.charAt(0).toUpperCase() + n.slice(1)
   return (
     <div className="settings">
-      <section className="section">
-        <h4>Pipeline</h4>
-        <ul className="rows">
-          <li>
-            <Row label={`${D.pipeline}, on every merge to main`} sub={<span className="mono">{D.workflow}</span>} />
+      <ul className="rows">
+        <li>
+          <Row label={`Pipeline: ${D.pipeline}`} end={<span className="mono">{D.workflow.replace('.github/workflows/', '')}</span>} />
+        </li>
+        {D.environments.map((x) => (
+          <li key={x.name}>
+            <Row label={`${cap(x.name)}: ${x.url}`} end={x.name === 'production' ? 'After you approve' : 'On every merge'} />
           </li>
-        </ul>
-      </section>
+        ))}
+      </ul>
       <section className="section">
-        <h4>Environments</h4>
-        <ul className="rows">
-          {D.environments.map((x) => (
-            <li key={x.name}>
-              <Row label={`${x.name.charAt(0).toUpperCase() + x.name.slice(1)}, ${x.url}`} sub={x.gate} />
-            </li>
-          ))}
-        </ul>
-      </section>
-      <section className="section">
-        <h4>Rollout</h4>
         <div className="rollout-fields">
           <label>
             Canary
             <span className="unit-input">
-              <input className="mono" value={D.canary_pct} onChange={(x) => e.setSetting('deploy', 'canary_pct', x.target.value)} aria-label="Canary percent" />%
+              <input className="mono" value={D.canary_pct} onChange={(x) => e.setSetting('deploy', 'canary_pct', x.target.value)} aria-label="Canary percent" />% of users
             </span>
           </label>
           <label>
-            For
+            for
             <span className="unit-input">
               <input className="mono" value={D.canary_min} onChange={(x) => e.setSetting('deploy', 'canary_min', x.target.value)} aria-label="Canary minutes" />
-              min
+              min, then everyone
             </span>
           </label>
         </div>
-        <p className="quiet">Then everyone, if every health check passes.</p>
       </section>
-      <section className="section">
-        <h4>Health checks</h4>
-        <ul className="rows">
-          {D.checks.map((c) => (
-            <li key={c.name}>
-              <Row label={c.name} sub={`From ${c.source}`} end={c.threshold} />
-            </li>
-          ))}
-        </ul>
-      </section>
+      <ul className="rows">
+        {D.checks.map((c) => (
+          <li key={c.name}>
+            <Row label={c.name} end={c.threshold} />
+          </li>
+        ))}
+      </ul>
       <section className="section">
         <ul className="opt-list">
-          <Opt checked={D.auto_rollback} onChange={(on) => e.setSetting('deploy', 'auto_rollback', on)} label="Roll back on its own when a check fails" ev="It only restores the version that was live before, and logs it under Decided without you." testId="settings-auto-rollback" />
+          <Opt checked={D.auto_rollback} onChange={(on) => e.setSetting('deploy', 'auto_rollback', on)} label="Roll back on its own when a check fails" testId="settings-auto-rollback" />
         </ul>
       </section>
-      <section className="section">
-        <h4>Monitoring, read only</h4>
-        <ul className="rows">
-          {monitors.map((t) => (
-            <li key={t.name}>
-              <Row mark={<span className="kind tool">T</span>} label={t.name} sub={t.what} end="Read only" onClick={() => e.go({ kind: 'lib', id: t.name })} />
-            </li>
-          ))}
-        </ul>
-      </section>
+      <ul className="rows">
+        {monitors.map((t) => (
+          <li key={t.name}>
+            <Row mark={<span className="kind tool">T</span>} label={t.name} end="Read only" onClick={() => e.go({ kind: 'lib', id: t.name })} />
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -466,7 +449,7 @@ function Config() {
         <div className="cmd">
           <code>homestead run "Add Google sign-in" --config homestead.toml</code>
         </div>
-        <p className="note">The farm and the CLI read the same file and show the same run.</p>
+        <p className="note">The valley and the CLI read the same file and show the same run.</p>
       </section>
     </div>
   )

@@ -3,7 +3,7 @@
 // session call and the Reviewer's review). They are simulated unless Live AI is on in Settings.
 // Every number on screen is computed from the ledger: agent actions, energy, and how many times a human was needed.
 
-import { ATTACHMENTS, BEATS, BRIEF_GOAL, BUILDERS, CHICKEN_PEN, CHORES, CLARIFY, CLASH, CREW, CROW_SPOT, FARM, LESSON_STAGING, LESSON_TRACE, MISSING, NEIGHBOUR, REPLAN_SUBTASKS, ROLE_ORDER, START_SEEDS, SUGGESTED_BUDGET, TASKS, type Attachment, type ClarifyQ } from './scenario'
+import { ATTACHMENTS, BEATS, BRIEF_GOAL, BUILDERS, CHICKEN_PEN, CHORES, CLARIFY, CLASH, CREW, CROW_SPOT, FARM, FARMSTEAD, OTHER_FARMS, WORLD, LESSON_STAGING, LESSON_TRACE, MISSING, NEIGHBOUR, REPLAN_SUBTASKS, ROLE_ORDER, START_SEEDS, SUGGESTED_BUDGET, TASKS, layoutFields, type Attachment, type ClarifyQ, type FieldSlot } from './scenario'
 import { callAgent, probeLive, setLiveAI, RECORDED, type ClarifyOut, type ConflictOut, type Outcome, type PlanOut, type ReviewOut, type SessionOut } from './live'
 import { conflictDocs, PR_DIFF, SLOTS } from '../agent/agents'
 import { LIBRARY, libItem, type Access } from './library'
@@ -163,6 +163,8 @@ export class Engine {
   panelOpen = true
   // Set while you drag the map around; cleared when the panel reopens or the view changes.
   freeCam: { x: number; y: number; scale: number } | null = null
+  peekName: string | null = null // another project's valley, opened read-only from the region view
+  fieldPage: RoleId | null = null // one agent's field, opened as its own page
   nav: Nav[] = []
   hoverTask: string | null = null
   // Clicks on things around the farm: id -> clock of the click. Reactions are cosmetic.
@@ -369,16 +371,26 @@ export class Engine {
 
   cameraTarget(): Rect {
     if (this.intro) {
-      if (this.beat === 0) return { x: 0, y: 0, w: 76, h: 46 }
+      if (this.beat === 0) return { x: 0, y: 0, w: WORLD.w, h: WORLD.h }
       if (this.beat === 1) {
         // Pan from your farm's sign to the neighbour's.
         const k = Math.min(1, Math.max(0, (this.clock - this.beatT - 0.6) / 2.6))
         const e = k * k * (3 - 2 * k)
         return { x: 22 + e * 9, y: 3, w: 24, h: 13 }
       }
-      return { x: 1, y: 1.5, w: 36, h: 21.5 }
+      return this.valleyFrame()
     }
-    if (this.view === 'valley') return { x: 0, y: 0, w: 76, h: 46 }
+    if (this.view === 'valley') return { x: 0, y: 0, w: WORLD.w, h: WORLD.h }
+    if (this.peekName) {
+      const r = [NEIGHBOUR, ...OTHER_FARMS].find((f) => f.name === this.peekName)?.rect
+      if (r) return { x: r.x - 0.5, y: r.y - 0.5, w: r.w + 1, h: r.h + 1 }
+    }
+    // A field page frames only that agent's field.
+    if (this.fieldPage && !this.intro) {
+      const f = this.fieldOf(this.fieldPage)
+      // The fence, the name plate above it and the name lines under the farmhand.
+      if (f) return { x: f.rect.x - 0.4, y: f.rect.y - 1.5, w: f.rect.w + 0.8, h: f.rect.h + 2.2 }
+    }
     if (this.trace) {
       const p = this.task(MISSING.taskId).plot
       return { x: p.x - 7, y: p.y - 5, w: p.w + 14, h: p.h + 9 }
@@ -392,24 +404,78 @@ export class Engine {
       const y = Math.min(p.y, g.y)
       return { x, y, w: Math.max(p.x + p.w, g.x + g.w) - x, h: Math.max(p.y + p.h, g.y + g.h) - y }
     }
-    // The crow's ask frames only the plot that asks, its farmhand and the crow.
-    if (this.activeAsk?.id === 'crow' || this.crow.state === 'flying') {
-      const r = this.task(this.activeAsk?.taskId ?? 'tests').plot
-      const x = r.x - 2.5
-      return { x, y: r.y - 2.6, w: CROW_SPOT.x + 1.4 - x, h: r.h + 4.3 }
-    }
-    if (this.phase === 'brief' || this.phase === 'clarify') return { x: 1, y: 1.5, w: 36, h: 21.5 }
-    return this.plotsFrame()
+    // The valley page: an ask lights the asking field (the crow lands on it) but keeps the whole valley in view.
+    if (this.phase === 'brief' || this.phase === 'clarify') return this.valleyFrame()
+    // The valley page always frames the whole valley: each field is one big character, so it reads at 2x.
+    return this.valleyFrame()
   }
 
-  // Plan, Grow, Harvest and Ship frame only our plots and the farmhands beside them.
+  // Kept for the Ship framing: the valley's fields and farmstead.
   plotsFrame(): Rect {
-    const rs = this.tasks.map((t) => t.plot)
-    const x0 = Math.min(...rs.map((r) => r.x - 2)) - 0.4
-    const x1 = Math.max(...rs.map((r) => r.x + r.w + 1)) + 0.4
-    const y0 = Math.min(...rs.map((r) => r.y)) - 2.4
-    const y1 = Math.max(...rs.map((r) => r.y + r.h)) + 1.7
+    return this.valleyFrame()
+  }
+
+  // ---- the valley's fields -------------------------------------------------------------
+
+  fields: FieldSlot[] = layoutFields(this.team)
+  private layoutKey = ''
+
+  fieldOf(role: RoleId): FieldSlot | null {
+    return this.fields.find((f) => f.roles.includes(role)) ?? null
+  }
+
+  askingField(): FieldSlot | null {
+    if (this.view !== 'farm' || this.intro) return null
+    const a = this.activeAsk
+    if (a && a.from !== 'head' && this.phase === 'grow') return this.fieldOf(a.from)
+    if (this.crow.state === 'flying') return this.fieldOf('tests')
+    return null
+  }
+
+  valleyFrame(): Rect {
+    return this.frameOf([FARMSTEAD, ...this.fields.map((f) => f.rect)])
+  }
+
+  frameOf(rs: Rect[]): Rect {
+    const x0 = Math.min(...rs.map((r) => r.x)) - 0.25
+    const x1 = Math.max(...rs.map((r) => r.x + r.w)) + 0.25
+    const y0 = Math.min(...rs.map((r) => r.y)) - 0.8
+    const y1 = Math.max(...rs.map((r) => r.y + r.h)) + 0.3
     return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+  }
+
+  // Lays the fields out from the crew, and each task's plot inside its agent's field.
+  // Runs every tick but only does work when the crew, an assignment or a re-plan row changed.
+  relayout() {
+    const key = `${this.crew}|${this.tasks.map((t) => t.assignee + (t.subtasks.some((s) => s.addedByReplan) ? '+' : '')).join(',')}`
+    if (key === this.layoutKey) return
+    this.layoutKey = key
+    this.fields = layoutFields(this.team)
+    for (const f of this.fields) {
+      const ts = this.tasks.filter((t) => f.roles.includes(t.assignee))
+      if (!ts.length) continue
+      // One plot per task, side by side: 3x2 crops for one, narrower as they share the field.
+      const bw = Math.max(3, Math.min(5, Math.floor((f.rect.w - 1) / ts.length)))
+      let x = f.rect.x + Math.round((f.rect.w - bw * ts.length) / 2)
+      for (const t of ts) {
+        t.plot = { x: x + 1, y: f.rect.y + 2, w: bw - 2, h: 2 + (t.subtasks.some((s) => s.addedByReplan) ? 1 : 0) }
+        x += bw
+      }
+    }
+    const tf = this.fieldOf('tests') ?? this.fields[0]
+    if (tf) {
+      CROW_SPOT.x = tf.rect.x + tf.rect.w - 0.5
+      CROW_SPOT.y = tf.rect.y + 0.15
+    }
+  }
+
+  // A subagent: while a task's longest subtask runs, a helper farmhand works beside the agent.
+  helperOn(t: Task): Subtask | null {
+    const fh = this.farmhands[t.assignee]
+    const job = fh.job
+    if (!job || job.kind !== 'sub' || job.taskId !== t.id || fh.status !== 'working') return null
+    const longest = t.subtasks.reduce((a, x) => (x.secs > a.secs ? x : a), t.subtasks[0])
+    return job.subId === longest.id && !longest.done ? longest : null
   }
 
   // Close-up framings use a whole-number zoom, so a farmhand is 48 to 64 px tall and pixels stay crisp.
@@ -868,16 +934,52 @@ export class Engine {
 
   setPanel(open: boolean) {
     this.panelOpen = open
-    if (open) this.freeCam = null
+    if (open) {
+      this.freeCam = null
+      this.peekName = null // anything that opens the panel brings you back to your own valley
+    }
     this.notify()
   }
 
   setView(v: View) {
     this.view = v
+    this.peekName = null
+    this.fieldPage = null
     this.freeCam = null
     if (v === 'valley') this.closeTrace()
     this.notify()
   }
+  // Open another project's valley from the region view: the camera frames it and a read-only card shows.
+  peekFarm(name: string) {
+    if (name === FARM.name) return this.setView('farm')
+    if (![NEIGHBOUR, ...OTHER_FARMS].some((f) => f.name === name)) return
+    this.view = 'farm'
+    this.freeCam = null
+    this.closeTrace()
+    this.peekName = name
+    this.fieldPage = null
+    this.notify()
+  }
+
+  // One agent's field as its own page: the camera frames only that field and the panel opens on its work.
+  openField(id: RoleId) {
+    if (!this.farmhands[id]) return
+    this.view = 'farm'
+    this.peekName = null
+    this.freeCam = null
+    this.fieldPage = id
+    this.nav = []
+    this.panelOpen = true
+    this.notify()
+  }
+
+  closeField() {
+    if (!this.fieldPage) return
+    this.fieldPage = null
+    this.freeCam = null
+    this.notify()
+  }
+
 
   setLiveAIOn(on: boolean) {
     this.liveAI = on
@@ -895,6 +997,7 @@ export class Engine {
 
   setNav(nav: Nav[]) {
     this.nav = nav
+    this.peekName = null
     const tracing = nav.some((n) => n.kind === 'trace')
     if (!tracing) this.trace = null
     if (nav.some((n) => n.kind === 'task')) this.hints.add('plot')
@@ -1142,7 +1245,7 @@ export class Engine {
 
   // Either side of the shipping crate, clear of the crate and its sign.
   private dropSpot(i: number) {
-    return { x: FARM.shipping.x + [-3.2, -2.1, 2.2, 3.3, 4.4][i % 5], y: FARM.shipping.y + 0.85 }
+    return { x: FARM.shipping.x - 4.6 + i * 0.75, y: FARM.shipping.y + 0.95 }
   }
 
   private updateHarvest(dt: number) {
@@ -1730,6 +1833,7 @@ export class Engine {
   tick(rawDt: number) {
     const dt = Math.min(rawDt, 0.1)
     this.clock += dt
+    this.relayout()
     if (this.seedFly) {
       this.seedFly.t += dt / 1.1
       if (this.seedFly.t >= 1) this.seedFly = null

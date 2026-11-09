@@ -5,6 +5,7 @@ import { STEP_LABEL, STEPS, stepOf } from '../sim/steps'
 import { fmtK, useEngine } from '../ui'
 import { navName, viewFor } from './Detail'
 import { Overview } from './Overview'
+import { FarmBody, farmTitle, ValleysBody, valleysStatus } from './Pages'
 
 function Meter() {
   const e = useEngine()
@@ -140,10 +141,16 @@ export function Panel() {
   const view = top ? viewFor(top, e) : null
   if (e.intro) return <aside className="panel off" aria-hidden />
   if (!e.panelOpen) return <aside className="panel rail-only">{<Rail />}</aside>
+  // The Valleys page and a farm page have their own panel at the root; drill-down works the same on every page.
+  const valleys = e.view === 'valley' && !e.peekName
+  const farm = e.view === 'farm' && !e.peekName ? e.fieldPage : null
+  const title = view ? view.title : valleys ? 'Valleys' : farm ? farmTitle(e, farm) : FARM.name
+  const status = view ? view.status : valleys ? valleysStatus(e) : farm ? e.fhStatus(e.farmhands[farm]) : <OverviewStatus />
+  const body = view ? view.body : valleys ? <ValleysBody /> : farm ? <FarmBody id={farm} /> : <Overview />
   return (
     <aside className="panel" aria-label={FARM.name}>
       <header className="panel-head">
-        <StepBar />
+        {!valleys && !farm && <StepBar />}
         {e.nav.length > 1 && (
           <nav className="trail" aria-label="Where you are">
             {e.nav.slice(0, -1).map((n, i) => (
@@ -155,7 +162,7 @@ export function Panel() {
           </nav>
         )}
         <div className="title-row">
-          <h1>{view ? view.title : FARM.name}</h1>
+          <h1>{title}</h1>
           {top?.kind !== 'settings' && (
             <button className="icon-btn" onClick={() => e.go({ kind: 'settings' })} aria-label="Settings" title="Settings" data-testid="settings">
               <GearIcon />
@@ -165,10 +172,10 @@ export function Panel() {
             <PanelIcon />
           </button>
         </div>
-        <div className="status">{view ? view.status : <OverviewStatus />}</div>
+        <div className="status">{status}</div>
       </header>
       <div className="panel-body" key={e.nav.length + (top ? JSON.stringify(top) : '')}>
-        <div className={`slide ${top ? 'in' : 'out'}`}>{view ? view.body : <Overview />}</div>
+        <div className={`slide ${top ? 'in' : 'out'}`}>{body}</div>
       </div>
     </aside>
   )

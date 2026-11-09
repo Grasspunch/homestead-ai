@@ -1,0 +1,74 @@
+/* Another project's valley, opened from the region view: a read-only card over the map. */
+.peek {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: min(340px, calc(100% - 32px));
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  padding: 16px 16px 14px;
+  font-family: var(--font-body);
+  z-index: 6;
+  animation: toast-in 0.25s ease-out;
+}
+.peek-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.peek-head h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+}
+.peek-state {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 99px;
+  background: var(--sheet-sunk);
+}
+.peek-state.needs {
+  background: var(--needs-wash);
+}
+.peek-state.failed {
+  background: var(--failure);
+  color: #fff;
+}
+.peek-team,
+.peek-doing,
+.peek-note {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.peek-team,
+.peek-note {
+  color: var(--ink-soft);
+}
+.peek-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 12px 0 0;
+  font-size: 14px;
+}
+.peek-facts dt {
+  color: var(--ink-soft);
+}
+.peek-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+.peek .btn {
+  margin-top: 14px;
+  width: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .peek {
+    animation: none;
+  }
+}
