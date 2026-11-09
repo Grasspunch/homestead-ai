@@ -124,10 +124,10 @@ export class Engine {
       subtasks: t.subtasks.map((s) => ({ ...s, progress: 0, started: false, done: false, emitted: 0 })),
     }))
     const homeSpots: Record<RoleId, { x: number; y: number }> = {
-      researcher: { x: 9.6, y: 9.4 },
-      writer: { x: 11.0, y: 9.9 },
-      reviewer: { x: 12.4, y: 9.4 },
-      scheduler: { x: 13.8, y: 9.9 },
+      researcher: { x: 9.4, y: 9.2 },
+      writer: { x: 11.2, y: 10.5 },
+      reviewer: { x: 13.0, y: 9.2 },
+      scheduler: { x: 14.8, y: 10.5 },
     }
     this.farmhands = {} as Record<RoleId, Farmhand>
     for (const c of CREW) {
@@ -305,6 +305,11 @@ export class Engine {
     this.notify()
   }
 
+  // The webinar follows the launch date: two days before, or on the day if the owner said so.
+  private webinarFor(launch: string) {
+    return Object.values(this.clarifyAnswers).some((a) => /launch day/i.test(a)) ? launch : shiftDate(launch, -2)
+  }
+
   get answersText() {
     return this.questions.map((q) => `- ${q.q} ${this.clarifyAnswers[q.id] ?? q.options[0]}`).join('\n')
   }
@@ -442,7 +447,7 @@ export class Engine {
       const earlier = this.launchDate
       const chosen = value === 'keep' ? earlier : later
       const oldWebinar = this.webinarDate
-      const newWebinar = chosen === earlier ? oldWebinar : this.clarifyAnswers.webinar === 'On launch day' ? chosen : shiftDate(chosen, -2)
+      const newWebinar = chosen === earlier ? oldWebinar : this.webinarFor(chosen)
       this.launchDate = chosen
       this.replan = {
         id: 'replan-date',
@@ -466,6 +471,11 @@ export class Engine {
       }
       this.webinarDate = newWebinar
       this.act('Head farmer', 1_500, 'draft', 8)
+    }
+    if (ask.id === 'quote') {
+      this.addLog('Reviewer', value === 'keep' ? 'Kept the Acme quote, attributed by role' : 'Paraphrased the Acme quote without a name', 'info', 'factcheck')
+      const fh = this.farmhands.reviewer
+      if (fh.status === 'asking') fh.status = 'working'
     }
     if (ask.id === 'invites') {
       if (value === 'deny') this.addLog('Scheduler', 'Holding the invites. Nothing was sent.', 'info', 'invites')
@@ -627,12 +637,15 @@ export class Engine {
       this.planRevealT = this.clock
       this.addLog('Head farmer', `Proposed a quest plan: 5 tasks, a crew of 4`, 'info', undefined, `${p.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'} · ${fmtTokens(p.tokens)}. Each task gets only the documents it needs.`)
       if (/webinar|invite/i.test(this.goal)) this.addLog('Head farmer', 'Planted a saved seed in the Scheduler’s card: lesson-webinar-timezones.md', 'auto', 'invites', 'It matched “webinar” in the brief.')
-      if (Object.values(this.clarifyAnswers).some((a) => /launch day/i.test(a))) this.webinarDate = 'March 12'
+      this.webinarDate = this.webinarFor(this.launchDate)
     }
     if (key === 'draft') {
       const d = this.out.draft!
       this.call('Writer', d, 'draft')
-      if (d.data.launch_date) this.launchDate = d.data.launch_date
+      if (d.data.launch_date) {
+        this.launchDate = d.data.launch_date
+        this.webinarDate = this.webinarFor(this.launchDate)
+      }
       const unsourced = d.data.claims.filter((c) => !c.source).length
       this.addLog('Writer', `Drafted “${d.data.headline}” (${d.data.claims.length} claims, ${unsourced} without a source)`, 'info', 'draft', `${d.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'} · ${fmtTokens(d.tokens)}`)
     }
@@ -825,7 +838,7 @@ export class Engine {
         task.pests = task.pests.filter((p) => p.id !== job.pestId)
         const fix = this.out.claims?.data.issues[0]?.fix
         this.addLog(fh.role, `Fixed: ${job.label}`, 'auto', task.id, fix ?? 'Added the missing source.')
-        this.pendingSeeds.push({ ...LESSON_SOURCES })
+        if (this.demoScenario) this.pendingSeeds.push({ ...LESSON_SOURCES })
         fh.job = null
         this.notify()
       }
@@ -873,7 +886,7 @@ export class Engine {
 
   // Returns true when the subtask is blocked on an ask.
   private onSubStart(fh: Farmhand, task: Task, sub: Subtask): boolean {
-    if (sub.id === 'r3' && task.dry) {
+    if (sub.id === 'r3' && task.dry && this.demoScenario) {
       // The rule in player.md: ask only when a task would run more than 25% over budget.
       // Reading 12 more posts would; finishing with what it has would not, so it decides alone.
       this.energyCaught += 9_000
@@ -896,8 +909,34 @@ export class Engine {
         return callAgent('claims', { draft: `${d.headline}\n\n${d.paragraphs.join('\n\n')}` }, RECORDED.claims)
       })
     }
-    if (sub.id === 'i2') {
+    if (sub.id === 'i2' && this.demoScenario) {
       this.addLog(fh.role, `Picked ${this.webinarDate}, 10:00 PT and showed each recipient their own time zone`, 'auto', task.id, 'From the saved seed lesson-webinar-timezones.md')
+    }
+    if (sub.id === 'f2' && this.demoScenario) {
+      // Calibration: the quote has a verbal OK on a call, not a written one, so the Reviewer is only
+      // moderately sure and asks. Claims it is sure about (the benchmark source) it fixes alone.
+      fh.status = 'asking'
+      this.raise({
+        id: 'quote',
+        label: 'Risk',
+        from: fh.id,
+        fromName: fh.role,
+        taskId: task.id,
+        question: 'The announcement quotes Acme’s ops lead. Keep the quote?',
+        impact: ['Goes to 6 external companies, Acme included', 'Easy to change until the invites go out'],
+        options: [
+          { key: '1', label: 'Keep it, by role', value: 'keep', kind: 'alt', recommended: true },
+          { key: '2', label: 'Paraphrase it', value: 'paraphrase', kind: 'alt' },
+        ],
+        confidence: 'Medium',
+        basis: 'The call notes say “OK to quote the ops lead by role”, but that was said on a call. The saved seed lesson-quote-approval.md asks for an explicit OK, so I’m not sure enough to decide alone.',
+        provenance: 'sim',
+        details: {
+          reasoning: 'Quotes reach customers. A verbal OK recorded by our own team is good evidence, not proof.',
+          sources: ['customer-call-notes.md (Jan 28)', 'lesson-quote-approval.md (saved seed)'],
+        },
+      })
+      return true
     }
     if (sub.id === 'i3') {
       fh.status = 'asking'
@@ -920,13 +959,19 @@ export class Engine {
         ],
         confirm: `Confirm: send to ${total} recipients`,
         confidence: 'High',
+        provenance: 'sim',
         basis: demo ? 'The list matches pilot-customers.csv, and the date is settled.' : 'The plan’s send step, after every other task is done.',
-        provenance: 'replay',
-        details: {
-          reasoning: `The date is settled (${this.launchDate}) and the list matches pilot-customers.csv. Times use each recipient’s zone, from a saved seed.`,
-          sources: ['pilot-customers.csv', 'lesson-webinar-timezones.md (saved seed)'],
-          preview: `Subject: You’re invited: Relay v2 launch webinar, ${this.webinarDate}\n\nHi {first_name},\n\nRelay v2 arrives ${this.launchDate}. Join us ${this.webinarDate} at {local_time} ({pt_time} PT) for a 30-minute walkthrough of faster sync and single sign-on.\n\nSee you there,\nThe Relay team`,
-        },
+        details: demo
+          ? {
+              reasoning: `The date is settled (${this.launchDate}) and the list matches pilot-customers.csv. Times use each recipient’s zone, from a saved seed.`,
+              sources: ['pilot-customers.csv', 'lesson-webinar-timezones.md (saved seed)'],
+              preview: `Subject: You’re invited: Relay v2 launch webinar, ${this.webinarDate}\n\nHi {first_name},\n\nRelay v2 arrives ${this.launchDate}. Join us ${this.webinarDate} at {local_time} ({pt_time} PT) for a 30-minute walkthrough of faster sync and single sign-on.\n\nSee you there,\nThe Relay team`,
+            }
+          : {
+              reasoning: `Every other task is done. This is the plan’s one outward step.`,
+              sources: task.signposts,
+              preview: this.out.draft ? `${this.out.draft.data.headline}\n\n${this.out.draft.data.paragraphs[0] ?? ''}` : undefined,
+            },
       })
       return true
     }
@@ -958,7 +1003,7 @@ export class Engine {
       const ask = this.asks.find((a) => a.id === 'invites')
       if (ask?.answer === 'approve') this.addLog(fh.role, `${this.irreversible.action}: ${this.irreversible.count} sent (simulated)`, 'done', 'invites')
     }
-    if (sub.id === 'b1') this.addLog(fh.role, 'Tone check: removed “revolutionary” from the headline options', 'auto', 'brand', 'brand-voice.md bans it.')
+    if (sub.id === 'b1' && this.demoScenario) this.addLog(fh.role, 'Tone check: removed “revolutionary” from the headline options', 'auto', 'brand', 'brand-voice.md bans it.')
     if (task.subtasks.every((s) => s.done)) this.addLog(fh.role, `${task.name}: ripe`, 'done', task.id)
   }
 

@@ -20,7 +20,7 @@ export function AskCard({ ask }: { ask: Ask }) {
           {ask.fromName} · {task.name}
         </span>
         <span className={`prov ${ask.provenance}`} title={ask.provenance === 'live' ? 'Found by a live Claude call' : 'Scripted step or a recorded run'}>
-          {ask.provenance === 'live' ? 'Live' : ask.id === 'crow' ? 'Replay' : 'Simulated'}
+          {ask.provenance === 'live' ? 'Live' : ask.provenance === 'replay' ? 'Replay' : 'Simulated'}
         </span>
       </div>
       {ask.status === 'confirming' ? (
