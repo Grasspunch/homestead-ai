@@ -2,83 +2,92 @@
 // the model is supposed to reach. Shared by the browser (for display) and the API (as model input).
 
 export const DOCS: Record<string, string> = {
-  'product-brief-relay-v2.pdf': `Relay v2: product brief (excerpt)
+  'web-app/src/api/session.ts': `// Starts a signed-in session after any login method succeeds.
+import { post } from './http'
 
-What ships
-- Faster sync: changes reach every open copy of a doc sooner. Internal testing suggests up to 3x faster sync.
-- Single sign-on through the new Auth SDK (Okta, Google Workspace, Entra ID).
-- Admin audit log export.
+export const startSession = (token: string) =>
+  post("/v1/session", { token })
 
-Audience: the 6 pilot customers first, everyone else a month later.
-Tone: plain, specific, no hype words.`,
+export const endSession = () => post("/v1/session/end", {})`,
 
-  'customer-call-notes.md': `# Pilot customer calls
+  'web-app/src/auth/password.ts': `// Email and password login. Must keep working after Google sign-in ships.
+import { startSession } from '../api/session'
 
-## Jan 28: Acme (ops lead, 3 PMs)
-- Biggest pain: "which version is this?" in every standup.
-- We told Acme they would have v2 by March 12.
-- OK to quote the ops lead by role, not by name.
+export async function loginWithPassword(email: string, password: string) {
+  const { token } = await post('/auth/password', { email, password })
+  return startSession(token)
+}`,
 
-## Feb 1: Northwind (IT admin)
-- Needs SSO before rolling out to 400 seats.`,
+  'web-app/src/pages/SignIn.tsx': `// The sign-in page: email field, password field, Sign in button.
+export function SignIn() {
+  return (
+    <Form onSubmit={loginWithPassword}>
+      <EmailField />
+      <PasswordField />
+      <Button type="submit">Sign in</Button>
+    </Form>
+  )
+}`,
 
-  'benchmarks-q4.xlsx': `Sheet: sync latency, Q4 run (p50, seconds)
-row 12 | open doc       | v1 0.8 | v2 0.7
-row 13 | first edit     | v1 1.1 | v2 0.6
-row 14 | sync to peers  | v1 1.9 | v2 0.6   (3.2x faster)
-row 15 | large doc load | v1 4.2 | v2 3.9`,
+  'auth-spec.md': `# Google sign-in: design spec (Design team, Nov 4)
 
-  'brand-voice.md': `# Brand voice (almanac page from the brand team)
-- Lead with what changes for the reader.
-- Numbers need a source.
-- No "revolutionary", "game-changing", "seamless".`,
+Frame 1: today's sign-in page, unchanged for email and password.
+Frame 2: "Continue with Google" sits above the email field, full width, with an "or" divider below it.
+Frame 3: errors show under the button, for example "Google sign-in was cancelled. Try again."
 
-  'eng-standup-notes/2026-01-20.md': `# Eng standup, Jan 20 (platform team, Auth SDK v2)
-- Relay v2 on track for March 12.
-- OIDC library upgrade starts this week; risk is the upstream release.
-- Kai on call until Jan 27.`,
+Both login methods stay. Ships with Friday's deploy, Nov 13.`,
 
-  'eng-standup-notes/2026-02-03.md': `# Eng standup, Feb 3 (platform team, Auth SDK v2)
-- Auth SDK dependency (upstream OIDC library) slips two weeks.
-- v2 release moves to March 26. Release v2.0 plot blocked until then.
-- Load tests green.`,
+  'e2e-tests/email-login.spec.ts': `test('email login', async ({ page }) => {
+  await page.goto('/sign-in')
+  await page.fill('[name=email]', 'qa@example.com')
+  await page.fill('[name=password]', process.env.QA_PASSWORD)
+  await page.click('text=Sign in')
+  await expect(page).toHaveURL('/home')
+})`,
 
-  'auth-sdk/release-checklist.md': `# Release v2.0 checklist (Auth SDK v2)
-- [x] Load tests green
-- [x] Okta and Google Workspace sign-in verified
-- [ ] Entra ID sign-in verified (waits on OIDC library 4.2)
-- [ ] Security review sign-off
-Release date: see the latest standup notes.`,
+  'e2e-tests/signup.spec.ts': `test('sign up', async ({ page }) => {
+  await page.goto('/sign-up')
+  // creates a user, then lands on /home
+})`,
 
-  'auth-sdk/oncall-rota.md': `# On-call rota, March
-- March 2 to March 8: Kai
-- March 9 to March 15: platform team
-- March 16 to March 22: Dev
-- March 23 to March 29: Kai (release week)`,
+  'e2e-tests/reset-password.spec.ts': `test('reset password', async ({ page }) => {
+  await page.goto('/reset')
+  // sends a reset email through the staging mailbox
+})`,
 
-  'auth-sdk/api-changelog.md': `# Auth SDK changelog
-## 2.0.0-rc.3 (Feb 2)
-- Entra ID provider behind a flag.
-## 2.0.0-rc.2 (Jan 19)
-- Session refresh is now silent.`,
+  'session-api-v2/CHANGELOG.md': `# Session API v2: changelog (Platform team)
 
-  'pilot-customers.csv': `company,contacts
-Acme,12
-Northwind,9
-Globex,7
-Initech,6
-Umbrella Health,5
-Hooli,3`,
+## Nov 8
+- /v1/session removed from staging. Removed from production Nov 12.
+- Use POST /v2/session. It takes { token, provider } and returns the same session cookie.
+
+## Oct 27
+- POST /v2/session available on staging and production.
+- /v1/session deprecated.`,
+
+  'session-api-v2/README.md': `# Session API v2 (Platform team)
+
+One endpoint for every login method: POST /v2/session with { token, provider }.
+provider is "password", "google" or "sso".
+Questions: #platform-sessions.`,
+
+  'oauth-security.md': `# OAuth, done safely (Security team skill)
+- Always send a state parameter and check it on the callback.
+- Use PKCE for every authorization code flow.
+- Never log access_token or id_token, not even at debug level.
+- Store client secrets only in the secret manager.`,
+
+  'react-components.md': `# Component patterns (Web team skill)
+- Use <Button variant="provider"> for third-party sign-in.
+- Errors go in <FieldError> under the control they belong to.
+- Full-width buttons in auth forms.`,
+
+  'lesson-check-changelogs.md': `# Lesson: check changelogs (saved from your last harvest)
+Before a task calls another team's API, attach that project's changelog.`,
 }
 
-// What the neighbouring farm (the platform team's Auth SDK crew) shares with other farms.
-export const NEIGHBOUR_DOCS = [
-  'eng-standup-notes/2026-01-20.md',
-  'eng-standup-notes/2026-02-03.md',
-  'auth-sdk/release-checklist.md',
-  'auth-sdk/oncall-rota.md',
-  'auth-sdk/api-changelog.md',
-]
+// What the neighbouring project (Session API v2) shares with other farms.
+export const NEIGHBOUR_DOCS = ['session-api-v2/CHANGELOG.md', 'session-api-v2/README.md']
 
 // A signpost can be a single file or a folder; a folder expands to every document inside it.
 export function expandSignposts(names: string[]) {

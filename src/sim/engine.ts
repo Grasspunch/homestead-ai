@@ -1,13 +1,14 @@
 // The engine behind the demo.
-// Three agent steps are real Claude calls (the Writer's draft, the Reviewer's claim check and the
-// head farmer's cross-farm date check). The rest of the farmhands' work is simulated, which the brief allows.
+// Five agent steps are Claude calls (the head farmer's clarify, plan and cross-team check, Frontend's
+// session call and the Reviewer's review). They are simulated unless Live AI is on in Settings.
 // Every number on screen is computed from the ledger: agent actions, energy, and how many times a human was needed.
 
-import { ATTACHMENTS, BRIEF_GOAL, CHICKEN_PEN, CHORES, CLARIFY, CREW, CROW_SPOT, FARM, INVITE_LIST, LESSON_DATES, LESSON_SOURCES, NEIGHBOUR, REPLAN_SUBTASKS, ROLE_ORDER, START_SEEDS, SUGGESTED_BUDGET, TASKS, type Attachment, type ClarifyQ } from './scenario'
-import { callAgent, probeLive, setLiveAI, RECORDED, type ClaimsOut, type ClarifyOut, type ConflictOut, type DraftOut, type Outcome, type PlanOut } from './live'
-import { conflictDocs, SLOTS } from '../agent/agents'
-import { LIBRARY, libItem } from './library'
-import { DONE_WHEN, OUTPUTS, TASK_OUTPUT, type CheckResult, type OutputId, type RunFacts } from './review'
+import { ATTACHMENTS, BEATS, BRIEF_GOAL, BUILDERS, CHICKEN_PEN, CHORES, CLARIFY, CLASH, CREW, CROW_SPOT, FARM, LESSON_STAGING, LESSON_TRACE, MISSING, NEIGHBOUR, REPLAN_SUBTASKS, ROLE_ORDER, START_SEEDS, SUGGESTED_BUDGET, TASKS, type Attachment, type ClarifyQ } from './scenario'
+import { callAgent, probeLive, setLiveAI, RECORDED, type ClarifyOut, type ConflictOut, type Outcome, type PlanOut, type ReviewOut, type SessionOut } from './live'
+import { conflictDocs, PR_DIFF, SLOTS } from '../agent/agents'
+import { LIBRARY, libItem, type Access } from './library'
+import { CHECKS, E2E_FAIL, GATE_ORDER, GATES, OUTPUT, RESULTS, REVIEW_FAIL, TASK_GATES, TASK_RESULTS, UNIT_FAIL, type Check, type GateId, type GateState } from './review'
+import { defaultSettings, toml, usd, type Settings } from './settings'
 import { expandSignposts } from '../agent/docs'
 import type { Ask, CropKind, Dir, Farmhand, Flag, Job, LedgerEvent, LogEntry, Phase, Rect, Replan, RoleId, Seed, Subtask, Task, Toast } from './types'
 
@@ -23,20 +24,19 @@ export type Nav =
   | { kind: 'log'; tab: LogTab }
   | { kind: 'why'; id: string }
   | { kind: 'trace' }
-  | { kind: 'out'; id: OutputId | 'decisions' | 'lessons' }
+  | { kind: 'out'; id: OutId }
   | { kind: 'lib'; id: string }
   | { kind: 'pick'; id: string }
   | { kind: 'library' }
+  | { kind: 'settings'; id?: string }
+export type OutId = 'pr' | GateId | 'guide' | 'decisions' | 'lessons'
 export type LogTab = 'all' | 'asks' | 'auto'
 
 export type Hint = 'plot' | 'ask' | 'auto'
 
-export interface Check {
-  id: string
-  taskId: string
-  output: OutputId
+export interface GateResult {
+  state: GateState
   text: string
-  custom?: boolean
 }
 
 interface Walker {
@@ -54,12 +54,7 @@ export interface HeadFarmer extends Walker {
   till: number[] // 0..1 per plot while the plan comes in
 }
 
-// The opening: three camera beats with one caption each.
-export const BEATS = [
-  { secs: 4.2, caption: 'Every team in this valley runs its own crew of agents.' },
-  { secs: 4.8, caption: 'Your farm is launching March 12. Engineering moved it to March 26.' },
-  { secs: 4.2, caption: 'Your agents only read what you give them.' },
-]
+export { BEATS }
 
 export interface Chicken {
   x: number
@@ -88,8 +83,8 @@ export interface SeedFly {
 export interface Outputs {
   clarify?: Outcome<ClarifyOut>
   plan?: Outcome<PlanOut>
-  draft?: Outcome<DraftOut>
-  claims?: Outcome<ClaimsOut>
+  session?: Outcome<SessionOut>
+  review?: Outcome<ReviewOut>
   conflict?: Outcome<ConflictOut>
 }
 
@@ -117,11 +112,20 @@ export class Engine {
   picked = new Set<string>() // plots already carried to the shipping chest
   carrying: Partial<Record<RoleId, CropKind>> = {}
   private harvestJobs: Partial<Record<RoleId, { taskId: string; stage: number; t: number }>> = {}
-  checks: Check[] = []
+  // Done-when gates: which ones each task carries (set at Plan), and how each one did.
+  taskGates: Record<string, GateId[]> = Object.fromEntries(Object.entries(TASK_GATES).map(([k, v]) => [k, v.map((g) => g.gate)]))
+  gates: Record<string, Partial<Record<GateId, GateResult>>> = {}
+  private gateRunAt: Record<string, number> = {}
+  // The whole run's gates at the harvest. The review runs here, on the whole diff.
+  harvestGates: Record<GateId, GateResult> = Object.fromEntries(GATE_ORDER.map((g) => [g, { state: 'wait', text: 'Not run yet' }])) as Record<GateId, GateResult>
+  private rerunAt = 0
+  reviewFixed = false
   ticked = new Set<string>()
   approved = false
+  // The merge: the one step that reaches people outside the crew.
   sendState: 'none' | 'confirming' | 'sent' = 'none'
-  sourceFixed = false
+  settings: Settings = defaultSettings()
+  access: Record<string, Access[]> = Object.fromEntries(Object.entries(LIBRARY).filter(([, v]) => v.access).map(([k, v]) => [k, v.access!.map((a) => ({ ...a }))]))
   showHelp = false
   live: boolean | null = null // whether a key is configured; null until probed
   liveAI = readLiveAI() // real model calls; off by default so testing spends no tokens
@@ -146,7 +150,7 @@ export class Engine {
   // Clicks on things around the farm: id -> clock of the click. Reactions are cosmetic.
   pokes: Record<string, number> = {}
   fishAt = -1
-  chickens: Chicken[] = [0, 1, 2].map((i) => ({ x: CHICKEN_PEN.x + 0.6 + i * 1.6, y: CHICKEN_PEN.y + (i % 2) * 0.8, tx: 0, ty: 0, wait: i, clicks: 0, lastClick: -9, flee: 0 }))
+  chickens: Chicken[] = [0, 1, 2].map((i) => ({ x: CHICKEN_PEN.x + 0.4 + i * 1.4, y: CHICKEN_PEN.y + (i % 2) * 0.6, tx: CHICKEN_PEN.x + 0.4 + i * 1.4, ty: CHICKEN_PEN.y + (i % 2) * 0.6, wait: i + 0.5, clicks: 0, lastClick: -9, flee: 0 }))
   nudge: { x: number; y: number; t: number } | null = null // the camera leans toward a new ask
   hints = new Set<Hint>() // hints already acted on
   callStart = 0 // clock when the head farmer's current call went out
@@ -171,8 +175,7 @@ export class Engine {
   energyCaught = 0
   harvestReady = false
   harvested = false
-  webinarDate = 'March 10'
-  launchDate = 'March 12'
+  endpoint: string | null = null // the session endpoint Frontend's code calls
   out: Outputs = {}
   private requested = new Set<string>()
   private logId = 1
@@ -180,6 +183,7 @@ export class Engine {
 
   constructor() {
     this.resetFarm()
+    this.settings.run.mode = this.liveAI ? 'live' : 'simulated'
   }
 
   // ---- subscription ---------------------------------------------------------
@@ -213,10 +217,11 @@ export class Engine {
     }))
     // Outside the barn until there is work.
     const homeSpots: Record<RoleId, { x: number; y: number }> = {
-      researcher: { x: 19.4, y: 8.5 },
-      writer: { x: 21.1, y: 9.1 },
-      reviewer: { x: 22.8, y: 8.5 },
-      scheduler: { x: 24.5, y: 9.1 },
+      backend: { x: 18.8, y: 8.5 },
+      frontend: { x: 20.4, y: 9.1 },
+      tests: { x: 22.0, y: 8.5 },
+      docs: { x: 23.6, y: 9.1 },
+      reviewer: { x: 25.2, y: 8.5 },
     }
     this.head.till = this.tasks.map(() => 0)
     this.farmhands = {} as Record<RoleId, Farmhand>
@@ -271,12 +276,12 @@ export class Engine {
   }
 
   get docsChecked() {
-    const { mine, theirs } = conflictDocs(this.task('draft').signposts)
+    const { mine, theirs } = conflictDocs(this.task(MISSING.taskId).signposts)
     return mine.length + theirs.length
   }
 
   get demoScenario() {
-    return /relay v2/i.test(this.goal)
+    return /google sign-in/i.test(this.goal)
   }
 
   task(id: string) {
@@ -324,7 +329,20 @@ export class Engine {
   }
 
   get allDone() {
-    return this.tasks.every((t) => t.subtasks.every((s) => s.done))
+    return this.tasks.every((t) => this.taskRipe(t))
+  }
+
+  // A crop ripens only when its work is done and every gate it carries (except the review) passes.
+  taskRipe(t: Task) {
+    return t.subtasks.every((s) => s.done) && this.machineGates(t.id).every((g) => this.gates[t.id]?.[g]?.state === 'pass')
+  }
+
+  private machineGates(taskId: string) {
+    return (this.taskGates[taskId] ?? []).filter((g) => g !== 'review')
+  }
+
+  get usd() {
+    return usd(this.energyUsed, this.settings)
   }
 
   get liveTokens() {
@@ -344,7 +362,7 @@ export class Engine {
     }
     if (this.view === 'valley') return { x: 0, y: 0, w: 76, h: 46 }
     if (this.trace) {
-      const p = this.task('draft').plot
+      const p = this.task(MISSING.taskId).plot
       return { x: p.x - 7, y: p.y - 5, w: p.w + 14, h: p.h + 9 }
     }
     const crowAsk = this.activeAsk?.id === 'crow' || this.replan?.status === 'open' || this.crow.state === 'flying'
@@ -402,7 +420,7 @@ export class Engine {
     this.head.scrollT = 0
     const n = this.attachments.filter((a) => a.selected).length
     this.request('clarify', () => callAgent('clarify', { goal: this.goal, attached: this.attachedNames() }, RECORDED.clarify))
-    this.addLog('Head farmer', `Read the brief and ${n} attachments`, 'info', undefined, 'A new head farmer starts every farm. It only knows the brief, its attachments and the seed library.')
+    this.addLog('Head farmer', `Read the brief and ${n} attachments`, 'info', undefined, 'A new head farmer starts every farm. It only knows the brief and the files, skills and tools attached to it.')
     this.notify()
   }
 
@@ -424,27 +442,21 @@ export class Engine {
     this.notify()
   }
 
-  // The webinar follows the launch date: two days before, or on the day if the owner said so.
-  private webinarFor(launch: string) {
-    return Object.values(this.clarifyAnswers).some((a) => /launch day/i.test(a)) ? launch : shiftDate(launch, -2)
-  }
-
   get answersText() {
     return this.questions.map((q) => `- ${q.q} ${this.clarifyAnswers[q.id] ?? q.options[0]}`).join('\n')
   }
 
   private applyPlan(p: PlanOut) {
-    const ids = ['research', 'draft', 'factcheck', 'brand', 'invites']
     const attached = this.attachedNames()
-    SLOTS.forEach((slot, i) => {
+    SLOTS.forEach((slot) => {
       const src = p.tasks[slot.key]
-      const t = this.task(ids[i])
-      if (!src) return
+      const t = this.tasks.find((x) => x.id === slot.key)
+      if (!src || !t) return
       t.name = src.name || t.name
       t.subtasks.forEach((s, k) => {
         if (src.subtasks[k]) s.name = src.subtasks[k]
       })
-      if (this.farmhands[src.assignee]) {
+      if (BUILDERS.includes(src.assignee)) {
         t.assignee = src.assignee
         t.proposedAssignee = src.assignee
       }
@@ -472,11 +484,66 @@ export class Engine {
 
   get library() {
     const names = new Set([...Object.keys(LIBRARY), ...this.seeds.filter((s) => s.isNew).map((s) => s.file)])
-    return [...names].map((name) => ({ name, ...libItem(name, this.seeds) }))
+    return [...names].map((name) => ({ name, ...this.lib(name) }))
   }
 
   lib(name: string) {
-    return libItem(name, this.seeds)
+    const L = libItem(name, this.seeds)
+    return this.access[name] ? { ...L, access: this.access[name] } : L
+  }
+
+  // What agents may do with an MCP server. Takes effect on the next tool call.
+  setAccess(name: string, i: number, on: boolean) {
+    const a = this.access[name]?.[i]
+    if (!a) return
+    a.on = on
+    this.addLog('You', `${on ? 'Allowed' : 'Blocked'} on ${name}: ${a.label}`, 'answer')
+    this.notify()
+  }
+
+  // Plan review: which gates a task must pass before its crop ripens.
+  toggleGate(taskId: string, g: GateId) {
+    if (this.phase !== 'plan') return
+    const have = this.taskGates[taskId] ?? []
+    this.taskGates[taskId] = have.includes(g) ? have.filter((x) => x !== g) : GATE_ORDER.filter((x) => x === g || have.includes(x))
+    this.signpostEdits.push(`${have.includes(g) ? 'Removed' : 'Added'} the ${g} gate on “${this.task(taskId).name}”`)
+    this.notify()
+  }
+
+  gateFor(taskId: string, g: GateId): GateResult {
+    if (this.phase === 'harvest' && this.harvestStage === 'review') {
+      const h = this.harvestGates[g]
+      if (h.state === 'run') return { state: 'run', text: 'Running again' }
+      if (g === 'review') {
+        if (h.state === 'fail') return { state: 'fail', text: taskId === REVIEW_FAIL.taskId ? '1 blocking' : 'Blocked' }
+        return h.state === 'look' ? { state: 'pass', text: 'Passed' } : h
+      }
+      return { state: 'pass', text: this.gates[taskId]?.[g]?.text ?? 'Passed' }
+    }
+    return this.gates[taskId]?.[g] ?? (g === 'review' ? { state: 'wait', text: 'At harvest' } : { state: 'wait', text: 'Not run yet' })
+  }
+
+  // ---- settings: one homestead.toml ---------------------------------------------------------
+
+  setSetting(path: string, key: string, value: unknown) {
+    if (path === 'run' && key === 'mode') return this.setLiveAIOn(value === 'live')
+    const obj = (path ? path.split('.').reduce<Record<string, unknown>>((o, k) => o[k] as Record<string, unknown>, this.settings as unknown as Record<string, unknown>) : this.settings) as Record<string, unknown>
+    obj[key] = value
+    this.notify()
+  }
+
+  settingsToml() {
+    const agents: Record<string, { tools: string[]; skills: string[] }> = {}
+    for (const id of ROLE_ORDER) {
+      const posts = this.tasks.filter((t) => t.assignee === id).flatMap((t) => t.signposts)
+      const almanac = this.farmhands[id].almanac
+      agents[id] = {
+        tools: [...new Set(posts.filter((n) => this.lib(n).kind === 'tool'))],
+        skills: [...new Set([...posts, ...almanac].filter((n) => this.lib(n).kind === 'skill'))],
+      }
+    }
+    const tools = Object.entries(this.access).map(([name, access]) => ({ name, access }))
+    return toml(this.settings, { agents, tools })
   }
 
   contextTokens(t: Task) {
@@ -524,7 +591,7 @@ export class Engine {
     const swapped = this.tasks.filter((t) => t.assignee !== t.proposedAssignee)
     const changes = [...swapped.map((t) => `Moved “${t.name}” to the ${this.farmhands[t.assignee].role}`), ...this.signpostEdits]
     this.addLog('You', 'Approved the quest plan' + (changes.length ? ` with ${changes.length} change${changes.length > 1 ? 's' : ''}` : ''), 'answer', undefined, changes.join('; ') || undefined)
-    this.addLog('Head farmer', 'Planted 5 plots and sent the crew out', 'info')
+    this.addLog('Head farmer', `Planted ${this.tasks.length} plots and sent the crew out`, 'info')
     this.notify()
   }
 
@@ -557,7 +624,7 @@ export class Engine {
     this.freeCam = null
     const r = this.tasks.find((t) => t.id === ask.taskId)?.plot
     if (r) this.nudge = { x: r.x + r.w / 2, y: r.y + r.h / 2, t: this.clock }
-    this.toast(q > 1 ? `The ${ask.fromName} needs you too (${q} waiting)` : `The ${ask.fromName} needs you`)
+    this.toast(q > 1 ? `${ask.fromName} needs you too (${q} waiting)` : `${ask.fromName} needs you`)
     this.chime()
     this.notify()
   }
@@ -577,6 +644,7 @@ export class Engine {
     ask.answer = value
     ask.answerLabel = opt?.label ?? (value === 'approve' ? 'Approved' : value)
     this.addLog('You', ask.label === 'Irreversible' ? ask.answerLabel : `${ask.label}: ${ask.answerLabel}`, 'answer', ask.taskId)
+    this.toasts = this.toasts.filter((t) => !t.text.includes('needs you'))
     this.onResolve(ask, value)
     this.notify()
   }
@@ -597,42 +665,28 @@ export class Engine {
 
   private onResolve(ask: Ask, value: string) {
     if (ask.id === 'crow') {
-      const conflict = this.out.conflict?.data
-      const later = conflict?.dates.find((d) => d.farm !== FARM.name)?.date ?? 'March 26'
-      const earlier = this.launchDate
-      const chosen = value === 'keep' ? earlier : later
-      const oldWebinar = this.webinarDate
-      const newWebinar = chosen === earlier ? oldWebinar : this.webinarFor(chosen)
-      this.launchDate = chosen
+      const v2 = value === 'v2'
+      const t = this.task(MISSING.taskId)
+      const who = this.farmhands[t.assignee].role
       this.replan = {
-        id: 'replan-date',
-        title: chosen !== earlier ? `Move launch comms to ${chosen}` : `Keep ${earlier}, ask engineering to confirm`,
+        id: 'replan-session',
+        title: v2 ? `Switch ${who} to ${CLASH.theirs}` : `Keep ${CLASH.ours}, ask the ${NEIGHBOUR.team}`,
         status: 'open',
-        lines:
-          chosen !== earlier
-            ? [
-                { op: '~', text: `Announcement launch date: ${earlier} → ${chosen}` },
-                { op: '~', text: `Webinar: ${oldWebinar} → ${newWebinar}, 10:00 PT` },
-                { op: '+', text: 'New crop on Draft the announcement: “Update the launch date” (Writer)' },
-                { op: '+', text: 'New crop on Draft the announcement: “Tell Acme the new date” (Writer)' },
-                { op: '+', text: 'Draft the announcement reads eng-standup-notes/' },
-                { op: '~', text: `The ${NEIGHBOUR.name} crew is told launch comms now say ${chosen}` },
-              ]
-            : [
-                { op: '~', text: `Announcement keeps ${earlier}` },
-                { op: '+', text: `Ask sent to the ${NEIGHBOUR.name} crew: can v2 still ship ${earlier}?` },
-                { op: '+', text: 'Draft the announcement reads eng-standup-notes/' },
-              ],
+        lines: v2
+          ? [
+              { op: '~', text: `src/api/session.ts: POST ${CLASH.ours} → ${CLASH.theirs}` },
+              { op: '+', text: `New crop on ${t.name}: “${REPLAN_SUBTASKS.switch.name}” (${who})` },
+              { op: '+', text: `${t.name} reads ${MISSING.file}` },
+              { op: '~', text: 'End-to-end sign-in tests run again on staging' },
+              { op: '~', text: `The ${NEIGHBOUR.name} crew is told web-app now calls ${CLASH.theirs}` },
+            ]
+          : [
+              { op: '~', text: `${who} keeps ${CLASH.ours}` },
+              { op: '+', text: `Ask sent to the ${NEIGHBOUR.name} crew: keep ${CLASH.ours} on staging until Nov 12` },
+              { op: '+', text: `${t.name} reads ${MISSING.file}` },
+            ],
       }
-      this.webinarDate = newWebinar
-      this.act('Head farmer', 1_500, 'draft', 8)
-    }
-    if (ask.id === 'quote') {
-      this.addLog(ask.fromName, value === 'keep' ? 'Kept the Acme quote, attributed by role' : 'Paraphrased the Acme quote without a name', 'info', 'factcheck')
-    }
-    if (ask.id === 'invites') {
-      if (value === 'deny') this.addLog('Scheduler', 'Holding the invites. Nothing was sent.', 'info', 'invites')
-      if (value === 'acme-first') this.addLog('Scheduler', 'Sending to Acme first (12 people). The rest stay queued.', 'info', 'invites')
+      this.act('Head farmer', 1_500, t.id, 8)
     }
     // Whoever asked goes back to work, whichever farmhand the plan gave the task to.
     const asker = ask.from !== 'head' ? this.farmhands[ask.from] : null
@@ -642,19 +696,21 @@ export class Engine {
   applyReplan() {
     if (!this.replan || this.replan.status !== 'open') return
     this.replan.status = 'applied'
-    this.flags.add('dateResolved')
     this.flags.add('replanApplied')
-    const draft = this.task('draft')
-    if (!draft.signposts.includes('eng-standup-notes/')) draft.signposts.push('eng-standup-notes/')
-    if (this.replan.lines.length > 3) {
-      draft.plot = { ...draft.plot, h: draft.plot.h + 1 }
-      for (const s of [REPLAN_SUBTASKS.writer, REPLAN_SUBTASKS.acme]) draft.subtasks.push({ ...s, progress: 0, started: false, done: false, emitted: 0, addedByReplan: true })
+    const t = this.task(MISSING.taskId)
+    if (!t.signposts.includes(MISSING.file)) t.signposts.push(MISSING.file)
+    this.farmhands[t.assignee].context.push(MISSING.file)
+    const v2 = this.replan.lines.length > 3
+    if (v2) {
+      t.plot = { ...t.plot, h: t.plot.h + 1 }
+      t.subtasks.push({ ...REPLAN_SUBTASKS.switch, sets: [...REPLAN_SUBTASKS.switch.sets], progress: 0, started: false, done: false, emitted: 0, addedByReplan: true })
+    } else {
+      this.flags.add('sessionV2')
     }
-    this.farmhands.writer.context.push('eng-standup-notes/')
     this.crow.state = 'leaving'
     this.crow.t = 0
-    this.addLog('Head farmer', 'Applied the re-plan and sent the decision to 2 crews', 'replan', 'draft', 'Both farms now use one launch date.')
-    this.addLog(`${NEIGHBOUR.name} crew`, `Confirmed: launch comms say ${this.launchDate}`, 'info')
+    this.addLog('Head farmer', 'Applied the re-plan and sent the decision to 2 crews', 'replan', t.id, 'Both projects now agree on the session API.')
+    this.addLog(`${NEIGHBOUR.name} crew`, v2 ? `Noted: web-app calls ${CLASH.theirs} from Friday` : `Kept ${CLASH.ours} on staging until Nov 12. Production still drops it Nov 12.`, 'info')
     this.toast('Decision sent to 2 crews')
     this.notify()
   }
@@ -675,11 +731,11 @@ export class Engine {
   saveSeed() {
     if (this.flags.has('seedSaved')) return
     this.flags.add('seedSaved')
-    this.seeds.unshift({ ...LESSON_DATES })
-    const p = this.task('draft').plot
+    this.seeds.unshift({ ...LESSON_TRACE })
+    const p = this.task(MISSING.taskId).plot
     this.seedFly = { from: { x: p.x + p.w / 2, y: p.y }, to: { x: FARM.seedLibrary.x + 0.7, y: FARM.seedLibrary.y + 0.5 }, t: 0 }
-    this.addLog('You', `Saved a seed: ${LESSON_DATES.file}`, 'seed', 'draft')
-    this.toast('Seed saved to the seed library')
+    this.addLog('You', `Saved a lesson: ${LESSON_TRACE.file}`, 'seed', MISSING.taskId)
+    this.toast('Saved to Files and skills')
     this.closeTrace()
   }
 
@@ -756,6 +812,7 @@ export class Engine {
 
   setLiveAIOn(on: boolean) {
     this.liveAI = on
+    this.settings.run.mode = on ? 'live' : 'simulated'
     setLiveAI(on)
     try {
       localStorage.setItem('homestead.liveAI', on ? '1' : '0')
@@ -777,7 +834,7 @@ export class Engine {
   }
 
   go(n: Nav) {
-    if (n.kind === 'trace') return this.openTrace('date')
+    if (n.kind === 'trace') return this.openTrace('endpoint')
     this.setNav([...this.nav, n])
   }
 
@@ -803,7 +860,11 @@ export class Engine {
   openFarmhand(id: RoleId) {
     const fh = this.farmhands[id]
     const task = fh.job ? fh.job.taskId : (this.tasks.find((t) => t.assignee === id && t.subtasks.some((s) => !s.done)) ?? this.tasks.find((t) => t.assignee === id))?.id
-    if (task) this.openTask(task)
+    if (task) return this.openTask(task)
+    // The Reviewer has no plot: it opens its gate.
+    this.panelOpen = true
+    if (this.phase === 'harvest' && this.harvestStage === 'review') this.setNav([{ kind: 'out', id: 'review' }])
+    else this.toast('The Reviewer reviews the whole diff at the harvest')
   }
 
   hover(taskId: string | null) {
@@ -846,7 +907,7 @@ export class Engine {
         }
       }
       const yours = this.activeAsk?.id === 'crow' || this.replan?.status === 'open'
-      return { taskId: 'draft', label: yours ? 'your call on the date' : 'the date check' }
+      return { taskId: MISSING.taskId, label: yours ? 'your call on the session API' : 'the session API check' }
     }
     return null
   }
@@ -854,10 +915,16 @@ export class Engine {
   fhStatus(fh: Farmhand): string {
     if (fh.paused) return 'Paused'
     if (fh.status === 'asking') return 'Waiting for you'
-    if (fh.status === 'done') return `Done. ${CHORES.find((c) => c.id === fh.chore?.id)?.label ?? 'Taking a break'}`
+    const chore = CHORES.find((c) => c.id === fh.chore?.id)?.label ?? 'Taking a break'
+    if (this.phase === 'harvest' && fh.id === this.task(REVIEW_FAIL.taskId).assignee) {
+      if (this.gateFailed) return 'Waiting for you to send the review back'
+      if (this.rerunAt) return 'Fixing line 48'
+    }
+    if (fh.id === 'reviewer' && this.phase !== 'harvest') return `Reviews at the harvest. ${chore}`
+    if (fh.status === 'done') return `Done. ${chore}`
     if (fh.inside) return 'In the barn'
     const job = fh.job
-    if (job?.kind === 'fix') return 'Fixing a missing source'
+    if (job?.kind === 'fix') return 'Fixing a failing test'
     if (job?.kind === 'sub') {
       const t = this.task(job.taskId)
       if (fh.moving) return `Walking to ${t.name}`
@@ -870,11 +937,14 @@ export class Engine {
     return 'Ready'
   }
 
-  taskStatus(t: Task): { text: string; tone: '' | 'done' | 'needs' | 'warn' } {
+  taskStatus(t: Task): { text: string; tone: '' | 'done' | 'needs' | 'warn' | 'fail' } {
     const done = t.subtasks.filter((s) => s.done).length
-    if (done === t.subtasks.length) return { text: 'Done', tone: 'done' }
-    if (this.openAsks.some((a) => a.taskId === t.id) || (t.id === 'draft' && this.replan?.status === 'open')) return { text: 'Needs you', tone: 'needs' }
-    if (t.pests.length) return { text: 'Missing a source', tone: 'warn' }
+    if (this.phase === 'harvest' && t.id === REVIEW_FAIL.taskId && this.harvestGates.review.state === 'fail') return { text: 'Review failed', tone: 'fail' }
+    if (this.taskRipe(t)) return { text: 'Done', tone: 'done' }
+    if (this.openAsks.some((a) => a.taskId === t.id) || (t.id === MISSING.taskId && this.replan?.status === 'open')) return { text: 'Needs you', tone: 'needs' }
+    const failed = (this.taskGates[t.id] ?? []).find((g) => this.gates[t.id]?.[g]?.state === 'fail')
+    if (failed) return { text: `${failed === 'e2e' ? 'End-to-end' : GATES[failed].name} failed`, tone: 'fail' }
+    if (done === t.subtasks.length) return { text: 'Running gates', tone: '' }
     if (this.farmhands[t.assignee].paused) return { text: 'Paused', tone: '' }
     if (done > 0) return { text: `${done} of ${t.subtasks.length}`, tone: '' }
     if (t.subtasks.some((s) => s.started)) return { text: 'Working', tone: '' }
@@ -884,7 +954,7 @@ export class Engine {
   }
 
   get ripeCount() {
-    return this.tasks.filter((t) => t.subtasks.every((s) => s.done)).length
+    return this.tasks.filter((t) => this.taskRipe(t)).length
   }
 
   get slowCall() {
@@ -935,6 +1005,7 @@ export class Engine {
     })
     this.harvestJobs = {}
     this.harvestStage = 'review'
+    this.startReview()
     this.notify()
   }
 
@@ -943,6 +1014,7 @@ export class Engine {
   }
 
   private updateHarvest(dt: number) {
+    if (this.rerunAt && this.clock - this.rerunAt > 2.6) this.finishRerun()
     if (this.harvestStage !== 'map') {
       for (const id of ROLE_ORDER) {
         const fh = this.farmhands[id]
@@ -988,92 +1060,94 @@ export class Engine {
   }
 
   get harvestHeadline() {
-    const caught = this.asks.find((a) => a.id === 'crow')?.answer === 'theirs'
-    const { count } = this.irreversible
-    return caught ? `A wrong launch date was stopped before it reached ${count} people.` : `${this.questTitle} is ready for your review.`
+    if (this.harvestStage === 'map') return OUTPUT.ready
+    if (this.gateFailed) return OUTPUT.failed
+    if (this.rerunAt) return OUTPUT.rerun
+    if (this.gatesRunning) return OUTPUT.running
+    if (this.sendState === 'sent') return OUTPUT.merged
+    return this.asks.find((a) => a.id === 'crow')?.answer === 'v2' ? OUTPUT.caught : OUTPUT.ready
   }
 
-  // ---- review: look, verify, approve, then send ----------------------------------------
+  // ---- review: gates, your eyes, approve, then merge -----------------------------------
 
-  get facts(): RunFacts {
-    const dates = this.out.conflict?.data.dates ?? []
-    const engDate = dates.find((d) => d.source.startsWith('eng-standup'))?.date ?? 'March 26'
-    return {
-      launchDate: this.launchDate,
-      engDate,
-      webinarDate: this.webinarDate,
-      expectedWebinar: this.webinarFor(this.launchDate),
-      sourceFixed: this.sourceFixed || !this.out.claims?.data.issues.length,
-      quote: this.asks.find((a) => a.id === 'quote')?.answer,
-      brandChecked: this.task('brand').subtasks.every((s) => s.done),
-      recipients: INVITE_LIST.reduce((n, r) => n + r.contacts, 0),
-      companies: INVITE_LIST.length,
-    }
+  // Machine gates already passed in Grow. The review runs now, on the whole diff, by an agent that wrote none of it.
+  private startReview() {
+    for (const g of GATE_ORDER) this.harvestGates[g] = g === 'review' ? { state: 'run', text: 'Reviewing the whole diff' } : { ...RESULTS[g] }
+    this.addLog('Reviewer', 'Started the review of the whole diff', 'info')
+    this.request('review', () => callAgent('review', { diff: PR_DIFF }, RECORDED.review))
   }
 
-  checkResult(c: Check): CheckResult {
-    if (c.custom) return { state: 'manual', evidence: 'Added by you. Read it, then tick it.' }
-    const seed = DONE_WHEN.find((d) => d.id === c.id)
-    return seed ? seed.judge(this.facts) : { state: 'manual', evidence: '' }
+  private reviewResult(): GateResult {
+    const notes = this.out.review?.data.notes.length ?? 0
+    return { state: 'look', text: `0 blocking, ${notes} note${notes === 1 ? '' : 's'}` }
   }
 
-  checksFor(output: OutputId) {
-    return this.checks.filter((c) => c.output === output)
+  get gateFailed() {
+    return GATE_ORDER.some((g) => this.harvestGates[g].state === 'fail')
   }
 
-  get outputs() {
-    return OUTPUTS
+  get gatesRunning() {
+    return GATE_ORDER.some((g) => this.harvestGates[g].state === 'run')
+  }
+
+  get checks(): Check[] {
+    return CHECKS
+  }
+
+  checksFor(g: GateId) {
+    return CHECKS.filter((c) => c.gate === g)
+  }
+
+  canTick(c: Check) {
+    const s = this.harvestGates[c.gate].state
+    return !this.approved && (s === 'look' || s === 'pass')
   }
 
   get allTicked() {
-    return this.checks.length > 0 && this.checks.every((c) => this.ticked.has(c.id))
+    return CHECKS.every((c) => this.ticked.has(c.id))
+  }
+
+  get canApprove() {
+    return this.allTicked && !this.gateFailed && !this.gatesRunning && this.harvestStage === 'review'
   }
 
   toggleTick(id: string) {
-    const c = this.checks.find((x) => x.id === id)
-    if (!c || this.approved) return
-    const r = this.checkResult(c)
-    if (r.state === 'fail' || r.state === 'blocked') return
+    const c = CHECKS.find((x) => x.id === id)
+    if (!c || !this.canTick(c)) return
     if (this.ticked.has(id)) this.ticked.delete(id)
     else this.ticked.add(id)
     this.notify()
   }
 
-  // A failed check goes back to the crew, which fixes it. You still tick it yourself.
-  sendBack(id: string) {
-    const c = this.checks.find((x) => x.id === id)
-    if (!c || this.approved) return
-    const who = this.farmhands[this.task(c.taskId).assignee].role
-    if (id === 'c-date') {
-      this.launchDate = this.facts.engDate
-      this.webinarDate = this.webinarFor(this.launchDate)
-    }
-    if (id === 'c-sources') this.sourceFixed = true
-    if (id === 'c-webinar') this.webinarDate = this.webinarFor(this.launchDate)
-    this.act(who, 1_200, c.taskId, 4)
-    this.addLog('You', `Sent back: ${c.text}`, 'answer', c.taskId)
-    this.addLog(who, `Fixed: ${c.text}`, 'info', c.taskId)
-    this.toast(`The ${who} fixed it. Check it again.`)
+  // A failed gate goes back to the agent whose code failed it. Then every gate runs again.
+  sendBack() {
+    if (!this.gateFailed || this.approved) return
+    const t = this.task(REVIEW_FAIL.taskId)
+    const who = this.farmhands[t.assignee].role
+    this.reviewFixed = true
+    this.ticked.clear()
+    for (const g of GATE_ORDER) this.harvestGates[g] = { state: 'run', text: 'Running again' }
+    this.rerunAt = this.clock
+    this.act(who, 1_200, t.id, 4)
+    this.addLog('You', `Sent back to ${who}: ${REVIEW_FAIL.text}`, 'answer', t.id)
+    this.addLog(who, 'Removed the log line at src/auth/google.ts line 48', 'info', t.id, REVIEW_FAIL.fix)
+    this.toast(`${who} removed the log line. Every gate is running again.`)
     this.notify()
   }
 
-  removeCheck(id: string) {
-    if (this.phase !== 'plan') return
-    this.checks = this.checks.filter((c) => c.id !== id)
-    this.notify()
-  }
-
-  addCheck(taskId: string, text: string) {
-    if (this.phase !== 'plan' || !text.trim()) return
-    this.checks.push({ id: `mine-${this.checks.length}-${Date.now() % 10000}`, taskId, output: TASK_OUTPUT[taskId] ?? 'announcement', text: text.trim(), custom: true })
+  private finishRerun() {
+    this.rerunAt = 0
+    this.toasts = []
+    for (const g of GATE_ORDER) this.harvestGates[g] = g === 'review' ? this.reviewResult() : { ...RESULTS[g] }
+    this.act('Reviewer', 2_400, undefined, 6)
+    this.addLog('Reviewer', 'Every gate passed on the second run', 'done', undefined, 'The id_token is no longer logged. 0 blocking, 2 notes.')
     this.notify()
   }
 
   approveHarvest() {
-    if (!this.allTicked || this.approved) return
+    if (!this.canApprove || this.approved) return
     this.approved = true
-    this.human('You')
-    this.addLog('You', `Approved the harvest: ${this.checks.length} checks ticked. Nothing sent yet.`, 'answer')
+    this.addLog('You', `Approved: every gate passed and you looked at ${CHECKS.length} things. Nothing merged yet.`, 'answer')
     this.notify()
   }
 
@@ -1091,24 +1165,20 @@ export class Engine {
   send() {
     if (this.sendState !== 'confirming') return
     this.sendState = 'sent'
-    this.human('You')
-    this.act('Scheduler', 1_500, 'invites', 6)
-    this.addLog('You', `Sent the announcement and the webinar invite to ${this.irreversible.count} people (simulated)`, 'done', 'invites')
-    this.toast(`Sent to ${this.irreversible.count} people`)
+    this.act('Head farmer', 600, undefined, 2)
+    this.addLog('You', `Merged PR #${OUTPUT.pr} into ${OUTPUT.base} (simulated)`, 'done')
+    this.toast(`Merged #${OUTPUT.pr} into ${OUTPUT.base}`)
     this.notify()
   }
 
-  get recipientNames() {
-    return INVITE_LIST.map((r) => r.company).join(', ')
-  }
-
   get decisions() {
-    const changed = this.tasks.some((t) => t.assignee !== t.proposedAssignee) || this.signpostEdits.length > 0
+    const swapped = this.tasks.some((t) => t.assignee !== t.proposedAssignee) || this.signpostEdits.length > 0
     return [
-      { word: 'Plan', text: changed ? 'Approved the plan with your change' : 'Approved the plan as proposed' },
-      ...this.asks.filter((a) => a.status === 'resolved').map((a) => ({ word: REASON_WORD[a.label] ?? a.label, text: `${a.answerLabel}` , q: a.question })),
-      ...(this.approved ? [{ word: 'Review', text: `Ticked ${this.checks.length} checks and approved` }] : []),
-      ...(this.sendState === 'sent' ? [{ word: 'Sent', text: `Sent to ${this.irreversible.count} people` }] : []),
+      { word: 'Plan', text: swapped ? 'Approved the plan with your changes' : 'Approved the plan as proposed' },
+      ...this.asks.filter((a) => a.status === 'resolved').map((a) => ({ word: REASON_WORD[a.label] ?? a.label, text: `${a.answerLabel}`, q: a.question })),
+      ...(this.reviewFixed ? [{ word: 'Failed', text: `Sent the review back to ${this.farmhands[this.task(REVIEW_FAIL.taskId).assignee].role}` }] : []),
+      ...(this.approved ? [{ word: 'Review', text: `Looked at ${CHECKS.length} things and approved` }] : []),
+      ...(this.sendState === 'sent' ? [{ word: 'Merge', text: `Merged PR #${OUTPUT.pr}` }] : []),
     ]
   }
 
@@ -1153,7 +1223,7 @@ export class Engine {
     this.requested.add(key)
     run().then((o) => {
       this.out[key] = o
-      if (o.error) this.addLog('System', `Live call failed, using a simulated response: ${o.error}`, 'info')
+      if (o.error) this.addLog('Head farmer', `Live call failed, used a simulated response: ${o.error}`, 'info')
       this.onOutput(key)
       this.notify()
     })
@@ -1170,37 +1240,40 @@ export class Engine {
       const p = this.out.plan!
       this.call('Head farmer', p)
       this.applyPlan(p.data)
-      this.checks = DONE_WHEN.map(({ id, taskId, output, text }) => ({ id, taskId, output, text }))
       this.planRevealT = this.clock
-      this.addLog('Head farmer', `Proposed a quest plan: 5 tasks, a crew of 4`, 'info', undefined, p.provenance === 'live' ? `Live call, ${fmtTokens(p.tokens)}` : undefined)
-      if (/webinar|invite/i.test(this.goal)) this.addLog('Head farmer', 'Gave the Scheduler a saved lesson: lesson-webinar-timezones.md', 'auto', 'invites', 'It matched “webinar” in the brief.')
-      this.webinarDate = this.webinarFor(this.launchDate)
+      const crew = new Set(this.tasks.map((t) => t.assignee)).size
+      this.addLog('Head farmer', `Proposed a plan: ${this.tasks.length} tasks for ${crew} agents, with Done-when gates on each`, 'info', undefined, p.provenance === 'live' ? `Live call, ${fmtTokens(p.tokens)}` : undefined)
     }
-    if (key === 'draft') {
-      const d = this.out.draft!
-      this.call('Writer', d, 'draft')
-      if (d.data.launch_date) {
-        this.launchDate = d.data.launch_date
-        this.webinarDate = this.webinarFor(this.launchDate)
+    if (key === 'session') {
+      const d = this.out.session!
+      const t = this.task(MISSING.taskId)
+      this.call(this.farmhands[t.assignee].role, d, t.id)
+      this.endpoint = d.data.endpoint
+    }
+    if (key === 'review') {
+      const r = this.out.review!
+      this.call('Reviewer', r)
+      const b = r.data.blocking[0]
+      if (b && !this.reviewFixed) {
+        this.harvestGates.review = { state: 'fail', text: REVIEW_FAIL.text }
+        this.addLog('Reviewer', `Blocking: ${b.problem}`, 'pest', REVIEW_FAIL.taskId, `${b.file} line ${b.line}. ${b.rule}`)
+      } else {
+        this.harvestGates.review = this.reviewResult()
+        this.addLog('Reviewer', `Reviewed the whole diff: ${this.harvestGates.review.text}`, 'info', undefined, r.provenance === 'live' ? `Live call, ${fmtTokens(r.tokens)}` : undefined)
       }
-      const unsourced = d.data.claims.filter((c) => !c.source).length
-      this.addLog('Writer', `Drafted “${d.data.headline}” (${d.data.claims.length} claims, ${unsourced} without a source)`, 'info', 'draft', d.provenance === 'live' ? `Live call, ${fmtTokens(d.tokens)}` : undefined)
-    }
-    if (key === 'claims') {
-      this.call('Reviewer', this.out.claims!, 'factcheck')
     }
     if (key === 'conflict') {
       const c = this.out.conflict!
-      this.call('Head farmer', c, 'draft')
+      const t = this.task(MISSING.taskId)
+      this.call('Head farmer', c, t.id)
       if (c.data.conflict) {
         this.crow = { state: 'flying', t: 0, x: CROW_SPOT.x + 14, y: CROW_SPOT.y - 12 }
         this.neighbourDrought = true
-        const other = c.data.dates.find((x) => x.farm !== FARM.name)
-        this.addLog('Head farmer', `Found two launch dates: ${c.data.dates.map((x) => x.date).join(' and ')}`, 'info', 'draft', other ? `${other.source}: “${other.quote}”` : c.data.why)
+        const other = c.data.endpoints.find((x) => x.farm !== FARM.name)
+        this.addLog('Head farmer', `Found the cause in ${NEIGHBOUR.name}: ${c.data.endpoints.map((x) => x.endpoint).join(' and ')}`, 'info', t.id, other ? `${other.source}: “${other.quote}”` : c.data.why)
       } else {
-        this.addLog('Head farmer', `Cross-checked the date with ${this.docsChecked} documents on 2 farms: no conflict`, 'auto', 'draft', c.data.why)
-        this.flags.add('dateResolved')
-        this.flags.add('replanApplied')
+        this.addLog('Head farmer', `Checked ${this.docsChecked} files on 2 farms: no clash found`, 'auto', t.id, c.data.why)
+        this.raiseCrow()
       }
     }
   }
@@ -1288,23 +1361,8 @@ export class Engine {
   }
 
   private updateWorld(dt: number) {
-    // Once the draft carries a date and the Reviewer's beetle is gone, the head farmer
-    // cross-checks the date with the neighbouring farm. A crow appears only if the model finds a conflict.
-    const draft = this.task('draft')
-    if (this.flags.has('dateUsed') && draft.pests.length === 0 && this.out.draft && this.flags.has('factcheckDone') && !this.flags.has('dateResolved')) {
-      const d = this.out.draft.data
-      if (!d.launch_date) {
-        // Nothing dated to cross-check.
-        this.flags.add('dateResolved')
-        this.flags.add('replanApplied')
-      } else {
-        if (!this.requested.has('conflict')) this.addLog('Head farmer', `Cross-checking ${d.launch_date} with ${this.docsChecked} documents on 2 farms`, 'info', 'draft')
-        const recorded = d.launch_date === 'March 26' ? RECORDED.noConflict : RECORDED.conflict
-        this.request('conflict', () =>
-          callAgent('conflict', { draftDate: d.launch_date, draftSource: d.launch_date_source ?? 'unknown', ourDocs: [...draft.signposts] }, recorded),
-        )
-      }
-    }
+    // Gates run a moment after a task's last step; the crop ripens only if they pass.
+    for (const [id, at] of Object.entries(this.gateRunAt)) if (this.t - at > 1.6) this.finishGates(this.task(id))
     if (this.crow.state === 'flying') {
       this.crow.t += dt / CROW_FLIGHT
       const k = Math.min(1, this.crow.t)
@@ -1331,8 +1389,8 @@ export class Engine {
       }
       this.panelOpen = true
       this.freeCam = null
-      this.addLog('Head farmer', 'Every crop is ripe', 'done')
-      this.toast('Every crop is ripe. Press H for the harvest report')
+      this.addLog('Head farmer', 'Every crop is ripe. The agentic review runs at the harvest.', 'done')
+      this.toast('Every crop is ripe. The harvest is ready for you.')
       this.chime()
       this.notify()
     }
@@ -1607,11 +1665,10 @@ export class Engine {
       if (pest) pest.size = Math.max(0.25, 1 - job.progress)
       if (job.progress >= 1) {
         task.pests = task.pests.filter((p) => p.id !== job.pestId)
-        this.sourceFixed = true
-        const fix = this.out.claims?.data.issues[0]?.fix
-        this.addLog(fh.role, `Fixed: ${job.label}`, 'auto', task.id, fix ?? 'Added the missing source.')
-        if (this.demoScenario) this.pendingSeeds.push({ ...LESSON_SOURCES })
+        this.flags.add('unitFixed')
+        this.addLog(fh.role, `Fixed ${job.label}`, 'auto', task.id, UNIT_FAIL.fix)
         fh.job = null
+        this.startGates(task)
         this.notify()
       }
       return
@@ -1625,9 +1682,15 @@ export class Engine {
     }
     fh.status = 'working'
     sub.progress = Math.min(1, sub.progress + dt / sub.secs)
-    // Steps backed by a live call hold just short of ripe until the call returns.
-    const waitingOn = (sub.id === 'd2' && !this.out.draft) || (sub.id === 'f1' && !this.out.claims)
-    if (waitingOn) sub.progress = Math.min(sub.progress, 0.9)
+    // Steps backed by a model call hold just short of done until the call returns.
+    // The end-to-end run holds halfway while it fails, until the session API is settled.
+    const e2eBlocked = sub.id === 't2' && this.gates[task.id]?.e2e?.state === 'fail'
+    if (e2eBlocked && this.flags.has('sessionV2')) {
+      this.gates[task.id]!.e2e = { state: 'run', text: E2E_FAIL.again }
+      this.addLog(fh.role, 'Running the end-to-end tests again on staging', 'info', task.id)
+    }
+    const waitingOn = (sub.id === 'f2' && !this.out.session) || (e2eBlocked && !this.flags.has('sessionV2'))
+    if (waitingOn) sub.progress = Math.min(sub.progress, e2eBlocked ? 0.55 : 0.9)
     const target = Math.floor(sub.actions * sub.progress)
     const before = task.used
     while (sub.emitted < target) {
@@ -1646,6 +1709,7 @@ export class Engine {
       for (const f of sub.sets ?? []) this.flags.add(f)
       this.onSubDone(fh, task, sub)
       fh.job = null
+      if (task.subtasks.every((s) => s.done)) this.startGates(task)
       this.notify()
     }
   }
@@ -1656,156 +1720,121 @@ export class Engine {
     return { x, y: task.plot.y + task.plot.h + 0.55 }
   }
 
+  // ---- gates during Grow --------------------------------------------------------------------
+
+  private startGates(task: Task) {
+    const gs = this.machineGates(task.id)
+    this.gates[task.id] ??= {}
+    for (const g of gs) this.gates[task.id]![g] = { state: 'run', text: 'Running' }
+    this.gateRunAt[task.id] = this.t
+    if (!gs.length) this.finishGates(task)
+  }
+
+  private finishGates(task: Task) {
+    delete this.gateRunAt[task.id]
+    const fh = this.farmhands[task.assignee]
+    const results = this.gates[task.id] ?? {}
+    for (const g of this.machineGates(task.id)) {
+      // Frontend's first unit run misses an error state. It fixes that alone: a pest, not a question.
+      if (g === 'unit' && task.id === UNIT_FAIL.taskId && !this.flags.has('unitFixed') && this.demoScenario) {
+        results[g] = { state: 'fail', text: UNIT_FAIL.text }
+        const pest = { id: 'unit-1', kind: 'beetle' as const, label: UNIT_FAIL.pest, size: 1, tile: { x: task.plot.x + 2, y: task.plot.y + 1 } }
+        task.pests.push(pest)
+        this.addLog(fh.role, `Unit tests failed: ${UNIT_FAIL.text}`, 'pest', task.id, UNIT_FAIL.pest)
+        fh.interrupts.push({ kind: 'fix', taskId: task.id, pestId: pest.id, label: 'the failing unit test', secs: 2.5, energy: 1_500, actions: 6, progress: 0, emitted: 0 })
+        continue
+      }
+      results[g] = { state: 'pass', text: TASK_RESULTS[task.id]?.[g] ?? 'Passed' }
+    }
+    this.gates[task.id] = results
+    const passed = this.machineGates(task.id).filter((g) => results[g]?.state === 'pass')
+    if (passed.length) this.addLog('Gates', `${task.name}: ${passed.map((g) => `${GATES[g].name.toLowerCase()} ${results[g]!.text}`).join(', ')}`, 'info', task.id)
+    if (this.taskRipe(task)) {
+      this.addLog(fh.role, `Ripe: ${task.name}`, 'done', task.id)
+      if (task.id === 'tests' && this.flags.has('replanApplied') && !this.pendingSeeds.some((s) => s.file === LESSON_STAGING.file)) this.pendingSeeds.push({ ...LESSON_STAGING })
+    }
+    this.notify()
+  }
+
   // Returns true when the subtask is blocked on an ask.
   private onSubStart(fh: Farmhand, task: Task, sub: Subtask): boolean {
-    if (sub.id === 'r3' && task.dry && this.demoScenario) {
-      // The rule in player.md: ask only when a task would run more than 25% over budget.
-      // Reading 12 more posts would; finishing with what it has would not, so it decides alone.
-      this.energyCaught += 9_000
-      this.addLog(fh.role, 'Finished with the 5 competitor posts already read instead of 12 more', 'auto', task.id,
-        'The plot was at 75% of its energy. Reading 12 more posts would cost about 9k, ending 42% over budget. Without them the comparison stays qualitative.')
+    if (sub.id === 'b2') {
+      this.addLog(fh.role, 'Added /auth/google/callback', 'auto', task.id, 'Follows oauth-security.md: a state parameter and PKCE.')
     }
-    if (sub.id === 'd2') {
+    if (sub.id === 'f2') {
       // The model call is the work: no scripted steps on top of it.
       sub.actions = 0
-      const signposts = [...task.signposts, ...this.farmhands[fh.id].almanac]
-      const sawEng = expandSignposts(signposts).includes('eng-standup-notes/2026-02-03.md')
-      this.request('draft', () =>
-        callAgent('draft', { goal: this.goal, task: task.name, answers: this.answersText, signposts }, sawEng ? RECORDED.draftWithEngNotes : RECORDED.draft),
+      const signposts = [...task.signposts, ...fh.almanac]
+      const sawChangelog = expandSignposts(signposts).includes(MISSING.file)
+      this.request('session', () =>
+        callAgent('session', { goal: this.goal, task: task.name, answers: this.answersText, signposts }, sawChangelog ? RECORDED.sessionV2 : RECORDED.session),
       )
     }
-    if (sub.id === 'f1') {
-      sub.actions = 0
-      this.request('claims', () => {
-        const d = this.out.draft?.data ?? RECORDED.draft
-        return callAgent('claims', { draft: `${d.headline}\n\n${d.paragraphs.join('\n\n')}` }, RECORDED.claims)
-      })
-    }
-    if (sub.id === 'i2' && this.demoScenario) {
-      this.addLog(fh.role, `Picked ${this.webinarDate}, 10:00 PT and showed each recipient their own time zone`, 'auto', task.id, 'From the saved seed lesson-webinar-timezones.md')
-    }
-    if (sub.id === 'f2' && this.demoScenario) {
-      // Calibration: the quote has a verbal OK on a call, not a written one, so the Reviewer is only
-      // moderately sure and asks. Claims it is sure about (the benchmark source) it fixes alone.
-      fh.status = 'asking'
-      this.raise({
-        id: 'quote',
-        label: 'Risk',
-        from: fh.id,
-        fromName: fh.role,
-        taskId: task.id,
-        question: 'The announcement quotes Acme’s ops lead. Keep the quote?',
-        impact: ['Goes to 6 external companies, Acme included', 'Easy to change until the invites go out'],
-        options: [
-          { key: '1', label: 'Keep it, by role', value: 'keep', kind: 'alt', recommended: true },
-          { key: '2', label: 'Paraphrase it', value: 'paraphrase', kind: 'alt' },
-        ],
-        confidence: 'Medium',
-        basis: 'The call notes say “OK to quote the ops lead by role”, but that was said on a call. The saved seed lesson-quote-approval.md asks for an explicit OK, so I’m not sure enough to decide alone.',
-        provenance: 'sim',
-        details: {
-          reasoning: 'Quotes reach customers. A verbal OK recorded by our own team is good evidence, not proof.',
-          sources: ['customer-call-notes.md (Jan 28)', 'lesson-quote-approval.md (saved seed)'],
-        },
-      })
-      return true
-    }
-    if (sub.id === 'i3') {
-      // The send waits for the harvest review. Grow only prepares it.
-      this.addLog(fh.role, `Queued ${this.irreversible.count} invites. Nothing goes out until you approve the harvest.`, 'info', task.id)
-      return false
-    }
-    if (sub.id === 'i3-ask') {
-      fh.status = 'asking'
-      const { action, audience, count: total } = this.irreversible
-      const demo = this.demoScenario
-      this.raise({
-        id: 'invites',
-        label: 'Irreversible',
-        from: fh.id,
-        fromName: fh.role,
-        taskId: task.id,
-        question: `${action} to ${total} ${audience}?`,
-        // Leaves the company: the card leads with who it reaches, not a warning word.
-        impact: demo
-          ? [`Goes to ${total} ${audience}`, `${total} emails from your address, with a calendar hold for ${this.webinarDate}`]
-          : [`Goes to ${total} ${audience}`],
-        options: [
-          { key: 'a', label: `Send to ${total} people`, value: 'approve', kind: 'approve', recommended: true },
-          ...(demo ? [{ key: '1', label: 'Send to Acme first (12)', value: 'acme-first', kind: 'alt' as const }] : []),
-          { key: 'd', label: 'Don’t send', value: 'deny', kind: 'deny' },
-        ],
-        confirm: 'After this, fixing a mistake means sending a correction.',
-        confidence: 'High',
-        provenance: 'sim',
-        basis: demo ? 'The list matches pilot-customers.csv, and the date is settled.' : 'The plan’s send step, after every other task is done.',
-        details: demo
-          ? {
-              reasoning: `The date is settled (${this.launchDate}) and the list matches pilot-customers.csv. Times use each recipient’s zone, from a saved seed.`,
-              sources: ['pilot-customers.csv', 'lesson-webinar-timezones.md (saved seed)'],
-              preview: `Subject: You’re invited: Relay v2 launch webinar, ${this.webinarDate}\n\nHi {first_name},\n\nRelay v2 arrives ${this.launchDate}. Join us ${this.webinarDate} at {local_time} ({pt_time} PT) for a 30-minute walkthrough of faster sync and single sign-on.\n\nSee you there,\nThe Relay team`,
-            }
-          : {
-              reasoning: `Every other task is done. This is the plan’s one outward step.`,
-              sources: task.signposts,
-              preview: this.out.draft ? `${this.out.draft.data.headline}\n\n${this.out.draft.data.paragraphs[0] ?? ''}` : undefined,
-            },
-      })
-      return true
+    if (sub.id === 't2' && this.endpoint === CLASH.ours && !this.flags.has('sessionV2')) {
+      // Staging no longer has the endpoint Frontend called. The head farmer looks for why across farms.
+      this.gates[task.id] ??= {}
+      this.gates[task.id]!.e2e = { state: 'fail', text: E2E_FAIL.text }
+      this.addLog(fh.role, 'Sign-in failed on staging', 'pest', task.id, CLASH.failed)
+      const front = this.task(MISSING.taskId)
+      if (!this.requested.has('conflict')) this.addLog('Head farmer', `Checking ${this.docsChecked} files on 2 farms for why`, 'info', task.id)
+      this.request('conflict', () =>
+        callAgent('conflict', { endpoint: this.endpoint, source: this.out.session?.data.source ?? 'unknown', failure: CLASH.failed, ourDocs: [...front.signposts] }, RECORDED.conflict),
+      )
     }
     return false
   }
 
   private onSubDone(fh: Farmhand, task: Task, sub: Subtask) {
-    if (sub.id === 'd2') {
-      const d = this.out.draft!.data
-      const sawEng = expandSignposts(task.signposts).some((x) => x.startsWith('eng-standup-notes/'))
-      if (d.launch_date)
-        this.addLog(fh.role, `Set the date to ${d.launch_date} in the draft`, 'auto', 'draft', `Source: ${d.launch_date_source}.${sawEng ? '' : ' No engineering notes were attached to this plot.'}`, sawEng ? undefined : 'date')
+    if (sub.id === 'f2') {
+      const d = this.out.session!.data
+      const saw = expandSignposts(task.signposts).includes(MISSING.file)
+      this.addLog(fh.role, `Started the session with ${d.endpoint}`, 'auto', task.id, `From ${d.source}.${saw ? '' : ' The Session API v2 changelog was not attached.'}`, saw ? undefined : 'endpoint')
     }
-    if (sub.id === 'f1') {
-      const c = this.out.claims!
-      this.addLog(fh.role, `Checked ${c.data.checked} claims: ${c.data.issues.length} without a source`, 'info', 'factcheck', c.provenance === 'live' ? `Live call, ${fmtTokens(c.tokens)}` : undefined)
-      const issue = c.data.issues[0]
-      if (issue) {
-        const draft = this.task('draft')
-        const pest = { id: 'beetle-1', kind: 'beetle' as const, label: `${issue.claim}: ${issue.problem}`, size: 1, tile: { x: draft.plot.x + 3, y: draft.plot.y + 1 } }
-        draft.pests.push(pest)
-        this.addLog(fh.role, `Pest on Draft the announcement: “${issue.claim}”`, 'pest', 'draft', issue.problem)
-        this.farmhands[draft.assignee].interrupts.push({
-          kind: 'fix', taskId: 'draft', pestId: pest.id, label: `source for “${shorten(issue.claim, 40)}”`, secs: 2.5, energy: 1_500, actions: 6, progress: 0, emitted: 0,
-        })
-      }
+    if (sub.id === REPLAN_SUBTASKS.switch.id) {
+      this.endpoint = CLASH.theirs
+      this.addLog(fh.role, `Switched to ${CLASH.theirs}`, 'info', task.id, 'After your answer. Tests run again on staging.')
     }
-    if (sub.id === 'b1' && this.demoScenario) this.addLog(fh.role, 'Tone check: removed “revolutionary” from the headline options', 'auto', 'brand', 'brand-voice.md bans it.')
-    if (task.subtasks.every((s) => s.done)) this.addLog(fh.role, `Ripe: ${task.name}`, 'done', task.id)
+    if (sub.id === 'd1') this.addLog(fh.role, 'Wrote docs/auth/google.md', 'info', task.id, 'Uses the callback route Backend added.')
   }
 
   private raiseCrow() {
     const c = this.out.conflict!
-    const ours = c.data.dates.find((d) => d.farm === FARM.name) ?? c.data.dates[0]
-    const theirs = c.data.dates.find((d) => d !== ours) ?? c.data.dates[1]
-    const recommendTheirs = c.data.recommended_date === theirs?.date
+    const t = this.task('tests')
+    const fh = this.farmhands[t.assignee]
+    const front = this.task(MISSING.taskId)
+    const builder = this.farmhands[front.assignee].role
+    const ours = c.data.endpoints.find((d) => d.farm === FARM.name) ?? c.data.endpoints[0]
+    const theirs = c.data.endpoints.find((d) => d !== ours)
+    fh.status = 'asking'
     this.raise({
       id: 'crow',
       label: 'Anomaly',
-      from: 'head',
-      fromName: 'Head farmer',
-      taskId: 'draft',
-      question: 'Two launch dates are in play. Which one should the announcement use?',
-      impact: [`Changes the announcement, the webinar date and the invites, and tells the ${NEIGHBOUR.name} crew`, 'Nothing has gone out yet'],
-      sides: [
-        { title: ours.date, who: 'Your Writer, from the call notes', source: ours.source, quote: ours.quote },
-        { title: theirs.date, who: `The ${NEIGHBOUR.name} crew`, source: theirs.source, quote: theirs.quote },
+      from: fh.id,
+      fromName: fh.role,
+      taskId: t.id,
+      question: `Sign-in fails on staging. The ${NEIGHBOUR.name} project retired ${CLASH.ours} yesterday. Which should ${builder} use?`,
+      impact: [
+        'Your deploy goes out Friday, Nov 13, the day after production drops /v1/session.',
+        ...(theirs ? [`${theirs.source}: “${theirs.quote}”`] : []),
+        'Nothing has merged yet.',
       ],
+      sides: theirs
+        ? [
+            { title: ours.endpoint, who: `${builder}, from ${ours.source.replace('web-app/', '')}`, source: ours.source, quote: ours.quote },
+            { title: theirs.endpoint, who: `The ${NEIGHBOUR.name} project`, source: theirs.source, quote: theirs.quote },
+          ]
+        : undefined,
       options: [
-        { key: '1', label: `Use ${theirs.date}`, value: 'theirs', recommended: recommendTheirs, kind: 'alt' },
-        { key: '2', label: `Keep ${ours.date}`, value: 'keep', recommended: !recommendTheirs, kind: 'alt' },
+        { key: '1', label: `Switch to ${CLASH.theirs}`, value: 'v2', recommended: c.data.recommended === CLASH.theirs, kind: 'alt' },
+        { key: '2', label: `Keep /v1 and tell that team`, value: 'keep', recommended: c.data.recommended !== CLASH.theirs, kind: 'alt' },
       ],
       confidence: c.data.confidence,
-      basis: `Checked ${this.docsChecked} documents on 2 farms. ${c.data.why}`,
+      basis: 'The changelog and the failing test agree.',
       provenance: c.provenance,
-      details: { reasoning: `Checked ${this.docsChecked} documents on 2 farms. ${c.data.why}`, sources: c.data.dates.map((d) => d.source) },
+      details: {
+        reasoning: `Staging: ${CLASH.failed}`,
+        sources: [...c.data.endpoints.map((d) => d.source), 'e2e-tests/google-signin.spec.ts'],
+      },
     })
   }
 }
@@ -1828,18 +1857,8 @@ export function cropTiles(task: Task) {
   return out
 }
 
-function shiftDate(d: string, days: number) {
-  const m = d.match(/^(\w+) (\d+)$/)
-  if (!m) return d
-  return `${m[1]} ${Number(m[2]) + days}`
-}
-
-function shorten(s: string, n: number) {
-  return s.length > n ? s.slice(0, n - 1) + '…' : s
-}
-
 // A reason is a plain word. Outbound steps get no word: they lead with who they reach.
-export const REASON_WORD: Record<string, string> = { Cost: 'Costs more', Risk: 'Risky', Failure: 'Failed', Anomaly: 'Looks wrong', Irreversible: 'Send' }
+export const REASON_WORD: Record<string, string> = { Cost: 'Costs more', Risk: 'Risky', Failure: 'Failed', Anomaly: 'Looks wrong', Irreversible: 'Merge' }
 
 export function fmtTokens(n: number) {
   return n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k tokens` : `${Math.round(n)} tokens`

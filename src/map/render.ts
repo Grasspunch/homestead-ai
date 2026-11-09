@@ -1,7 +1,7 @@
 // Draws the valley. The map shows state at a glance; every decision lives in the quest log.
 import { draw, frame as frameSize, hasFrame, animCounts, pixelSprite } from './atlas'
 import { cropTiles, type Engine } from '../sim/engine'
-import { CROW_SPOT, FARM, NEIGHBOUR, NEIGHBOUR_PLOTS, OTHER_FARMS, PROPS, TILE, VALLEY_STATS, WORLD, type Prop } from '../sim/scenario'
+import { CLASH, CROW_SPOT, FARM, INTRO_SIGNS, MISSING, NEIGHBOUR, NEIGHBOUR_PLOTS, OTHER_FARMS, PROPS, TILE, VALLEY_STATS, WORLD, type Prop } from '../sim/scenario'
 import type { Dir, Farmhand, Rect, Task } from '../sim/types'
 
 export interface Camera {
@@ -80,7 +80,7 @@ function buildBackground() {
   }
   lane({ x: 37, y: 0, w: 2, h: WORLD.h })
   lane({ x: 0, y: 23.5, w: WORLD.w, h: 2 })
-  for (let y = POND.y; y < POND.y + POND.h; y++) for (let x = POND.x; x < POND.x + POND.w; x++) draw(g.ctx, 'water_0', x * TILE, y * TILE)
+  drawPond(g.ctx, 0)
   // Flowers in the grass.
   draw(g.ctx, 'flower_1', 9 * TILE, 21 * TILE)
   draw(g.ctx, 'flower_4', 15 * TILE, 20.5 * TILE)
@@ -101,7 +101,7 @@ function buildBackground() {
     ['tree', 0, 21], ['tree_small', 36, 43], ['tree', 74, 43], ['tree_big', 0.2, 43],
   ]
   for (const [n, x, y] of trees) draw(b.ctx, n, x * TILE, y * TILE - 8)
-  // Brand refresh: a flower garden. Invoices: an orchard.
+  // The first other farm is a flower garden; the second is an orchard.
   const garden = OTHER_FARMS[0].rect
   for (let y = garden.y + 6; y < garden.y + garden.h - 2; y += 2)
     for (let x = garden.x + 4; x < garden.x + garden.w - 3; x += 2) {
@@ -115,6 +115,44 @@ function buildBackground() {
   // Houses that never react. Your farmhouse is a prop and is drawn live.
   for (const h of [FARM.barn, NEIGHBOUR.house, ...OTHER_FARMS.map((o) => o.house)]) draw(b.ctx, h.sprite, h.x * TILE, h.y * TILE)
   layers = { ground: g.c, fences: f.c, buildings: b.c }
+}
+
+// The pond: water clipped to a rounded shape with a soft shore, so it isn't a hard rectangle.
+function pondPath(ctx: CanvasRenderingContext2D, inset = 0) {
+  const x = POND.x * TILE + inset
+  const y = POND.y * TILE + inset
+  const w = POND.w * TILE - inset * 2
+  const h = POND.h * TILE - inset * 2
+  const r = Math.min(14, h / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.lineTo(x + w - r, y)
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r)
+  ctx.lineTo(x + w, y + h - r)
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+  ctx.lineTo(x + r, y + h)
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r)
+  ctx.lineTo(x, y + r)
+  ctx.quadraticCurveTo(x, y, x + r, y)
+  ctx.closePath()
+}
+
+function drawPond(ctx: CanvasRenderingContext2D, frame: number) {
+  ctx.save()
+  // Shore: a band of damp earth just outside the water.
+  pondPath(ctx, -2)
+  ctx.fillStyle = '#b7a46b'
+  ctx.fill()
+  pondPath(ctx, 0)
+  ctx.clip()
+  for (let y = POND.y; y < POND.y + POND.h; y++) for (let x = POND.x; x < POND.x + POND.w; x++) draw(ctx, `water_${frame}`, x * TILE, y * TILE)
+  ctx.restore()
+  ctx.save()
+  pondPath(ctx, 0.5)
+  ctx.strokeStyle = 'rgba(62, 92, 110, 0.45)'
+  ctx.lineWidth = 1
+  ctx.stroke()
+  ctx.restore()
 }
 
 // ---- helpers -----------------------------------------------------------------
@@ -179,7 +217,7 @@ function plotEmote(e: Engine, t: Task): EmoteKind | null {
   const st = e.taskStatus(t)
   if (st.tone === 'done') return 'check'
   if (st.tone === 'needs') return 'alert'
-  if (st.tone === 'warn') return 'cross'
+  if (st.tone === 'warn' || st.tone === 'fail') return 'cross'
   if (st.text === 'Waiting') return 'sleep'
   return null
 }
@@ -212,8 +250,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
   const L = layers!
   ctx.globalAlpha = fade(0)
   ctx.drawImage(L.ground, 0, 0)
-  const wf = Math.floor(clock * 2.5) % 4
-  for (let y = POND.y; y < POND.y + POND.h; y++) for (let x = POND.x; x < POND.x + POND.w; x++) draw(ctx, `water_${wf}`, x * TILE, y * TILE)
+  drawPond(ctx, Math.floor(clock * 2.5) % 4)
   ctx.globalAlpha = fade(0.35)
   ctx.drawImage(L.fences, 0, 0)
   const built = fade(0.7)
@@ -235,7 +272,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
         const st = dry ? Math.max(0, np.stage - 1) : np.stage
         draw(ctx, `crop_${np.crop}_${st}`, (np.plot.x + i) * TILE, (np.plot.y + j) * TILE)
       }
-    hits.push({ kind: 'nplot', id: np.name, rect: px(np.plot), title: np.name, body: `${NEIGHBOUR.name}${dry ? ', blocked by the auth dependency' : ''}` })
+    hits.push({ kind: 'nplot', id: np.name, rect: px(np.plot), title: np.name, body: `${NEIGHBOUR.name}${dry ? ', retired /v1/session' : ''}` })
   }
 
   // Plots. During Plan the head farmer tills them one by one.
@@ -256,10 +293,12 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     } else if (planned) {
       bed(ctx, r, t.dry)
       if (!e.picked.has(t.id)) {
+        const ripe = e.taskRipe(t)
         for (const c of cropTiles(t)) {
           const s = t.subtasks[c.sub]
           if (!s) continue
-          draw(ctx, `crop_${t.crop}_${stageOf(s.progress, s.done)}`, c.x * TILE, c.y * TILE)
+          // A crop ripens only when its gates pass: until then it stays one stage short.
+          draw(ctx, `crop_${t.crop}_${Math.min(stageOf(s.progress, s.done), ripe ? 3 : 2)}`, c.x * TILE, c.y * TILE)
         }
       }
     } else return
@@ -286,28 +325,42 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     ctx.restore()
     hits.push({ kind: 'sign', id: `sign-${t.id}`, rect: { x: sx, y: sy, w: 16, h: 16 }, title: '' })
     if (planned) {
-      const frac = t.subtasks.reduce((n, s) => n + (s.done ? 1 : s.progress), 0) / t.subtasks.length
+      const raw = t.subtasks.reduce((n, s) => n + (s.done ? 1 : s.progress), 0) / t.subtasks.length
+      const frac = e.taskRipe(t) ? raw : Math.min(raw, 0.92)
+      // Centred under the sign: 20px wide, sign is 16px wide starting at sx.
+      const bx = sx + 8 - 10
       ctx.fillStyle = 'rgba(62,49,80,0.7)'
-      ctx.fillRect(sx - 2, sy + 17, 20, 4)
+      ctx.fillRect(bx, sy + 17, 20, 4)
       ctx.fillStyle = frac >= 1 ? '#4f8f3f' : t.dry ? '#e8a05a' : '#7fc06a'
-      ctx.fillRect(sx - 1, sy + 18, Math.max(1, 18 * frac), 2)
-      const em = e.picked.has(t.id) ? null : plotEmote(e, t)
-      if (em) worldEmote(ctx, (bedRect.x + bedRect.w) * TILE - 6, bedRect.y * TILE - 2, em, clock, em === 'alert')
+      ctx.fillRect(bx + 1, sy + 18, Math.max(1, 18 * frac), 2)
+      // Picked plots go quiet, except a failed gate: its cross stays through the harvest.
+      const em0 = plotEmote(e, t)
+      const em = e.picked.has(t.id) && em0 !== 'cross' ? null : em0
+      if (em) worldEmote(ctx, sx + 8, sy - 1, em, clock, em === 'alert')
     }
 
-    // Files and skills the task reads, along the left edge.
+    // Files, skills and tools the task uses, along the left edge. The column tightens to fit them all.
+    const slots = t.signposts.length + (replay && t.id === MISSING.taskId && !t.signposts.includes(MISSING.file) ? 1 : 0)
+    const step = Math.min(0.7, (r.h + 0.7) / Math.max(1, slots))
     t.signposts.forEach((s, k) => {
       const px0 = (r.x - 2) * TILE
-      const py0 = (r.y + k * 0.7 + 0.3) * TILE
-      if (k > r.h) return
+      const py0 = (r.y + k * step + 0.3) * TILE
+      const kind = e.lib(s).kind
       draw(ctx, 'sign_blank', px0, py0)
-      hits.push({ kind: 'signpost', id: `${t.id}:${s}`, rect: { x: px0, y: py0, w: 16, h: 16 }, title: s, body: s === 'eng-standup-notes/' ? 'Added by the re-plan' : `Read by ${t.name}` })
+      if (kind === 'tool') {
+        // An MCP tool: a small teal plate on the sign, so tools read apart from files and skills.
+        ctx.fillStyle = '#2f6b5e'
+        ctx.fillRect(px0 + 5, py0 + 4, 6, 4)
+      }
+      const verb = kind === 'tool' ? 'Called by' : kind === 'skill' ? 'Used by' : 'Read by'
+      const added = s === MISSING.file && e.flags.has('replanApplied')
+      hits.push({ kind: 'signpost', id: `${t.id}:${s}`, rect: { x: px0, y: py0, w: 16, h: 16 }, title: s, body: added ? 'Added by the re-plan' : `${verb} ${t.name}` })
     })
-    if (replay && t.id === 'draft' && !t.signposts.includes('eng-standup-notes/')) {
-      // The missing file: what the Writer never saw.
+    if (replay && t.id === MISSING.taskId && !t.signposts.includes(MISSING.file)) {
+      // The missing file: what this task's agent never saw.
       const k = t.signposts.length
       const px0 = (r.x - 2) * TILE
-      const py0 = (r.y + k * 0.7 + 0.3) * TILE
+      const py0 = (r.y + k * step + 0.3) * TILE
       ctx.save()
       ctx.globalAlpha = 0.5 + 0.3 * Math.sin(clock * 5)
       ctx.strokeStyle = '#d9715f'
@@ -350,10 +403,11 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     hits.push({ kind: 'prop', id: p.id, rect: px({ x: p.x, y: p.y, w: p.w, h: p.h }), title: '' })
   }
 
-  // The shipping chest, where the harvest goes.
+  // The shipping crate, where the harvest goes. Bigger than the file chest and marked with a sign,
+  // and it sits above the spots where the crew stops, so nobody stands on it.
   const sh = FARM.shipping
   const shipOpen = e.phase === 'harvest' && e.harvestStage === 'map'
-  list.push({ y: sh.y + 0.6, fn: () => draw(ctx, shipOpen ? 'chest_open' : 'chest', sh.x * TILE - 8, sh.y * TILE - 6) })
+  list.push({ y: sh.y + 0.55, fn: () => drawCrate(ctx, sh.x, sh.y, shipOpen, e.picked.size) })
 
   // The head farmer.
   const hf = e.head
@@ -445,7 +499,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
   // Crops carried to the shipping chest.
   for (const fh of Object.values(e.farmhands)) {
     const crop = e.carrying[fh.id]
-    if (crop) draw(ctx, `crop_${crop}_3`, fh.x * TILE - 8, fh.y * TILE - 46)
+    if (crop) draw(ctx, `crop_${crop}_3`, Math.round(fh.x * TILE - 8), Math.round(fh.y * TILE - 52 + (reduced ? 0 : Math.sin(clock * 10) * 1)))
   }
 
   // Crow.
@@ -459,7 +513,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     if (open) {
       const ox = CROW_SPOT.x * TILE
       const oy = CROW_SPOT.y * TILE - 8
-      const ours = e.task('draft').plot
+      const ours = e.task(MISSING.taskId).plot
       const theirs = NEIGHBOUR_PLOTS.find((p) => p.drought)?.plot ?? NEIGHBOUR_PLOTS[0].plot
       ctx.save()
       ctx.lineWidth = 1.5
@@ -489,7 +543,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     } else if (flying) ctx.drawImage(img, cx, cy)
     else ctx.drawImage(img, cx - 4, cy - 16, 24, 24)
     ctx.restore()
-    hits.push({ kind: 'crow', id: 'crow', rect: { x: cx - 2, y: cy - 10, w: 20, h: 20 }, title: 'Crow', body: 'Two launch dates disagree' })
+    hits.push({ kind: 'crow', id: 'crow', rect: { x: cx - 2, y: cy - 10, w: 20, h: 20 }, title: 'Crow', body: CLASH.crow })
   }
 
   // Seed flying to the library.
@@ -519,15 +573,24 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     const placed: { x: number; y: number; w: number; h: number }[] = []
     e.tasks.forEach((t, i) => {
       if (!focusIds.has(t.id) || (planning && i >= e.planShown)) return
-      const p = toScreen(t.plot.x + t.plot.w / 2, t.plot.y + t.plot.h + 1.35)
+      // Under the bed's bottom rim, clear of the sign and the files along the left edge.
+      const p = toScreen(t.plot.x + t.plot.w / 2, t.plot.y + t.plot.h + 1.15)
       const sub = planned ? e.taskStatus(t).text : e.farmhands[t.assignee].role
       label(ctx, p.x, p.y, t.name, sub, e.farmhands[t.assignee].color, cam.scale, placed)
     })
   }
 
   if (e.view === 'farm' && !(e.intro && e.beat < 2)) {
-    const hfp = toScreen(hf.x, hf.y - 1.55)
-    if (!e.intro) nameTag(ctx, hfp.x, hfp.y, 'Head farmer', '#f3f2c0')
+    const hfp = toScreen(hf.x, hf.y - 1.9)
+    const feet = toScreen(hf.x, hf.y)
+    const onScreen = feet.x > 0 && feet.x < W && feet.y > 0 && feet.y - 40 < H
+    // Near the farmhouse the tag would cover its roof, so it moves to the head farmer's right.
+    const house = FARM.house
+    const nearHouse = hf.x > house.x - 1 && hf.x < house.x + 5 && hf.y < house.y + 6.5
+    if (!e.intro && onScreen) {
+      if (nearHouse) nameTag(ctx, toScreen(hf.x + 2.6, hf.y - 0.4).x, toScreen(hf.x, hf.y - 0.4).y, 'Head farmer', '#f3f2c0')
+      else nameTag(ctx, hfp.x, hfp.y, 'Head farmer', '#f3f2c0')
+    }
     if (e.headThinking > 0 || headWaiting(e)) emote(ctx, hfp.x, hfp.y - 14, e.headThinking > 0 ? 'question' : 'alert', clock, cam.scale)
     for (const fh of Object.values(e.farmhands)) {
       if (fh.inside) continue
@@ -553,10 +616,11 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     }
   }
 
-  // The harvest headline rises over the shipping chest while the crops come in.
+  // The harvest headline rises over the field while the crops come in.
   if (e.phase === 'harvest' && e.harvestStage === 'map') {
     const k = Math.min(1, (clock - e.harvestT) / 1.2)
-    const p = toScreen(sh.x, sh.y - 2.2 - k * 1.2)
+    // Over open ground below the plots, clear of the plot signs and the buildings.
+    const p = toScreen(FARM.rect.x + FARM.rect.w / 2, 19.6 - k * 0.6)
     ctx.save()
     ctx.globalAlpha = k
     banner(ctx, p.x, p.y, e.harvestHeadline, 16)
@@ -587,10 +651,10 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     const theirs = toScreen(NEIGHBOUR.rect.x + 6, NEIGHBOUR.rect.y + 6.5)
     ctx.save()
     ctx.globalAlpha = k
-    banner(ctx, ours.x, ours.y, 'Launch March 12', 18)
+    banner(ctx, ours.x, ours.y, INTRO_SIGNS.ours, 18)
     ctx.globalAlpha = Math.min(1, Math.max(0, (clock - e.beatT - 2.2) / 0.5))
     if (reduced) ctx.globalAlpha = 1
-    banner(ctx, theirs.x, theirs.y, 'Ship March 26', 18)
+    banner(ctx, theirs.x, theirs.y, INTRO_SIGNS.theirs, 18)
     ctx.restore()
   }
 
@@ -630,6 +694,41 @@ function drawFarmhand(ctx: CanvasRenderingContext2D, e: Engine, fh: Farmhand, cl
     ctx.restore()
   }
   drawChar(ctx, fh.x, fh.y, anim, dir, t, tint, fh.fade * (fh.paused ? 0.55 : 1))
+}
+
+// The shipping crate: a 1.5x chest on a pallet with a small sign, lid open while crops arrive.
+function drawCrate(ctx: CanvasRenderingContext2D, tx: number, ty: number, open: boolean, filled: number) {
+  const s = 1.5
+  const w = 16 * s
+  const x = Math.round(tx * TILE - w / 2)
+  const bottom = Math.round((ty + 0.55) * TILE)
+  const y = bottom - Math.round(14 * s)
+  ctx.save()
+  // Pallet.
+  ctx.fillStyle = '#7a5236'
+  ctx.fillRect(x - 3, bottom - 2, w + 6, 3)
+  ctx.fillStyle = 'rgba(40,40,60,0.18)'
+  ctx.fillRect(x - 3, bottom + 1, w + 6, 2)
+  draw(ctx, open ? 'chest_open' : 'chest', x, y, { scale: s })
+  // Crops already shipped peek out of the open lid.
+  if (open && filled > 0) {
+    ctx.fillStyle = '#94b85c'
+    for (let i = 0; i < Math.min(4, filled); i++) ctx.fillRect(x + 5 + i * 4, y + 4, 3, 3)
+  }
+  // A little sign post to the right, so it reads as the shipping crate.
+  const px = x + w + 3
+  ctx.fillStyle = '#7a5236'
+  ctx.fillRect(px + 4, bottom - 14, 2, 14)
+  ctx.fillStyle = '#e6c08a'
+  ctx.fillRect(px, bottom - 20, 10, 8)
+  ctx.strokeStyle = '#7a4a2b'
+  ctx.lineWidth = 1
+  ctx.strokeRect(px + 0.5, bottom - 19.5, 9, 7)
+  // An arrow on the sign: "in here".
+  ctx.fillStyle = '#5a3520'
+  ctx.fillRect(px + 2, bottom - 17, 4, 2)
+  ctx.fillRect(px + 6, bottom - 18, 1, 4)
+  ctx.restore()
 }
 
 // A thing on the farm and its click reaction (k is 0..1 through it, or -1).
@@ -759,23 +858,33 @@ function label(ctx: CanvasRenderingContext2D, x: number, y: number, text: string
   if (scale < 1.2) return
   ctx.save()
   ctx.font = `16px ${FONT}`
-  const t = `${text}  ${sub}`
-  const w = Math.ceil(ctx.measureText(t).width) + 12
+  // The name and the status are two runs: the status is lighter, after a gap.
+  const gap = 10
+  const wName = Math.ceil(ctx.measureText(text).width)
+  const wSub = sub ? Math.ceil(ctx.measureText(sub).width) : 0
+  const w = wName + (sub ? gap + wSub : 0) + 14
   const rx = Math.round(Math.max(4, Math.min(viewW - w - 4, x - w / 2)))
   let ry = Math.round(y)
   const hits = (yy: number) => placed.some((r) => rx < r.x + r.w + 4 && rx + w + 4 > r.x && yy < r.y + r.h + 2 && yy + 15 + 2 > r.y)
   while (hits(ry)) ry += 17
   placed.push({ x: rx, y: ry, w, h: 15 })
-  ctx.fillStyle = 'rgba(62,49,80,0.78)'
+  ctx.fillStyle = 'rgba(62,49,80,0.82)'
   ctx.fillRect(rx, ry, w, 15)
   if (accent) {
     ctx.fillStyle = accent
     ctx.fillRect(rx, ry, 3, 15)
   }
-  ctx.fillStyle = '#fbf6df'
   ctx.textBaseline = 'middle'
-  ctx.textAlign = 'center'
-  ctx.fillText(t, rx + w / 2, ry + 7)
+  ctx.textAlign = 'left'
+  ctx.fillStyle = '#fbf6df'
+  ctx.fillText(text, rx + 8, ry + 7)
+  if (sub) {
+    // A thin divider, then the status in a softer colour.
+    ctx.fillStyle = 'rgba(251,246,223,0.35)'
+    ctx.fillRect(rx + 8 + wName + gap / 2, ry + 3, 1, 9)
+    ctx.fillStyle = '#c9e3a8'
+    ctx.fillText(sub, rx + 8 + wName + gap, ry + 7)
+  }
   ctx.restore()
 }
 

@@ -1,93 +1,137 @@
-// The library: files are facts an agent reads; skills are how to do the job.
+// The library: files are facts an agent reads; skills are how to do the job;
+// tools (MCP servers) are what it can act on.
 // Story-specific data, kept apart from the engine so the scenario can be swapped.
 
+export type LibKind = 'file' | 'skill' | 'tool'
+
+export interface Access {
+  label: string
+  kind: 'read' | 'write'
+  on: boolean
+}
+
 export interface LibItem {
-  kind: 'file' | 'skill'
+  kind: LibKind
   what: string // one line: what it is
   owner: string
   updated: string
-  tokens: number // cost each time an agent reads it
-  preview: string // for a skill: what it teaches
+  tokens: number // a file or skill: cost each time an agent reads it; a tool: its tool definitions per agent
+  preview: string // a skill: what it teaches; a tool: the tools it exposes
+  access?: Access[] // a tool: what agents may do with it
 }
 
 export const LIBRARY: Record<string, LibItem> = {
-  'product-brief-relay-v2.pdf': {
+  'web-app/src/': {
     kind: 'file',
-    what: 'Product brief for Relay v2',
-    owner: 'Product team',
-    updated: 'Jan 20',
-    tokens: 4_100,
-    preview: 'Relay v2 ships faster sync, single sign-on through the new Auth SDK, and audit log export. Pilot customers first.',
+    what: 'The web app source code',
+    owner: 'Web team',
+    updated: 'today',
+    tokens: 18_600,
+    preview: 'src/api/session.ts\n  export const startSession = (token) =>\n    post("/v1/session", { token })',
   },
-  'customer-call-notes.md': {
+  'auth-spec.md': {
     kind: 'file',
-    what: 'Notes from the pilot customer calls',
-    owner: 'You',
-    updated: 'Jan 28',
-    tokens: 6_300,
-    preview: 'Jan 28, Acme: “We told Acme they would have v2 by March 12.” OK to quote the ops lead by role, not by name.',
+    what: 'Design spec for Google sign-in',
+    owner: 'Design team',
+    updated: 'Nov 4',
+    tokens: 2_100,
+    preview: 'Frame 2: "Continue with Google" sits above the email field, full width. Errors show under the button.',
   },
-  'pilot-customers.csv': {
+  'e2e-tests/': {
     kind: 'file',
-    what: 'The 6 pilot customers and their 42 contacts',
-    owner: 'Sales team',
-    updated: 'Jan 15',
-    tokens: 1_200,
-    preview: 'company, contacts\nAcme, 12\nNorthwind, 9\nGlobex, 7 …',
+    what: 'End-to-end test suite',
+    owner: 'QA team',
+    updated: 'Nov 6',
+    tokens: 5_400,
+    preview: 'email-login.spec.ts\nsignup.spec.ts\nreset-password.spec.ts',
   },
-  'benchmarks-q4.xlsx': {
+  'session-api-v2/CHANGELOG.md': {
     kind: 'file',
-    what: 'Q4 sync benchmarks',
+    what: 'Changelog from the Session API v2 project',
     owner: 'Platform team',
-    updated: 'Dec 18',
-    tokens: 2_800,
-    preview: 'Row 14: sync to peers, p50 1.9s (v1) to 0.6s (v2), 3.2x.',
+    updated: 'yesterday',
+    tokens: 800,
+    preview: 'Nov 8: /v1/session removed from staging. Removed from production Nov 12. Use POST /v2/session.',
   },
-  'eng-standup-notes/': {
-    kind: 'file',
-    what: 'Engineering standup notes',
-    owner: 'Engineering team',
-    updated: 'Feb 3',
-    tokens: 9_400,
-    preview: 'Feb 3: “v2 release moves to March 26.” Auth SDK review slipped a week.',
-  },
-  'brand-voice.md': {
+  'oauth-security.md': {
     kind: 'skill',
-    what: 'How we write for customers: tone and banned words',
-    owner: 'Brand team',
-    updated: 'Jan 9',
-    tokens: 900,
-    preview: 'Plain, specific, warm. Never “revolutionary”, “seamless” or “game-changing”.',
-  },
-  'write-launch-post.md': {
-    kind: 'skill',
-    what: 'How to structure a launch announcement',
-    owner: 'Marketing team',
-    updated: 'Nov 30',
-    tokens: 700,
-    preview: 'Lead with the date and the one change customers will notice. One quote. One link.',
-  },
-  'lesson-webinar-timezones.md': {
-    kind: 'skill',
-    what: 'Show webinar times in each recipient’s time zone',
-    owner: 'Saved from the Q4 Webinar harvest',
-    updated: 'Dec 12',
-    tokens: 300,
-    preview: 'Put the time in the recipient’s own zone, and PT in brackets.',
-  },
-  'lesson-quote-approval.md': {
-    kind: 'skill',
-    what: 'Ask before quoting a customer by name',
-    owner: 'Saved from the Q3 Case study harvest',
+    what: 'How we do OAuth safely: state, PKCE, no tokens in logs',
+    owner: 'Security team',
     updated: 'Oct 2',
-    tokens: 300,
-    preview: 'Quote a customer only with an explicit OK on file. A verbal OK means: attribute by role.',
+    tokens: 1_100,
+    preview: 'Always send a state parameter. Use PKCE. Never log access_token or id_token.',
   },
+  'react-components.md': {
+    kind: 'skill',
+    what: 'Our component patterns for buttons, forms and errors',
+    owner: 'Web team, used in 11 past runs',
+    updated: 'Oct 20',
+    tokens: 1_400,
+    preview: 'Use <Button variant="provider"> for third-party sign-in. Errors go in <FieldError> under the control.',
+  },
+  'lesson-check-changelogs.md': {
+    kind: 'skill',
+    what: 'Read a project’s changelog before calling its API',
+    owner: 'Saved from your last harvest',
+    updated: 'Nov 2',
+    tokens: 300,
+    preview: 'Before a task calls another team’s API, attach that project’s changelog.',
+  },
+  GitHub: {
+    kind: 'tool',
+    what: 'Read the repo and open a pull request',
+    owner: 'MCP server, signed in as homestead-bot',
+    updated: '',
+    tokens: 2_400,
+    preview: 'get_file_contents\nlist_pull_requests\ncreate_pull_request\nmerge_pull_request',
+    access: [
+      { label: 'Read code, issues and pull requests', kind: 'read', on: true },
+      { label: 'Open a pull request on web-app', kind: 'write', on: true },
+      { label: 'Merge a pull request', kind: 'write', on: false },
+    ],
+  },
+  Playwright: {
+    kind: 'tool',
+    what: 'Drive a browser on staging: click, type, screenshot',
+    owner: 'MCP server, runs in the sandbox',
+    updated: '',
+    tokens: 1_900,
+    preview: 'browser_navigate\nbrowser_click\nbrowser_type\nbrowser_take_screenshot',
+    access: [
+      { label: 'Open staging.web-app.dev', kind: 'read', on: true },
+      { label: 'Click, type and take screenshots', kind: 'write', on: true },
+      { label: 'Open any other site', kind: 'write', on: false },
+    ],
+  },
+  Sentry: {
+    kind: 'tool',
+    what: 'Read errors the web app hits in production',
+    owner: 'MCP server, read only',
+    updated: '',
+    tokens: 1_200,
+    preview: 'search_issues\nget_issue_details\nresolve_issue',
+    access: [
+      { label: 'Read issues and stack traces', kind: 'read', on: true },
+      { label: 'Resolve or mute issues', kind: 'write', on: false },
+    ],
+  },
+}
+
+export const KIND_MARK: Record<LibKind, string> = { file: 'F', skill: 'S', tool: 'T' }
+export const KIND_NAME: Record<LibKind, string> = { file: 'File', skill: 'Skill', tool: 'MCP tool' }
+
+// What each task reads, uses and can call, as the head farmer proposes it at Plan
+// (files, then skills, then tools).
+export const TASK_CONTEXT: Record<string, string[]> = {
+  backend: ['web-app/src/', 'auth-spec.md', 'oauth-security.md', 'GitHub'],
+  frontend: ['web-app/src/', 'auth-spec.md', 'react-components.md', 'GitHub', 'Playwright'],
+  tests: ['e2e-tests/', 'Playwright'],
+  docs: ['auth-spec.md', 'GitHub'],
 }
 
 // The head farmer points out a file a task is missing, and says why.
 export const SUGGESTIONS: { taskIds: string[]; name: string; why: string }[] = [
-  { taskIds: ['draft', 'research'], name: 'eng-standup-notes/', why: 'It mentions Relay v2 dates and was updated after the call notes.' },
+  { taskIds: ['frontend', 'backend'], name: 'session-api-v2/CHANGELOG.md', why: 'It changes the session endpoint this task calls, and it was updated yesterday.' },
 ]
 
 export function libItem(name: string, seeds: { file: string; title: string; from: string }[] = []): LibItem {

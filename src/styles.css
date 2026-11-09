@@ -131,18 +131,13 @@ button {
 }
 
 .map-wrap.replay::after {
-  content: 'Replay: how the Writer got this date';
+  /* A quiet sepia wash while looking back at a past step. No banner. */
+  content: '';
   position: absolute;
-  left: 50%;
-  top: 84px;
-  transform: translateX(-50%);
-  font-family: var(--font-pixel);
-  font-size: 18px;
-  color: #fff6dc;
-  background: rgba(70, 48, 22, 0.82);
-  padding: 6px 14px;
-  border-radius: 4px;
-  letter-spacing: 0.02em;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(120, 84, 30, 0.1);
+  mix-blend-mode: multiply;
 }
 
 /* ---- HUD over the map ---- */
@@ -463,6 +458,9 @@ button {
 }
 
 .panel-head {
+  flex: none;
+  position: relative;
+  z-index: 2;
   padding: 14px 18px 12px;
   border-bottom: 1px solid var(--rule-strong);
   background: var(--card);
@@ -589,7 +587,8 @@ button {
 }
 
 .panel-body {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 14px 18px 28px;
@@ -637,7 +636,7 @@ button {
 .row {
   width: 100%;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto 12px;
+  grid-template-columns: 22px minmax(0, 1fr) fit-content(40%) 12px;
   align-items: center;
   gap: 10px;
   padding: 9px 4px;
@@ -671,8 +670,11 @@ button.row:hover,
 .row-main .label {
   font-weight: 600;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .row-main .sub {
@@ -687,6 +689,11 @@ button.row:hover,
   font-size: 13px;
   color: var(--ink-soft);
   white-space: nowrap;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  justify-self: end;
   font-variant-numeric: tabular-nums;
 }
 
@@ -885,6 +892,7 @@ button.row:hover .chev {
 }
 
 .confirm {
+  scroll-margin: 16px;
   border-left: 3px solid var(--out);
   background: var(--out-wash);
   border-radius: 0 8px 8px 0;
@@ -1077,6 +1085,7 @@ button.row:hover .chev {
 }
 
 .send {
+  scroll-margin: 16px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1565,18 +1574,24 @@ textarea.goal:focus {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
+/* Flat rows with a left status bar, never raised cards. */
 .checks li {
-  border: 1px solid var(--rule);
+  border: 0;
   border-left: 3px solid var(--sprout);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   align-items: flex-start;
+}
+
+.checks li + li {
+  border-top: 1px solid var(--rule);
 }
 
 .checks li.fail {
@@ -1900,4 +1915,10 @@ textarea.goal:focus {
 .help .switch input {
   margin-top: 3px;
   accent-color: var(--sprout);
+}
+
+/* MCP tools: the third library kind, a quiet teal (not the outbound blue, not red). */
+.kind.tool {
+  background: #e2f0ec;
+  color: #2f6b5e;
 }

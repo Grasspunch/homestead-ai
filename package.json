@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "assets": "node scripts/import-assets.mjs"
+    "assets": "node scripts/import-assets.mjs",
+    "test": "vitest run --exclude \"src/**/*.int.test.ts\"",
+    "test:int": "vitest run src/sim/__tests__/story.int.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
@@ -22,6 +24,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
     "typescript": "^5.9.3",
-    "vite": "^8.3.6"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   }
 }

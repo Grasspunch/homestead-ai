@@ -87,8 +87,10 @@ export function MapView() {
         return engine.openTask(h.id)
       case 'farmhand':
         return engine.pokeFarmhand(h.id as never)
-      case 'pest':
-        return engine.openTask('draft')
+      case 'pest': {
+        const t = engine.tasks.find((x) => x.pests.some((p) => p.id === h.id))
+        return t && engine.openTask(t.id)
+      }
       case 'crow':
         if (engine.activeAsk?.id === 'crow') {
           engine.setPanel(true)

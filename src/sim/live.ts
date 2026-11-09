@@ -2,8 +2,8 @@
 // Calls are simulated by default (a recorded response to the same prompt), so testing spends no tokens.
 // The Live AI switch in settings turns real calls on; a failed live call falls back to the simulated one.
 
-import type { AgentTask, ClaimsOut, ClarifyOut, ConflictOut, DraftOut, PlanOut, PlanTask } from '../agent/agents'
-import { CLARIFY, FARM, TASKS } from './scenario'
+import type { AgentTask, ClarifyOut, ConflictOut, PlanOut, PlanTask, ReviewOut, SessionOut } from '../agent/agents'
+import { CLARIFY, FARM, NEIGHBOUR, TASKS } from './scenario'
 
 export type Provenance = 'live' | 'replay'
 
@@ -30,18 +30,18 @@ export function probeLive(): Promise<boolean> {
   return liveAvailable
 }
 
-// Recorded outputs from a real run of the same prompts. Used only when live calls are unavailable.
+// Recorded outputs from a real run of the same prompts. Used when Live AI is off or a live call fails.
 const fromTask = (id: string): PlanTask => {
   const t = TASKS.find((x) => x.id === id)!
-  return { name: t.name, subtasks: t.subtasks.map((s) => s.name), assignee: t.proposedAssignee, budget: t.budget, signposts: [...t.signposts], note: t.proposalNote ?? null }
+  return { name: t.name, subtasks: t.subtasks.map((s) => s.name), assignee: t.proposedAssignee as PlanTask['assignee'], budget: t.budget, signposts: [...t.signposts], note: t.proposalNote ?? null }
 }
 
 export const RECORDED: {
   clarify: ClarifyOut
   plan: PlanOut
-  draft: DraftOut
-  draftWithEngNotes: DraftOut
-  claims: ClaimsOut
+  session: SessionOut
+  sessionV2: SessionOut
+  review: ReviewOut
   conflict: ConflictOut
   noConflict: ConflictOut
   tokens: Record<AgentTask, number>
@@ -49,64 +49,57 @@ export const RECORDED: {
   clarify: { questions: CLARIFY.map((q) => ({ ...q, options: [...q.options] })) },
   plan: {
     quest_title: FARM.name,
-    tasks: { gather: fromTask('research'), make: fromTask('draft'), check: fromTask('factcheck'), polish: fromTask('brand'), send: fromTask('invites') },
-    irreversible: { action: 'Send the webinar invite', audience: 'people at 6 pilot customers', count: 42 },
+    tasks: { backend: fromTask('backend'), frontend: fromTask('frontend'), tests: fromTask('tests'), docs: fromTask('docs') },
+    irreversible: { action: 'Merge PR #482', audience: 'users in Friday’s deploy', count: 12_400 },
   },
-  draft: {
-    headline: 'Relay v2: sync that keeps up with your team',
-    paragraphs: [
-      'Relay v2 reaches pilot teams on March 12. Changes now sync up to 3x faster, so the doc you open is the doc your team just edited.',
-      'Single sign-on through the new Auth SDK works with Okta, Google Workspace and Entra ID, which was the most requested change from our pilots.',
-      '“We used to start every standup asking which version was current. That question is gone.” (Ops lead, Acme)',
-    ],
-    launch_date: 'March 12',
-    launch_date_source: 'customer-call-notes.md',
-    claims: [
-      { text: 'Available March 12', source: 'customer-call-notes.md' },
-      { text: 'Up to 3x faster sync', source: null },
-      { text: 'SSO with Okta, Google Workspace and Entra ID', source: 'product-brief-relay-v2.pdf' },
-    ],
+  session: {
+    endpoint: '/v1/session',
+    source: 'web-app/src/api/session.ts',
+    code: 'const { token } = await google.signIn()\nawait startSession(token) // post("/v1/session")',
+    summary: 'Reuses startSession from src/api/session.ts, the same call email login makes.',
   },
-  get draftWithEngNotes() {
-    const d = RECORDED.draft
-    return {
-      ...d,
-      paragraphs: d.paragraphs.map((p) => p.replace('March 12', 'March 26')),
-      launch_date: 'March 26',
-      launch_date_source: 'eng-standup-notes/2026-02-03.md',
-      claims: d.claims.map((c) => (c.text.includes('March 12') ? { text: 'Available March 26', source: 'eng-standup-notes/2026-02-03.md' } : c)),
-    }
+  sessionV2: {
+    endpoint: '/v2/session',
+    source: 'session-api-v2/CHANGELOG.md',
+    code: 'const { token } = await google.signIn()\nawait post("/v2/session", { token })',
+    summary: 'Calls POST /v2/session, since the changelog retires /v1/session on Nov 12.',
   },
-  claims: {
-    checked: 4,
-    issues: [
+  review: {
+    blocking: [
       {
-        claim: 'Changes now sync up to 3x faster',
-        problem: 'The draft gives no source for the 3x figure.',
-        fix: 'Cite benchmarks-q4.xlsx row 14: sync to peers p50 1.9s → 0.6s (3.2x).',
-        confidence: 'High',
+        file: 'src/auth/google.ts',
+        line: 48,
+        problem: 'The callback logs the id_token when Google returns an error.',
+        code: 'logger.error("google callback failed", { idToken })',
+        rule: 'oauth-security.md: never log access_token or id_token.',
       },
+    ],
+    notes: [
+      { title: 'Rate-limit /auth/google/callback', where: 'src/auth/google.ts, line 22' },
+      { title: 'The guide uses app.example.com', where: 'docs/auth/google.md, line 6' },
     ],
   },
   conflict: {
     conflict: true,
-    dates: [
-      { date: 'March 12', farm: FARM.name, source: 'customer-call-notes.md (Jan 28)', quote: 'We told Acme they would have v2 by March 12.' },
-      { date: 'March 26', farm: 'Auth SDK v2', source: 'eng-standup-notes/2026-02-03.md', quote: 'v2 release moves to March 26.' },
+    endpoints: [
+      { endpoint: '/v1/session', farm: FARM.name, source: 'web-app/src/api/session.ts', quote: 'post("/v1/session", { token })' },
+      { endpoint: '/v2/session', farm: NEIGHBOUR.name, source: 'session-api-v2/CHANGELOG.md (Nov 8)', quote: '/v1/session removed from staging. Removed from production Nov 12. Use POST /v2/session.' },
     ],
-    recommended_date: 'March 26',
-    why: 'The engineering note is newer and comes from the team that ships the release; March 12 was a promise made before the delay.',
+    recommended: '/v2/session',
+    why: 'The Platform team owns the session API and retired /v1 on staging yesterday; production follows on Nov 12, the day before your deploy.',
     confidence: 'High',
   },
   noConflict: {
     conflict: false,
-    dates: [{ date: 'March 26', farm: FARM.name, source: 'eng-standup-notes/2026-02-03.md', quote: 'v2 release moves to March 26.' }],
-    recommended_date: 'March 26',
-    why: 'The draft already uses the date from the newest engineering note.',
+    endpoints: [{ endpoint: '/v2/session', farm: FARM.name, source: 'session-api-v2/CHANGELOG.md', quote: 'Use POST /v2/session.' }],
+    recommended: '/v2/session',
+    why: 'Frontend already calls the endpoint the changelog names.',
     confidence: 'High',
   },
-  tokens: { clarify: 1_940, plan: 4_610, draft: 3_850, claims: 2_420, conflict: 4_180 },
+  tokens: { clarify: 1_940, plan: 4_610, session: 3_850, review: 5_420, conflict: 4_180 },
 }
+
+const PACE: Record<AgentTask, number> = { clarify: 2_600, plan: 3_000, session: 1_400, review: 2_200, conflict: 1_600 }
 
 // Simulated by default, so testing spends no tokens. The Live AI switch in settings turns real calls on.
 let liveAI = false
@@ -118,8 +111,8 @@ export async function callAgent<T>(task: AgentTask, input: Record<string, unknow
   const t0 = performance.now()
   const replay = (error?: string): Outcome<T> => ({ data: recorded, tokens: RECORDED.tokens[task], provenance: 'replay', ms: performance.now() - t0, error })
   if (!liveAI || !(await probeLive())) {
-    // A short pause so a simulated response paces like a real call.
-    await new Promise((r) => setTimeout(r, 900))
+    // A pause so a simulated response paces like a real call, long enough to watch the head farmer work.
+    await new Promise((r) => setTimeout(r, PACE[task]))
     return replay()
   }
   try {
@@ -135,4 +128,4 @@ export async function callAgent<T>(task: AgentTask, input: Record<string, unknow
   }
 }
 
-export type { DraftOut, ClaimsOut, ConflictOut, ClarifyOut, PlanOut }
+export type { SessionOut, ReviewOut, ConflictOut, ClarifyOut, PlanOut }

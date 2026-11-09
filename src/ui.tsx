@@ -90,6 +90,7 @@ export function Portrait({ color, shade, size = 24 }: { color: string; shade: st
 
 export function fmtK(n: number) {
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1).replace(/\.0$/, '')}k`
+  if (n >= 100) return `${(n / 1000).toFixed(1)}k`
   return `${Math.round(n)}`
 }
 

@@ -1,7 +1,7 @@
 // The one raised object on the panel: whatever needs you right now.
 import { useState } from 'react'
 import { REASON_WORD } from '../sim/engine'
-import { INVITE_LIST } from '../sim/scenario'
+import { CLASH, MISSING } from '../sim/scenario'
 import type { Ask } from '../sim/types'
 import { Kbd, useEngine } from '../ui'
 
@@ -17,17 +17,12 @@ export function Envelope() {
   )
 }
 
-export function Recipients() {
-  return <p className="recipients">{INVITE_LIST.map((r) => r.company).join(', ')}</p>
-}
-
 export function AskOptions({ ask }: { ask: Ask }) {
   const e = useEngine()
   const out = ask.label === 'Irreversible'
   if (ask.status === 'confirming')
     return (
       <div className="confirm">
-        <Recipients />
         <p>{ask.confirm}</p>
         <div className="opts">
           <button className="btn out" onClick={() => e.answer(ask.id, 'approve')} data-testid="confirm">
@@ -69,7 +64,7 @@ export function AskCard({ ask }: { ask: Ask }) {
       ) : (
         <div className="who">
           <strong>{REASON_WORD[ask.label] ?? ask.label}</strong>
-          <span>The {ask.fromName.toLowerCase()} asks</span>
+          <span>{ask.fromName} asks</span>
         </div>
       )}
       <h3>{ask.question}</h3>
@@ -86,7 +81,7 @@ export function AskCard({ ask }: { ask: Ask }) {
           })}
         </div>
       )}
-      {ask.status === 'open' && <p className="consequence">{out ? ask.impact[1] : ask.impact[0]}</p>}
+      {ask.status === 'open' && <p className="consequence">{ask.impact[0]}</p>}
       <AskOptions ask={ask} />
       <button className="linkish" onClick={() => e.go({ kind: 'why', id: ask.id })}>
         Why it’s asking
@@ -140,9 +135,11 @@ export function NeedsYou() {
   if (e.replan?.status === 'applied' && !e.flags.has('seedSaved'))
     return (
       <div className="card">
-        <h3>Why did the Writer use {e.out.draft?.data.launch_date ?? 'March 12'}?</h3>
+        <h3>
+          Why did {e.farmhands[e.task(MISSING.taskId).assignee].role} use {CLASH.ours}?
+        </h3>
         <div className="opts">
-          <button className="btn primary" onClick={() => e.openTrace('date')} data-testid="open-trace">
+          <button className="btn primary" onClick={() => e.openTrace('endpoint')} data-testid="open-trace">
             Trace it
           </button>
         </div>
@@ -152,7 +149,7 @@ export function NeedsYou() {
     return (
       <div className="card">
         <h3>Every crop is ripe.</h3>
-        <p className="consequence">Review the work before anything goes out.</p>
+        <p className="consequence">Every gate so far passed. The agentic review runs at the harvest, then you look before anything merges.</p>
         <div className="opts">
           <button className="btn primary" onClick={() => e.openHarvest()} data-testid="open-harvest">
             Harvest <Kbd>⏎</Kbd>
@@ -175,7 +172,7 @@ export function ReplyBox({ ask }: { ask: Ask }) {
         setReply('')
       }}
     >
-      <input id="reply-input" value={reply} onChange={(ev) => setReply(ev.target.value)} placeholder={`Reply to the ${ask.fromName.toLowerCase()}`} />
+      <input id="reply-input" value={reply} onChange={(ev) => setReply(ev.target.value)} placeholder={`Reply to ${ask.fromName}`} />
     </form>
   )
 }

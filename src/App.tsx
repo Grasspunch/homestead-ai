@@ -9,7 +9,7 @@ import { Kbd, useEngine } from './ui'
 
 function Hud() {
   const e = useEngine()
-  const growing = e.phase === 'grow' || e.phase === 'harvest'
+  const growing = e.phase === 'grow'
   if (e.intro) return null
   return (
     <div className="hud">
@@ -38,7 +38,7 @@ function Hud() {
 
 function Toasts() {
   const e = useEngine()
-  const shown = e.toasts.filter((t) => e.clock - t.t < 4.5)
+  const shown = e.toasts.filter((t) => e.clock - t.t < 4.5).slice(-1)
   return (
     <div className="toasts" aria-live="polite">
       {shown.map((t) => (
@@ -55,10 +55,11 @@ const GLOSSARY: [string, string][] = [
   ['Head farmer', 'Plans the work and asks you questions'],
   ['Farmhand', 'An agent with one role'],
   ['Plot and crop', 'A task, and how far along it is'],
+  ['Gate', 'A check a crop must pass to ripen'],
   ['Energy', 'Tokens the crew spends'],
-  ['Pest', 'Something wrong in the work'],
-  ['Crow', 'A clash with another team’s plan'],
-  ['Harvest', 'Your review before anything goes out'],
+  ['Pest', 'A failing test the crew fixes alone'],
+  ['Crow', 'A clash with another team’s project'],
+  ['Harvest', 'Your review before anything merges'],
 ]
 
 function Help() {
@@ -66,7 +67,7 @@ function Help() {
   if (!e.showHelp) return null
   const rows: [string, string][] = [
     ['⏎', 'Main action'],
-    ['A / D', 'Approve or deny'],
+    ['A', 'Approve, at the harvest'],
     ['1 / 2', 'Pick an option'],
     ['R', 'Reply'],
     ['P', 'Pause everything'],
@@ -86,14 +87,6 @@ function Help() {
           </span>
         ))}
       </dl>
-      <label className="switch">
-        <input type="checkbox" checked={e.liveAI} onChange={(ev) => e.setLiveAIOn(ev.target.checked)} data-testid="live-ai" />
-        <span>
-          <b>Live AI</b>
-          <br />
-          {e.live === false ? 'Needs an API key on the server. Off: responses are simulated.' : 'Off: responses are simulated and cost nothing.'}
-        </span>
-      </label>
       <h4>Keys</h4>
       <dl>
         {rows.map(([k, v]) => (
@@ -187,6 +180,7 @@ function onKey(ev: KeyboardEvent) {
     else if (e.phase === 'clarify') e.finishClarify()
     else if (e.phase === 'plan') e.approvePlan()
     else if (e.phase === 'harvest' && e.harvestStage === 'map') e.skipHarvestMap()
+    else if (e.phase === 'harvest' && e.canApprove && !e.approved) e.approveHarvest()
     else if (e.trace) e.saveSeed()
     else if (ask?.status === 'confirming') e.answer(ask.id, 'approve')
     else if (ask) {
@@ -197,6 +191,7 @@ function onKey(ev: KeyboardEvent) {
     return
   }
   if (k === 'v') return e.setView(e.view === 'valley' ? 'farm' : 'valley')
+  if (k === 'a' && e.phase === 'harvest') return e.approveHarvest()
   if (!growing) return
   if (ask && ask.status === 'open') {
     const opt = ask.options.find((o) => o.key.toLowerCase() === k)
@@ -213,7 +208,7 @@ function onKey(ev: KeyboardEvent) {
   }
   if (k === 'p') e.togglePause()
   else if (k === 'h' && e.harvestReady && e.phase === 'grow') e.openHarvest()
-  else if (k === 'w' && e.replan?.status === 'applied' && !e.flags.has('seedSaved')) e.openTrace('date')
+  else if (k === 'w' && e.replan?.status === 'applied' && !e.flags.has('seedSaved')) e.openTrace('endpoint')
 }
 
 export function App() {

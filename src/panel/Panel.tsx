@@ -9,12 +9,12 @@ function Meter() {
   const e = useEngine()
   const pct = Math.min(100, (e.energyUsed / e.budget) * 100)
   return (
-    <span className="meter" data-testid="meter-energy" title="Energy is tokens. Model calls report their real usage; simulated steps use estimates.">
+    <span className="meter" data-testid="meter-energy" title="Energy is tokens, and dollars at the rate in Settings. Model calls report their real usage; simulated steps use estimates.">
       <span className="bar">
         <i className={pct > 85 ? 'warn' : ''} style={{ width: `${pct}%` }} />
       </span>
       <span className="mono">
-        {fmtK(e.energyUsed)} of {fmtK(e.budget)}
+        {fmtK(e.energyUsed)} of {fmtK(e.budget)}, ${e.usd.toFixed(2)}
       </span>
     </span>
   )
@@ -22,9 +22,12 @@ function Meter() {
 
 function OverviewStatus() {
   const e = useEngine()
-  const done = e.tasks.filter((t) => t.subtasks.every((s) => s.done)).length
+  const done = e.ripeCount
   if (e.phase === 'brief') return <>Tell the head farmer what you need</>
-  if (e.phase === 'clarify') return <>The head farmer has a few questions</>
+  if (e.phase === 'clarify') {
+    if (e.headThinking) return <>The head farmer is reading your brief</>
+    return <>{e.questions.every((q) => e.clarifyAnswers[q.id]) ? 'Answered. Ready to plan.' : 'The head farmer has a few questions'}</>
+  }
   if (e.phase === 'plan') return <>{e.planReady ? 'Approve to start' : 'The head farmer is planning'}</>
   if (e.phase === 'grow')
     return (
@@ -35,9 +38,13 @@ function OverviewStatus() {
         <Meter />
       </>
     )
+  if (e.gateFailed) return <>Blocked. 1 gate failed.</>
+  if (e.harvestStage === 'review' && e.gatesRunning) return <>Gates running.</>
+  if (e.approved && e.sendState !== 'sent') return <>Approved, not merged.</>
+  if (e.sendState === 'sent') return <>Merged. Needed you {e.neededYou} {e.neededYou === 1 ? 'time' : 'times'}.</>
   return (
     <>
-      Harvested. Needed you {e.neededYou} {e.neededYou === 1 ? 'time' : 'times'}.
+      Ripe. Needed you {e.neededYou} {e.neededYou === 1 ? 'time' : 'times'}.
     </>
   )
 }
@@ -91,6 +98,11 @@ export function Panel() {
         )}
         <div className="title-row">
           <h1>{view ? view.title : FARM.name}</h1>
+          {top?.kind !== 'settings' && (
+            <button className="icon-btn" onClick={() => e.go({ kind: 'settings' })} aria-label="Settings" title="Settings" data-testid="settings">
+              <GearIcon />
+            </button>
+          )}
           <button className="icon-btn" onClick={() => e.setPanel(false)} aria-label="Close the side panel" title="Close (Tab)" data-testid="panel-close">
             <PanelIcon />
           </button>
@@ -109,6 +121,20 @@ export function PanelIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
       <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
       <path d="M10 3v10" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+export function GearIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
+      <circle cx="8" cy="8" r="2.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
     </svg>
   )
 }

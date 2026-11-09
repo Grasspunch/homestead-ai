@@ -1,19 +1,18 @@
 // Shared types for the Homestead AI simulation.
 // Work concepts keep their names (quest, task, subtask); the farm is how they are drawn.
 
-export type RoleId = 'researcher' | 'writer' | 'reviewer' | 'scheduler'
+export type RoleId = 'backend' | 'frontend' | 'tests' | 'docs' | 'reviewer'
 export type ReasonLabel = 'Cost' | 'Risk' | 'Irreversible' | 'Failure' | 'Anomaly'
 export type CropKind = 'wheat' | 'carrot' | 'cabbage' | 'tulip' | 'pumpkin'
 export type Phase = 'brief' | 'clarify' | 'plan' | 'grow' | 'harvest'
 export type Flag =
-  | 'factsReady'
-  | 'outlineDone'
-  | 'draftWritten'
-  | 'factcheckDone'
-  | 'dateUsed'
-  | 'dateResolved'
+  | 'callbackReady'
+  | 'buttonReady'
+  | 'sessionStarted'
+  | 'e2eWritten'
+  | 'sessionV2'
+  | 'unitFixed'
   | 'replanApplied'
-  | 'invitesQueued'
   | 'seedSaved'
 
 export type Dir = 'down' | 'up' | 'left' | 'right'
