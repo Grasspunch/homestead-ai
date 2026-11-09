@@ -825,7 +825,7 @@ function UsedView() {
             <div key={s.file} className="art-used-sheet">
               <h3>
                 <code>{s.file}</code>
-                <span>{PACKS[s.pack].title}</span>
+                <span>{PACKS[s.pack as PackId]?.title ?? 'Our own art, art/authored'}</span>
               </h3>
               {s.note && <p className="art-hint">{s.note}</p>}
               {s.anim ? (
