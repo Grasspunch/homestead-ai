@@ -11,7 +11,12 @@
     "assets": "node scripts/import-assets.mjs",
     "test": "vitest run --exclude \"src/**/*.int.test.ts\"",
     "test:int": "vitest run src/sim/__tests__/story.int.test.ts",
-    "design": "vite --open /design.html"
+    "design": "vite --open /design.html",
+    "art:atlas": "python3 scripts/build-atlas.py",
+    "art:check": "python3 scripts/build-atlas.py --check && python3 scripts/check-palette.py",
+    "contrast": "node scripts/check-contrast.mjs",
+    "shots": "node scripts/shots.mjs",
+    "shots:check": "node scripts/shots.mjs --check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
