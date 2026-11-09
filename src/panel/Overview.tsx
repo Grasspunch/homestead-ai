@@ -1,11 +1,14 @@
-// Level 1: the five steps, one line each. The step you're on is open; everything else is a click away.
-import { useState, type ReactNode } from 'react'
-import type { Phase, Task } from '../sim/types'
-import { ANSWER_SHORT, BRIEF_SUMMARY, FARM } from '../sim/scenario'
+// Level 1: what needs you in the step you're on. Plant, Grow and Harvest sit in the step bar above.
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { Task } from '../sim/types'
+import { FARM } from '../sim/scenario'
+import { stepOf } from '../sim/steps'
 import { CHECKS, GATE_ORDER, GATES, OUTPUT } from '../sim/review'
 import { fmtK, Sprite, useEngine } from '../ui'
-import { Envelope, NeedsYou } from './Cards'
+import { NeedsYou } from './Cards'
 import { GateMark } from './Detail'
+import { ShipNow } from './Ship'
+import { CrewRow } from './Templates'
 
 export function Mark({ k }: { k: 'done' | 'now' | 'later' }) {
   return <span className={`mark ${k}`} aria-hidden />
@@ -59,24 +62,11 @@ export function Row({
   )
 }
 
-const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-
-const LABEL: Record<Phase, string> = { brief: 'Brief', clarify: 'Clarify', plan: 'Plan', grow: 'Grow', harvest: 'Harvest' }
-const ORDER: Phase[] = ['brief', 'clarify', 'plan', 'grow', 'harvest']
-
+// The panel body shows only what needs you or what you're reviewing: the Plant form, an ask,
+// or the harvest evidence. The step bar in the header opens each done step's review.
 export function Overview() {
   const e = useEngine()
-  const now = ORDER.indexOf(e.phase)
-  const picked = e.attachments.filter((a) => a.selected)
-  const changed = e.tasks.some((t) => t.assignee !== t.proposedAssignee) || e.signpostEdits.length > 0
-  const crew = new Set(e.tasks.map((t) => t.assignee)).size
-  const done: Record<Phase, { sub?: string; end?: string }> = {
-    brief: { sub: e.demoScenario ? BRIEF_SUMMARY : e.goal.split(/[.!?]/)[0], end: `${picked.length} attached` },
-    clarify: { sub: sentence(e.questions.map((q) => { const a = e.clarifyAnswers[q.id] ?? q.options[0]; return ANSWER_SHORT[a] ?? a }).join(', ')), end: `${e.questions.length} answers` },
-    plan: { sub: `${e.tasks.length} tasks for ${crew} agents`, end: e.replan?.status === 'applied' ? 'Re-planned' : changed ? 'Changed by you' : undefined },
-    grow: { sub: `${e.ripeCount} of ${e.tasks.length} crops ripe`, end: `Needed you ${e.neededYou}` },
-    harvest: {},
-  }
+  const step = stepOf(e.phase)
   return (
     <>
       <p className="repo" aria-label="Repository and branch">
@@ -84,39 +74,36 @@ export function Overview() {
         <code>{FARM.branch}</code>
       </p>
       <NeedsYou />
-      <ul className="rows steps-list">
-        {ORDER.map((k, i) => {
-          if (i < now)
-            return (
-              <li key={k}>
-                <Row mark={<Mark k="done" />} label={LABEL[k]} sub={done[k].sub} end={done[k].end} onClick={() => e.go({ kind: 'step', id: k })} testId={`step-${k}`} />
-              </li>
-            )
-          if (i > now)
-            return (
-              <li key={k}>
-                <Row mark={<Mark k="later" />} label={LABEL[k]} sub={k === 'harvest' ? `When all ${e.tasks.length} crops are ripe` : undefined} />
-              </li>
-            )
-          return (
-            <li key={k} className="step-now">
-              {k === 'harvest' && e.harvestStage === 'review' ? (
-                <Row mark={<GateMark s={e.gateFailed ? 'fail' : 'now'} />} label={LABEL[k]} sub={e.gateFailed ? 'Blocked by a failed gate' : e.sendState === 'sent' ? 'Merged' : e.approved ? 'Approved, not merged' : 'Look, approve, then merge'} />
-              ) : (
-                <Row mark={<Mark k="now" />} label={LABEL[k]} />
-              )}
-              <div className="step-body">
-                {k === 'brief' && <BriefNow />}
-                {k === 'clarify' && <ClarifyNow />}
-                {k === 'plan' && <PlanNow />}
-                {k === 'grow' && <GrowNow />}
-                {k === 'harvest' && <HarvestNow />}
-              </div>
-            </li>
-          )
-        })}
-      </ul>
+      {step === 'plant' && <PlantNow />}
+      {step === 'grow' && <GrowNow />}
+      {step === 'harvest' && (e.phase === 'ship' ? <ShipNow /> : <HarvestNow />)}
     </>
+  )
+}
+
+// Plant: the goal and crew, then the head farmer's questions inline, then its plan. Approve once.
+function PlantNow() {
+  const e = useEngine()
+  if (e.phase === 'brief') return <BriefNow />
+  const n = e.attachments.filter((a) => a.selected).length
+  return (
+    <div className="plant">
+      <div className="plant-goal" data-testid="plant-goal">
+        <p>{e.goal}</p>
+        <p className="quiet">
+          {e.team?.name ? `${e.team.name}, ` : ''}
+          {n} files, skills and tools, {fmtK(e.budget)} energy
+        </p>
+      </div>
+      <h4 className="group">Questions</h4>
+      <ClarifyNow />
+      {e.phase === 'plan' && (
+        <>
+          <h4 className="group">Plan</h4>
+          <PlanNow />
+        </>
+      )}
+    </div>
   )
 }
 
@@ -130,6 +117,7 @@ function BriefNow() {
         Goal
       </label>
       <textarea id="goal" className="goal" value={e.goal} readOnly={!e.liveAI} onChange={(ev) => e.setGoal(ev.target.value)} />
+      <CrewRow />
       <div className="line">
         <span>
           <b>{n} files, skills and tools</b> the crew may use
@@ -171,12 +159,23 @@ function ClarifyNow() {
   const e = useEngine()
   const [open, setOpen] = useState<number | null>(null)
   const n = e.attachments.filter((a) => a.selected).length
-  if (e.headThinking > 0)
+  if (e.phase === 'clarify' && e.headThinking > 0)
     return (
       <>
         <p className="quiet">Reading your goal and {n} files, skills and tools</p>
         <Slow />
       </>
+    )
+  // Once the plan is under way the answers are part of the record.
+  if (e.phase !== 'clarify')
+    return (
+      <ul className="rows nested">
+        {e.questions.map((q) => (
+          <li key={q.id}>
+            <Row label={<span className="q-label">{q.q}</span>} sub={e.clarifyAnswers[q.id] ?? q.options[0]} />
+          </li>
+        ))}
+      </ul>
     )
   const firstOpen = e.questions.findIndex((q) => !e.clarifyAnswers[q.id])
   const cur = open ?? (firstOpen >= 0 ? firstOpen : null)
@@ -196,6 +195,8 @@ function ClarifyNow() {
                   onClick={() => {
                     e.answerClarify(q.id, o)
                     setOpen(null)
+                    // The last answer sends the head farmer off to plan.
+                    if (e.questions.every((x) => e.clarifyAnswers[x.id])) e.finishClarify()
                   }}
                 >
                   {o}
@@ -214,7 +215,7 @@ function ClarifyNow() {
       )}
       {cur === null ? (
         <button className="btn primary full" onClick={() => e.finishClarify()} data-testid="continue">
-          Continue
+          Plan it
         </button>
       ) : (
         <button className="linkish" onClick={() => e.finishClarify()} title={`Skipped questions use the first option`}>
@@ -258,30 +259,31 @@ function PlanNow() {
   )
 }
 
+// Grow: nothing to do unless an agent asks. With nothing waiting it says so in one line,
+// and folds into the rail once the last thing that needed you is done.
 function GrowNow() {
   const e = useEngine()
+  const needs = !!e.activeAsk || e.replan?.status === 'open' || (e.replan?.status === 'applied' && !e.flags.has('seedSaved')) || e.harvestReady
+  const was = useRef(needs)
+  useEffect(() => {
+    const before = was.current
+    was.current = needs
+    if (!before || needs) return
+    const id = setTimeout(() => {
+      if (e.phase === 'grow' && !e.nav.length && e.panelOpen && !e.activeAsk) e.setPanel(false)
+    }, 1600)
+    return () => clearTimeout(id)
+  }, [needs, e])
+  if (needs) return null
+  const rows = e.growRows()
+  const n = (g: string) => rows.filter((r) => r.group === g).length
+  const parts = [n('working') && `${n('working')} working`, n('done') && `${n('done')} done`].filter(Boolean).join(', ')
   return (
     <>
-      <ul className="rows nested">
-        {e.tasks.map((t) => {
-          const s = e.taskStatus(t)
-          return (
-            <li key={t.id}>
-              <Row mark={<Crop t={t} />} label={t.name} end={s.text} tone={s.tone} onClick={() => e.openTask(t.id)} taskId={t.id} testId={`task-${t.id}`} />
-            </li>
-          )
-        })}
-      </ul>
-      <ul className="rows nested">
-        <li>
-          <Row label="All activity" end={String(e.log.length)} onClick={() => e.go({ kind: 'log', tab: 'all' })} />
-        </li>
-        <li>
-          <Row label="Decided without you" end={String(e.autoDecided.length)} onClick={() => e.go({ kind: 'log', tab: 'auto' })} testId="filter-auto" />
-        </li>
-      </ul>
-      {e.showHint('auto') && <p className="tip">Everything the crew decided alone is listed here.</p>}
-      {e.showHint('plot') && !e.showHint('auto') && <p className="tip">Each plot is a task. Click one to see who’s on it.</p>}
+      <p className="grow-line" data-testid="grow-line">
+        {parts ? `${parts.charAt(0).toUpperCase()}${parts.slice(1)}. ` : ''}Nothing needs you.
+      </p>
+      {e.showHint('plot') && <p className="tip">Each plot is a task. Click one, or press Tab, to see who’s on it.</p>}
     </>
   )
 }
@@ -289,9 +291,8 @@ function GrowNow() {
 export function OutboxHead() {
   const e = useEngine()
   return (
-    <div className="out-line">
-      <Envelope />
-      <span>{e.gateFailed ? 'Blocked. Nothing ships until every gate passes.' : OUTPUT.audience}</span>
+    <div className="merge-line">
+      <span>{e.gateFailed ? 'Blocked. Nothing merges until every gate passes.' : `Merges into ${OUTPUT.base}. Nothing reaches users until you deploy.`}</span>
     </div>
   )
 }
@@ -312,7 +313,7 @@ function HarvestNow() {
       <p className="headline" data-testid="harvest-headline">
         {e.harvestHeadline}
       </p>
-      <div className={`outbox ${e.sendState === 'sent' ? 'sent' : ''}`}>
+      <div className={`outbox mergebox ${e.sendState === 'sent' ? 'sent' : ''}`}>
         <OutboxHead />
         <ul className="rows">
           <li>
@@ -341,33 +342,44 @@ function HarvestNow() {
         </ul>
         {!e.gateFailed && <MergeControls />}
       </div>
-      <h4 className="group">Stays with you</h4>
-      <ul className="rows">
-        <li>
-          <Row label={OUTPUT.guide.title} sub={<span className="mono">{OUTPUT.guide.file}</span>} onClick={() => e.go({ kind: 'out', id: 'guide' })} />
-        </li>
-        <li>
-          <Row label="Your decisions" end={String(e.decisions.length)} onClick={() => e.go({ kind: 'out', id: 'decisions' })} />
-        </li>
-        <li>
-          <Row label="Lessons saved" end={String(e.seeds.filter((s) => s.isNew).length + e.pendingSeeds.length)} onClick={() => e.go({ kind: 'out', id: 'lessons' })} />
-        </li>
-      </ul>
-      <details className="fine">
-        <summary>Energy and calls</summary>
-        <p>
-          {fmtK(e.energyUsed)} of {fmtK(e.budget)} tokens, about ${e.usd.toFixed(2)}. {e.liveCalls ? `${e.liveCalls} live model calls and ` : ''}
-          {e.simSteps + e.replayCalls} simulated steps.
-        </p>
-      </details>
-      <button className="linkish" onClick={() => e.reset()} data-testid="restart">
-        Start over
-      </button>
+      <StaysWithYou />
     </>
   )
 }
 
-// Approving and merging are two decisions. Approve merges nothing.
+// What stays after the run: the guide, your decisions, lessons and the energy used.
+export function StaysWithYou() {
+  const e = useEngine()
+  return (
+    <>
+    <h4 className="group">Stays with you</h4>
+    <ul className="rows">
+      <li>
+        <Row label={OUTPUT.guide.title} sub={<span className="mono">{OUTPUT.guide.file}</span>} onClick={() => e.go({ kind: 'out', id: 'guide' })} />
+      </li>
+      <li>
+        <Row label="Your decisions" end={String(e.decisions.length)} onClick={() => e.go({ kind: 'out', id: 'decisions' })} />
+      </li>
+      <li>
+        <Row label="Lessons saved" end={String(e.seeds.filter((s) => s.isNew).length + e.pendingSeeds.length)} onClick={() => e.go({ kind: 'out', id: 'lessons' })} />
+      </li>
+    </ul>
+    <details className="fine">
+      <summary>Energy and calls</summary>
+      <p>
+        {fmtK(e.energyUsed)} of {fmtK(e.budget)} tokens, about ${e.usd.toFixed(2)}. {e.liveCalls ? `${e.liveCalls} live model calls and ` : ''}
+        {e.simSteps + e.replayCalls} simulated steps.
+      </p>
+    </details>
+    <button className="linkish" onClick={() => e.reset()} data-testid="restart">
+      Start over
+    </button>
+    </>
+  )
+}
+
+// Approving and merging are two decisions. Approve merges nothing. Merging is an ordinary step;
+// deploying to production, later in the harvest, is the one that reaches users.
 export function MergeControls() {
   const e = useEngine()
   const left = CHECKS.filter((c) => !e.ticked.has(c.id)).length
@@ -390,7 +402,7 @@ export function MergeControls() {
         <p className="quiet">Gates are running. Approve unlocks when they pass.</p>
       </div>
     )
-  if (e.sendState === 'sent') return <p className="out-done">{OUTPUT.merged}</p>
+  if (e.sendState === 'sent') return <p className="out-done">Merged into {OUTPUT.base}.</p>
   if (!e.approved)
     return (
       <div className="send">
@@ -400,35 +412,12 @@ export function MergeControls() {
         <p className="quiet">{left ? `Every gate passes. Unlocks after ${left} more check${left > 1 ? 's' : ''} by you.` : 'Every gate passes and you’ve looked. Approving merges nothing.'}</p>
       </div>
     )
-  if (e.sendState === 'confirming')
-    return (
-      <div className="send confirm">
-        <p>
-          <b>Merge #{OUTPUT.pr} into {OUTPUT.base}?</b>
-        </p>
-        <div className="merge-list">
-          <span>
-            <code>{OUTPUT.branch}</code> into <code>{OUTPUT.base}</code>
-          </span>
-          <span>Squash {e.tasks.length} commits into 1</span>
-          <span>{OUTPUT.ships}</span>
-        </div>
-        <p>{OUTPUT.undo}</p>
-        <div className="opts">
-          <button className="btn out" onClick={() => e.send()} data-testid="confirm-send">
-            Merge into {OUTPUT.base}
-          </button>
-          <button className="btn ghost" onClick={() => e.cancelSend()}>
-            Back
-          </button>
-        </div>
-      </div>
-    )
   return (
     <div className="send">
-      <button className="btn out full" onClick={() => e.startSend()} data-testid="send">
-        Merge PR #{OUTPUT.pr}
+      <button className="btn primary full" onClick={() => e.merge()} data-testid="send">
+        Merge PR #{OUTPUT.pr} into {OUTPUT.base}
       </button>
+      <p className="quiet">Squashes {e.tasks.length} commits into 1. CI runs on {OUTPUT.base} next, and nothing reaches users until you approve the deploy.</p>
     </div>
   )
 }

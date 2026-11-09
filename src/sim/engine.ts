@@ -7,9 +7,11 @@ import { ATTACHMENTS, BEATS, BRIEF_GOAL, BUILDERS, CHICKEN_PEN, CHORES, CLARIFY,
 import { callAgent, probeLive, setLiveAI, RECORDED, type ClarifyOut, type ConflictOut, type Outcome, type PlanOut, type ReviewOut, type SessionOut } from './live'
 import { conflictDocs, PR_DIFF, SLOTS } from '../agent/agents'
 import { LIBRARY, libItem, type Access } from './library'
-import { CHECKS, E2E_FAIL, GATE_ORDER, GATES, OUTPUT, RESULTS, REVIEW_FAIL, TASK_GATES, TASK_RESULTS, UNIT_FAIL, type Check, type GateId, type GateState } from './review'
+import { CHECKS, COMMITS, E2E_FAIL, GATE_ORDER, GATES, OUTPUT, RESULTS, REVIEW_FAIL, TASK_GATES, TASK_RESULTS, UNIT_FAIL, type Check, type GateId, type GateState } from './review'
 import { defaultSettings, toml, usd, type Settings } from './settings'
+import { cartGate, CI_JOBS, HEALTH, LESSON_REDIRECT, RELEASE, SHIP_TEXT, SHIP_TIMES, healthOk, fmtHealth, type CiOutcome, type CiState, type ShipStage } from './ship'
 import { expandSignposts } from '../agent/docs'
+import { DEFAULT_TEAM, crewAsTemplate, teamTemplate, type GateKey, type TeamTemplate } from './templates'
 import type { Ask, CropKind, Dir, Farmhand, Flag, Job, LedgerEvent, LogEntry, Phase, ReasonLabel, Rect, Replan, RoleId, Seed, Subtask, Task, Toast } from './types'
 
 const WALK_SPEED = 3.4 // tiles per second
@@ -19,7 +21,7 @@ export type View = 'farm' | 'valley'
 
 // Where the side panel is. An empty stack is the overview; each entry is one level deeper.
 export type Nav =
-  | { kind: 'step'; id: Phase }
+  | { kind: 'step'; id: Phase | 'plant' }
   | { kind: 'task'; id: string }
   | { kind: 'log'; tab: LogTab }
   | { kind: 'why'; id: string }
@@ -124,9 +126,23 @@ export class Engine {
   approved = false
   // The merge: the one step that reaches people outside the crew.
   sendState: 'none' | 'confirming' | 'sent' = 'none'
+  // Ship: CI on main, then a canary deploy that rolls back by itself when a health check fails.
+  shipStage: ShipStage = 'none'
+  private shipT = 0 // seconds into the current ship stage
+  ciIndex = 0
+  ci: Record<string, { state: CiState; text: string }> = Object.fromEntries(CI_JOBS.map((j) => [j.id, { state: 'wait', text: 'Waiting' }]))
+  ciOutcomes: Record<string, CiOutcome> = Object.fromEntries(CI_JOBS.map((j) => [j.id, j.outcome]))
+  health: Record<string, { value: number; ok: boolean; seen: boolean }> = Object.fromEntries(HEALTH.map((h) => [h.id, { value: h.good, ok: true, seen: false }]))
+  rollout = 0 // percent of users on the new version
+  deploys = 0
+  rolledBack = false
+  // The cart that carries the harvest out of the valley: k runs 0..1 along its road.
+  cart: { state: 'none' | 'loaded' | 'out' | 'back' | 'gate' | 'away'; k: number; crow: boolean } = { state: 'none', k: 0, crow: false }
   settings: Settings = defaultSettings()
   access: Record<string, Access[]> = Object.fromEntries(Object.entries(LIBRARY).filter(([, v]) => v.access).map(([k, v]) => [k, v.access!.map((a) => ({ ...a }))]))
   showHelp = false
+  // The agent tree, opened with Tab.
+  treeOpen = false
   live: boolean | null = null // whether a key is configured; null until probed
   liveAI = readLiveAI() // real model calls; off by default so testing spends no tokens
 
@@ -134,6 +150,8 @@ export class Engine {
   goal = BRIEF_GOAL
   attachments: Attachment[] = ATTACHMENTS.map((a) => ({ ...a }))
   budget = SUGGESTED_BUDGET
+  crew = DEFAULT_TEAM // the team template the plan staffs from
+  customTeams: TeamTemplate[] = [] // crews saved from a run
   questions: ClarifyQ[] = []
   questTitle = FARM.name // farms are named after their project, everywhere
   signpostEdits: string[] = []
@@ -215,7 +233,7 @@ export class Engine {
       signposts: [...t.signposts],
       subtasks: t.subtasks.map((s) => ({ ...s, progress: 0, started: false, done: false, emitted: 0 })),
     }))
-    // Outside the barn until there is work.
+    // In the barn until their plot is planted.
     const homeSpots: Record<RoleId, { x: number; y: number }> = {
       backend: { x: 18.8, y: 8.5 },
       frontend: { x: 20.4, y: 9.1 },
@@ -233,8 +251,8 @@ export class Engine {
         almanac: [...c.almanac],
         seeds: [...c.seeds],
         context: [...c.context],
-        x: home.x,
-        y: home.y,
+        x: FARM.barn.door.x,
+        y: FARM.barn.door.y,
         home,
         path: [],
         facing: 1,
@@ -242,8 +260,8 @@ export class Engine {
         look: null,
         nextShift: 1 + Math.random() * 4,
         shiftLeft: 0,
-        fade: 1,
-        inside: false,
+        fade: 0,
+        inside: true,
         seed: Math.random() * 10,
         chore: null,
         react: -9,
@@ -365,15 +383,38 @@ export class Engine {
       const p = this.task(MISSING.taskId).plot
       return { x: p.x - 7, y: p.y - 5, w: p.w + 14, h: p.h + 9 }
     }
-    const crowAsk = this.activeAsk?.id === 'crow' || this.replan?.status === 'open' || this.crow.state === 'flying'
-    if (crowAsk) return { x: 11, y: 4, w: 47, h: 17 }
-    if (this.phase === 'plan') return { x: 2, y: 5, w: 32, h: 17 }
-    const farm = { x: 1, y: 1.5, w: 36, h: 21.5 }
-    // A new ask leans the camera a little toward its plot while it waits.
-    if (this.nudge && this.activeAsk) {
-      return { ...farm, x: farm.x + (this.nudge.x - (farm.x + farm.w / 2)) * 0.18, y: farm.y + (this.nudge.y - (farm.y + farm.h / 2)) * 0.18 }
+    // Ship: the plots, plus the gate and the road while the cart is out or back.
+    if (this.phase === 'ship' && this.cart.state !== 'none' && this.cart.state !== 'loaded') {
+      const p = this.plotsFrame()
+      const cg = cartGate()
+      const g = { x: cg.x - 3, y: cg.y - 1.5, w: 6, h: 4.6 }
+      const x = Math.min(p.x, g.x)
+      const y = Math.min(p.y, g.y)
+      return { x, y, w: Math.max(p.x + p.w, g.x + g.w) - x, h: Math.max(p.y + p.h, g.y + g.h) - y }
     }
-    return farm
+    // The crow's ask frames only the plot that asks, its farmhand and the crow.
+    if (this.activeAsk?.id === 'crow' || this.crow.state === 'flying') {
+      const r = this.task(this.activeAsk?.taskId ?? 'tests').plot
+      const x = r.x - 2.5
+      return { x, y: r.y - 2.6, w: CROW_SPOT.x + 1.4 - x, h: r.h + 4.3 }
+    }
+    if (this.phase === 'brief' || this.phase === 'clarify') return { x: 1, y: 1.5, w: 36, h: 21.5 }
+    return this.plotsFrame()
+  }
+
+  // Plan, Grow, Harvest and Ship frame only our plots and the farmhands beside them.
+  plotsFrame(): Rect {
+    const rs = this.tasks.map((t) => t.plot)
+    const x0 = Math.min(...rs.map((r) => r.x - 2)) - 0.4
+    const x1 = Math.max(...rs.map((r) => r.x + r.w + 1)) + 0.4
+    const y0 = Math.min(...rs.map((r) => r.y)) - 2.4
+    const y1 = Math.max(...rs.map((r) => r.y + r.h)) + 1.7
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+  }
+
+  // Close-up framings use a whole-number zoom, so a farmhand is 48 to 64 px tall and pixels stay crisp.
+  get cameraInteger() {
+    return this.view === 'farm' && !this.intro && this.phase !== 'brief' && this.phase !== 'clarify'
   }
 
   private act(who: string, tokens: number, taskId?: string, n = 1) {
@@ -410,6 +451,33 @@ export class Engine {
   setBudget(b: number) {
     this.budget = b
     this.notify()
+  }
+
+  get team(): TeamTemplate {
+    return teamTemplate(this.crew, this.customTeams) ?? teamTemplate(DEFAULT_TEAM)!
+  }
+
+  // The crew can change until the plan is approved and the work starts.
+  get crewLocked() {
+    return ['grow', 'harvest', 'ship'].includes(this.phase as string)
+  }
+
+  // Pick the crew in the Brief. It can change until the plan is approved.
+  setCrew(id: string) {
+    if (!teamTemplate(id, this.customTeams) || this.crewLocked) return
+    this.crew = id
+    this.budget = this.team.budget // each crew brings its default budget
+    this.notify()
+  }
+
+  // Save the crew this run used, with its budget and required gates, as a new team template.
+  saveCrewAsTemplate(name = `${this.questTitle} crew`) {
+    const gates = (Object.keys(this.settings.gates) as GateKey[]).filter((g) => this.settings.gates[g as GateId].required)
+    const t = crewAsTemplate(this.team, name, this.tasks.map((x) => x.assignee), this.budget, gates, this.customTeams.length + 1)
+    this.customTeams = [...this.customTeams, t]
+    this.toast(`Saved ${t.name} as a team template`)
+    this.notify()
+    return t
   }
 
   submitBrief() {
@@ -664,6 +732,7 @@ export class Engine {
   }
 
   private onResolve(ask: Ask, value: string) {
+    if (isShipAsk(ask.id)) return this.onShipResolve(ask, value)
     if (ask.id === 'crow') {
       const v2 = value === 'v2'
       const t = this.task(MISSING.taskId)
@@ -926,8 +995,40 @@ export class Engine {
 
   // The draft a task has ready (a commit, a test file, the guide), shown as a crate on its plot.
   // Filled in by the panel work: null means no crate.
-  draftFor(_taskId: string): { label: string; nav: Nav[] } | null {
-    return null
+  draftFor(taskId: string): { label: string; nav: Nav[] } | null {
+    if (this.phase === 'brief' || this.phase === 'clarify' || this.phase === 'plan') return null
+    const t = this.tasks.find((x) => x.id === taskId)
+    if (!t || !t.subtasks.some((s) => s.done)) return null
+    // The guide is its own output; every other task's draft is its commit, shown in the task view.
+    if (taskId === 'docs') return { label: OUTPUT.guide.title, nav: [{ kind: 'task', id: taskId }, { kind: 'out', id: 'guide' }] }
+    return { label: COMMITS[taskId] ?? t.name, nav: [{ kind: 'task', id: taskId }] }
+  }
+
+  // Grow rows: Needs you, then Working, then Done. Within a group the plan's order holds,
+  // so a row only moves when its own state changes.
+  growRows(): { t: Task; group: 'needs' | 'working' | 'done' }[] {
+    const rank = { needs: 0, working: 1, done: 2 } as const
+    return this.tasks
+      .map((t, i) => {
+        const s = this.taskStatus(t)
+        const group: 'needs' | 'working' | 'done' = s.tone === 'needs' ? 'needs' : s.tone === 'done' ? 'done' : 'working'
+        return { t, group, i }
+      })
+      .sort((a, b) => rank[a.group] - rank[b.group] || a.i - b.i)
+      .map(({ t, group }) => ({ t, group }))
+  }
+
+  get growCounts(): string {
+    const rows = this.growRows()
+    const n = (g: string) => rows.filter((r) => r.group === g).length
+    return [
+      [n('needs'), 'needs you'],
+      [n('working'), 'working'],
+      [n('done'), 'done'],
+    ]
+      .filter(([c]) => c)
+      .map(([c, w]) => `${c} ${w}`)
+      .join(', ')
   }
 
   openDraft(taskId: string) {
@@ -935,6 +1036,11 @@ export class Engine {
     if (!d) return
     this.setPanel(true)
     this.setNav(d.nav)
+  }
+
+  setTree(open: boolean) {
+    this.treeOpen = open
+    this.notify()
   }
 
   fhStatus(fh: Farmhand): string {
@@ -1034,8 +1140,9 @@ export class Engine {
     this.notify()
   }
 
+  // Either side of the shipping crate, clear of the crate and its sign.
   private dropSpot(i: number) {
-    return { x: FARM.shipping.x - 1.2 + i * 1.1, y: FARM.shipping.y + 1.25 }
+    return { x: FARM.shipping.x + [-3.2, -2.1, 2.2, 3.3, 4.4][i % 5], y: FARM.shipping.y + 0.85 }
   }
 
   private updateHarvest(dt: number) {
@@ -1192,18 +1299,333 @@ export class Engine {
     this.sendState = 'sent'
     this.act('Head farmer', 600, undefined, 2)
     this.addLog('You', `Merged PR #${OUTPUT.pr} into ${OUTPUT.base}`, 'done')
-    this.toast(`Merged #${OUTPUT.pr} into ${OUTPUT.base}`)
+    this.toast(`Merged #${OUTPUT.pr} into ${OUTPUT.base}. CI is running on main.`)
+    this.startShip()
     this.notify()
+  }
+
+  // Merging is an ordinary step now: you approved, so one click merges. Deploying is the outbound one.
+  merge() {
+    if (!this.approved || this.sendState === 'sent') return
+    this.sendState = 'confirming'
+    this.send()
+  }
+
+  // ---- ship: CI on main, deploy to production, canary, roll back --------------------------
+
+  private startShip() {
+    this.phase = 'ship'
+    this.shipStage = 'ci'
+    this.shipT = 0
+    this.ciIndex = 0
+    this.nav = []
+    this.view = 'farm'
+    this.cart = { state: 'loaded', k: 0, crow: false }
+    this.addLog('Head farmer', `CI started on ${OUTPUT.base}`, 'info')
+  }
+
+  private ciJob() {
+    return CI_JOBS[this.ciIndex]
+  }
+
+  private updateShip(dt: number) {
+    for (const id of ROLE_ORDER) {
+      const fh = this.farmhands[id]
+      if (!this.walkOnly(fh, dt)) this.doChores(fh, dt)
+    }
+    this.updateCart(dt)
+    this.shipT += dt
+    const st = this.shipStage
+    if (st === 'ci') return this.updateCi()
+    if (st === 'canary' || st === 'canary2') return this.updateCanary()
+    if (st === 'rollback' && this.shipT >= SHIP_TIMES.rollback) return this.finishRollback()
+    if (st === 'rollout') {
+      const k = Math.min(1, this.shipT / SHIP_TIMES.rollout)
+      this.rollout = Math.round(5 + 95 * k)
+      if (k >= 1) this.goLive()
+    }
+  }
+
+  private updateCi() {
+    const job = this.ciJob()
+    if (!job) {
+      this.shipStage = 'deploy'
+      this.shipT = 0
+      this.addLog('Head farmer', `CI passed on ${OUTPUT.base}`, 'done')
+      this.requestDeploy()
+      return
+    }
+    const r = this.ci[job.id]
+    const outcome = this.ciOutcomes[job.id]
+    if (r.state === 'wait') {
+      this.ci[job.id] = { state: 'run', text: 'Running' }
+      this.act('CI', 200, undefined, 1)
+      return
+    }
+    if (outcome === 'flaky' && r.state === 'run' && this.shipT >= job.secs * 0.55) {
+      // A known flaky test: retried once without asking you, and logged.
+      this.ci[job.id] = { state: 'retry', text: 'Retrying a known flaky test' }
+      this.addLog('Tests', `Retried a known flaky test once: ${job.flaky!.test}. It passed on the retry.`, 'auto', undefined, job.flaky!.why)
+      return
+    }
+    const end = outcome === 'flaky' ? job.secs * 1.5 : job.secs
+    if (this.shipT < end) return
+    if (outcome === 'fail') {
+      this.ci[job.id] = { state: 'fail', text: `Failed after ${job.time}` }
+      this.shipStage = 'cifailed'
+      this.addLog('CI', `${job.name} failed on ${OUTPUT.base}`, 'pest')
+      this.raise({
+        id: `ci-${job.id}`,
+        label: 'Failure',
+        from: 'head',
+        fromName: 'Head farmer',
+        taskId: '',
+        question: `${job.name} failed on ${OUTPUT.base}. Revert the merge?`,
+        impact: [`Nothing deploys until ${OUTPUT.base} is green again.`],
+        options: [
+          { key: '1', label: 'Revert the merge', value: 'revert', recommended: true, kind: 'approve' },
+          { key: '2', label: 'Run it again', value: 'rerun', kind: 'alt' },
+        ],
+        details: { reasoning: `${job.name} is not on the list of known flaky jobs, so it was not retried on its own.`, sources: ['.github/workflows/main.yml'] },
+        confidence: 'Medium',
+        provenance: 'sim',
+      })
+      return
+    }
+    this.ci[job.id] = { state: 'pass', text: outcome === 'flaky' ? `${job.time}, passed on retry` : job.time }
+    this.ciIndex++
+    this.shipT = 0
+  }
+
+  private deployAsk(id: string) {
+    return {
+      id,
+      label: 'Irreversible' as const,
+      from: 'head' as const,
+      fromName: 'Head farmer',
+      taskId: '',
+      question: id === 'deploy' ? `Deploy ${RELEASE.app} ${RELEASE.version} to production?` : `Redeploy ${RELEASE.app} ${RELEASE.version} to production?`,
+      impact: [`Reaches ${RELEASE.users} users on ${RELEASE.app}`, id === 'deploy' ? 'CI passed on main. One known flaky test was retried.' : 'Same release, now with the production redirect URI in place.'],
+      options: [
+        { key: '1', label: 'Approve', value: 'approve', recommended: true, kind: 'approve' as const },
+        { key: '2', label: 'Not now', value: 'hold', kind: 'deny' as const },
+      ],
+      confirm: id === 'deploy' ? 'Deploy to production?' : 'Redeploy to production?',
+      confirmLabel: 'Deploy to production',
+      confirmList: [`Production, ${RELEASE.users} users`, `${RELEASE.app} ${RELEASE.version}`, `Rollout: ${RELEASE.canary}`, `Roll back: ${this.settings.deploy.auto_rollback ? RELEASE.rule.toLowerCase() : 'ask you first if a health check fails'}`],
+      details: {
+        reasoning: 'Every gate passed, you approved and merged, and CI passed on main. Deploying is the step that reaches users.',
+        sources: ['.github/workflows/main.yml', 'homestead.toml, deploy section'],
+      },
+      confidence: 'High' as const,
+      basis: 'Every gate and CI job passed',
+      provenance: 'sim' as const,
+    }
+  }
+
+  requestDeploy() {
+    if (this.shipStage !== 'deploy' && this.shipStage !== 'held') return
+    this.shipStage = 'deploy'
+    const id = this.deploys === 0 ? 'deploy' : `deploy-${this.deploys}`
+    this.asks = this.asks.filter((a) => a.id !== id)
+    this.raise(this.deployAsk(id))
+  }
+
+  // The canary: 5% of users get the new version while the health checks are watched.
+  startCanary() {
+    this.phase = 'ship'
+    this.deploys++
+    this.shipStage = this.rolledBack ? 'canary2' : 'canary'
+    this.shipT = 0
+    this.rollout = 5
+    for (const h of HEALTH) this.health[h.id] = { value: h.good, ok: true, seen: false }
+    this.cart = { state: 'out', k: 0, crow: false }
+    this.act('Head farmer', 500, undefined, 2)
+    this.addLog('Head farmer', `Deployed ${RELEASE.app} ${RELEASE.version} to 5% of production`, 'done')
+    this.toast(`${RELEASE.version} is live for 5% of users`)
+    this.notify()
+  }
+
+  private updateCanary() {
+    const second = this.shipStage === 'canary2'
+    const T = second ? SHIP_TIMES.canary2 : SHIP_TIMES.breach
+    const k = Math.min(1, this.shipT / T)
+    for (const h of HEALTH) {
+      const wob = Math.sin(this.shipT * 3 + h.good) * 0.02
+      let v = h.good * (1 + wob * (h.unit === 'ms' ? 1 : 0.02))
+      // The first canary: sign-in success falls once real users start signing in.
+      if (!second && h.id === 'signin') v = h.good + (h.bad - h.good) * Math.max(0, Math.min(1, (k - 0.3) / 0.7))
+      else if (!second) v = h.good + (h.bad - h.good) * k
+      this.health[h.id] = { value: v, ok: healthOk(h, v), seen: this.shipT > 0.3 }
+    }
+    if (k < 1) return
+    if (second) {
+      this.shipStage = 'rollout'
+      this.shipT = 0
+      this.addLog('Head farmer', 'Every health check passed on the canary. Rolling out to everyone.', 'auto', undefined, HEALTH.map((h) => `${h.name} ${fmtHealth(h, this.health[h.id].value)}`).join(', '))
+      return
+    }
+    const bad = HEALTH.find((h) => !this.health[h.id].ok)
+    if (!bad) return
+    const reading = `${bad.name} fell to ${fmtHealth(bad, this.health[bad.id].value)} on the canary (needs ${bad.min}%)`
+    if (this.settings.deploy.auto_rollback) return this.startRollback(reading)
+    // The switch is off: hold the canary and ask.
+    this.shipStage = 'held'
+    this.raise({
+      id: 'rollback',
+      label: 'Failure',
+      from: 'head',
+      fromName: 'Head farmer',
+      taskId: '',
+      question: `${reading}. Roll back to ${RELEASE.previous}?`,
+      impact: [`5% of users can't sign in with Google until this is decided.`],
+      options: [
+        { key: '1', label: `Roll back to ${RELEASE.previous}`, value: 'rollback', recommended: true, kind: 'approve' },
+        { key: '2', label: 'Keep the canary running', value: 'keep', kind: 'deny' },
+      ],
+      details: { reasoning: 'Rolling back on its own is off in Settings, so the canary waits for you.', sources: ['Sentry', 'homestead.toml, deploy section'] },
+      confidence: 'High',
+      provenance: 'sim',
+    })
+  }
+
+  private startRollback(reading: string) {
+    this.shipStage = 'rollback'
+    this.shipT = 0
+    this.rolledBack = true
+    this.act('Head farmer', 400, undefined, 2)
+    this.addLog('Head farmer', `Rolled back to ${RELEASE.previous}: ${reading}. ${RELEASE.exposure.charAt(0).toUpperCase() + RELEASE.exposure.slice(1)}.`, 'auto', undefined, 'A rollback only restores what was live before, so it doesn’t wait for you.')
+    this.toast(`Rolled back to ${RELEASE.previous}`)
+    this.notify()
+  }
+
+  private finishRollback() {
+    this.shipStage = 'rolledback'
+    this.shipT = 0
+    this.rollout = 0
+    this.cart = { state: 'back', k: 0, crow: false }
+    if (!this.pendingSeeds.some((s) => s.file === LESSON_REDIRECT.file) && !this.seeds.some((s) => s.file === LESSON_REDIRECT.file)) this.pendingSeeds.push({ ...LESSON_REDIRECT })
+    this.raise({
+      id: 'redirect',
+      label: 'Anomaly',
+      from: 'head',
+      fromName: 'Head farmer',
+      taskId: '',
+      question: 'Add the production redirect URI, then redeploy?',
+      impact: ['An agent can’t reach the Google console. Once you add it, Homestead redeploys with the same canary.', SHIP_TEXT.cause],
+      options: [
+        { key: '1', label: 'I added it, redeploy', value: 'redeploy', recommended: true, kind: 'approve' },
+        { key: '2', label: `Keep ${RELEASE.previous} live`, value: 'hold', kind: 'deny' },
+      ],
+      link: { label: 'Setup guide, step 3', out: 'guide' },
+      details: { reasoning: SHIP_TEXT.cause, sources: [SHIP_TEXT.sentry, 'docs/auth/google.md, step 3'], preview: 'redirect_uri_mismatch\nThe redirect URI in the request, https://app.example.com/auth/google/callback,\ndoes not match the ones authorized for the OAuth client.' },
+      confidence: 'High',
+      basis: 'Sentry shows the same Google error for every failed sign-in',
+      provenance: 'sim',
+    })
+  }
+
+  private goLive() {
+    this.shipStage = 'live'
+    this.rollout = 100
+    this.cart = { state: 'away', k: 0, crow: false }
+    this.act('Head farmer', 300, undefined, 1)
+    this.addLog('Head farmer', `${RELEASE.version} is live for ${RELEASE.users} users`, 'done')
+    this.toast(`Live for ${RELEASE.users} users`)
+    this.notify()
+  }
+
+  // The cart: out along the valley road while a deploy runs, back to the gate on a rollback.
+  private updateCart(dt: number) {
+    const c = this.cart
+    if (c.state === 'out' || c.state === 'back' || c.state === 'away') {
+      c.k = Math.min(1, c.k + dt / (c.state === 'back' ? 2.2 : 3.4))
+      if (c.state === 'back' && c.k >= 1) {
+        c.state = 'gate'
+        c.crow = true
+      }
+    }
+  }
+
+  private onShipResolve(ask: Ask, value: string) {
+    const id = ask.id
+    if (id === 'deploy' || id.startsWith('deploy-') || id === 'redeploy') {
+      if (value === 'approve') return this.startCanary()
+      this.shipStage = 'held'
+      this.addLog('Head farmer', SHIP_TEXT.held, 'info')
+      return
+    }
+    if (id === 'redirect') {
+      this.cart.crow = false
+      if (value !== 'redeploy') {
+        this.shipStage = 'held'
+        return
+      }
+      this.addLog('You', 'Added the production redirect URI in the Google console', 'answer')
+      this.shipStage = 'deploy'
+      this.asks = this.asks.filter((a) => a.id !== 'redeploy')
+      this.raise(this.deployAsk('redeploy'))
+      // You already said redeploy: the ask opens on its confirm.
+      const r = this.asks.find((a) => a.id === 'redeploy')
+      if (r) r.status = 'confirming'
+      return
+    }
+    if (id === 'rollback') {
+      if (value === 'rollback') {
+        const h = HEALTH[0]
+        return this.startRollback(`${h.name} fell to ${fmtHealth(h, this.health[h.id].value)} on the canary (needs ${h.min}%)`)
+      }
+      this.addLog('Head farmer', 'Kept the canary running at 5%', 'info')
+      return
+    }
+    if (id.startsWith('ci-')) {
+      const job = id.slice(3)
+      if (value === 'rerun') {
+        this.ciOutcomes[job] = 'pass'
+        this.ci[job] = { state: 'wait', text: 'Waiting' }
+        this.shipStage = 'ci'
+        this.shipT = 0
+      } else this.addLog('Head farmer', `Reverted PR #${OUTPUT.pr} on ${OUTPUT.base}`, 'info')
+    }
+  }
+
+  get shipHeadline() {
+    switch (this.shipStage) {
+      case 'ci':
+        return SHIP_TEXT.ciRunning
+      case 'cifailed':
+        return SHIP_TEXT.ciFailed
+      case 'deploy':
+        return this.rolledBack ? SHIP_TEXT.cause : SHIP_TEXT.ciPassed
+      case 'held':
+        return this.asks.some((a) => a.id === 'rollback' && a.status !== 'resolved') ? 'The canary is failing. It waits for you.' : SHIP_TEXT.held
+      case 'canary':
+        return SHIP_TEXT.canary
+      case 'rollback':
+        return SHIP_TEXT.rollback
+      case 'rolledback':
+        return SHIP_TEXT.rolledback
+      case 'canary2':
+        return SHIP_TEXT.canary2
+      case 'rollout':
+        return SHIP_TEXT.rollout
+      case 'live':
+        return SHIP_TEXT.live
+      default:
+        return ''
+    }
   }
 
   get decisions() {
     const swapped = this.tasks.some((t) => t.assignee !== t.proposedAssignee) || this.signpostEdits.length > 0
     return [
       { word: 'Plan', text: swapped ? 'Approved the plan with your changes' : 'Approved the plan as proposed' },
-      ...this.asks.filter((a) => a.status === 'resolved').map((a) => ({ word: REASON_WORD[a.label] ?? a.label, text: `${a.answerLabel}`, q: a.question })),
+      ...this.asks.filter((a) => a.status === 'resolved' && !isShipAsk(a.id)).map((a) => ({ word: REASON_WORD[a.label] ?? a.label, text: `${a.answerLabel}`, q: a.question })),
       ...(this.reviewFixed ? [{ word: 'Failed', text: `Sent the review back to ${this.farmhands[this.task(REVIEW_FAIL.taskId).assignee].role}` }] : []),
       ...(this.approved ? [{ word: 'Review', text: `Looked at ${CHECKS.length} things and approved` }] : []),
       ...(this.sendState === 'sent' ? [{ word: 'Merge', text: `Merged PR #${OUTPUT.pr}` }] : []),
+      // Ship's asks come after the merge.
+      ...this.asks.filter((a) => a.status === 'resolved' && isShipAsk(a.id)).map((a) => ({ word: REASON_WORD[a.label] ?? a.label, text: shipDecided(a), q: a.question })),
     ]
   }
 
@@ -1212,10 +1634,10 @@ export class Engine {
     if (this.toasts.length > 3) this.toasts.shift()
   }
 
-  muted = true
+  // A soft two-note chime, only when an agent asks. Settings can turn it off.
   private audio: AudioContext | null = null
   chime() {
-    if (this.muted || typeof window === 'undefined') return
+    if (!this.settings.notify.chime || this.intro || typeof window === 'undefined' || typeof AudioContext === 'undefined') return
     try {
       this.audio ??= new AudioContext()
       const ctx = this.audio
@@ -1223,10 +1645,10 @@ export class Engine {
       ;[880, 1318.5].forEach((f, i) => {
         const o = ctx.createOscillator()
         const g = ctx.createGain()
-        o.type = 'triangle'
+        o.type = 'sine'
         o.frequency.value = f
         g.gain.setValueAtTime(0.0001, now + i * 0.09)
-        g.gain.exponentialRampToValueAtTime(0.08, now + i * 0.09 + 0.02)
+        g.gain.exponentialRampToValueAtTime(0.05, now + i * 0.09 + 0.02)
         g.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.09 + 0.5)
         o.connect(g).connect(ctx.destination)
         o.start(now + i * 0.09)
@@ -1329,8 +1751,13 @@ export class Engine {
     } else if (this.phase === 'harvest') {
       this.updateHarvest(dt)
       this.dirty = true
+    } else if (this.phase === 'ship') {
+      this.updateShip(dt)
+      this.dirty = true
+    } else if (this.phase === 'plan') {
+      // Each farmhand walks out of the barn once the head farmer has tilled its plot.
+      for (const id of ROLE_ORDER) this.planMove(this.farmhands[id], dt)
     } else if (this.phase !== 'grow') {
-      // Before the work starts the crew waits outside the barn.
       for (const id of ROLE_ORDER) this.fidget(this.farmhands[id], dt)
     }
     if (this.headThinking) this.dirty = true
@@ -1416,7 +1843,6 @@ export class Engine {
       this.freeCam = null
       this.addLog('Head farmer', 'Every crop is ripe. The agentic review runs at the harvest.', 'done')
       this.toast('Every crop is ripe. The harvest is ready for you.')
-      this.chime()
       this.notify()
     }
   }
@@ -1468,6 +1894,42 @@ export class Engine {
     }
     w.moving = w.path.length > 0
     return w.moving
+  }
+
+  // During Plan: out of the barn to its plot once that plot is tilled, back in if you move its task away.
+  private planMove(fh: Farmhand, dt: number) {
+    const door = FARM.barn.door
+    const i = this.tasks.findIndex((t) => t.assignee === fh.id)
+    const shown = i >= 0 && i < this.planShown
+    if (this.walkOnly(fh, dt)) {
+      fh.fade = shown || !this.near(fh, door) ? Math.min(1, fh.fade + dt / 0.4) : Math.max(0, fh.fade - dt / 0.4)
+      return
+    }
+    if (!shown) {
+      if (fh.inside) return
+      if (!this.near(fh, door)) return this.walkTo(fh, door)
+      fh.inside = true
+      fh.fade = 0
+      return
+    }
+    if (fh.inside) {
+      fh.inside = false
+      fh.x = door.x
+      fh.y = door.y
+      fh.fade = 0
+    }
+    fh.fade = Math.min(1, fh.fade + dt / 0.4)
+    const spot = this.standSpot(this.tasks[i], 0)
+    if (!this.near(fh, spot)) return this.walkTo(fh, spot)
+    fh.dir = 'down'
+    this.fidget(fh, dt)
+  }
+
+  // Where a farmhand waits for its own next step: beside its own plot.
+  private ownSpot(fh: Farmhand) {
+    const t = this.tasks.find((x) => x.assignee === fh.id && x.subtasks.some((s) => !s.done))
+    if (!t) return null
+    return this.standSpot(t, Math.max(0, t.subtasks.findIndex((s) => !s.done)))
   }
 
   // A farmhand standing still now and then glances left or right, each on its own timer.
@@ -1553,7 +2015,7 @@ export class Engine {
     } else if (id === 'house') {
       this.panelOpen = true
       if (this.phase === 'brief') this.setNav([])
-      else this.setNav([{ kind: 'step', id: 'brief' }])
+      else this.setNav([{ kind: 'step', id: 'plant' }])
     }
     this.notify()
   }
@@ -1600,18 +2062,6 @@ export class Engine {
     }
   }
 
-  // Waiting on another task: stand at the top edge of that plot, facing it.
-  private waitSpot(fh: Farmhand, taskId: string) {
-    const r = this.task(taskId).plot
-    const waiting = ROLE_ORDER.filter((id) => id === fh.id || (this.farmhands[id].status === 'waiting' && this.blockerOf(this.farmhands[id])?.taskId === taskId))
-    return { x: r.x + 0.8 + waiting.indexOf(fh.id) * 1.4, y: r.y - 1.6 }
-  }
-
-  private porchSpot(fh: Farmhand) {
-    const askers = ROLE_ORDER.filter((id) => this.farmhands[id].status === 'asking')
-    return FARM.porch[Math.max(0, askers.indexOf(fh.id)) % FARM.porch.length]
-  }
-
   private updateFarmhand(fh: Farmhand, dt: number) {
     if (fh.paused) return
     const workLeft = fh.interrupts.length > 0 || this.hasWorkLeft(fh)
@@ -1628,11 +2078,9 @@ export class Engine {
       if (fh.status !== 'asking' && fh.status !== 'done') fh.status = 'walking'
       return
     }
-    // Waiting for you: on the farmhouse porch, facing the door.
+    // Waiting for you: it stays at its own plot and turns to face you.
     if (fh.status === 'asking') {
-      const spot = this.porchSpot(fh)
-      if (!this.near(fh, spot)) return this.walkTo(fh, spot)
-      fh.dir = 'up'
+      fh.dir = 'down'
       return
     }
     if (fh.status === 'done') {
@@ -1645,17 +2093,15 @@ export class Engine {
       const job = this.nextJob(fh)
       if (!job) {
         if (!workLeft) {
-          // Done: it stops using energy and goes off to do chores away from the plots.
+          // Done: it stops using energy, walks back to the barn, then picks up chores near it.
           fh.status = 'done'
-          fh.chore = null
-          return
+          fh.chore = { id: '', t: 1.2 }
+          return this.walkTo(fh, { x: FARM.barn.door.x, y: FARM.barn.door.y + 0.9 })
         }
         fh.status = 'waiting'
-        const b = this.blockerOf(fh)
-        if (b) {
-          const spot = this.waitSpot(fh, b.taskId)
-          if (!this.near(fh, spot)) return this.walkTo(fh, spot)
-        }
+        // Blocked on another task: it waits at its own plot, so the plot and its farmhand read as one.
+        const spot = this.ownSpot(fh)
+        if (spot && !this.near(fh, spot)) return this.walkTo(fh, spot)
         fh.dir = 'down'
         this.fidget(fh, dt)
         return
@@ -1883,7 +2329,19 @@ export function cropTiles(task: Task) {
 }
 
 // A reason is a plain word. Outbound steps get no word: they lead with who they reach.
-export const REASON_WORD: Record<string, string> = { Cost: 'Costs more', Risk: 'Risky', Failure: 'Failed', Anomaly: 'Looks wrong', Irreversible: 'Merge' }
+export const REASON_WORD: Record<string, string> = { Cost: 'Costs more', Risk: 'Risky', Failure: 'Failed', Anomaly: 'Looks wrong', Irreversible: 'Deploy' }
+
+export function isShipAsk(id: string) {
+  return id === 'deploy' || id.startsWith('deploy-') || id === 'redeploy' || id === 'redirect' || id === 'rollback' || id.startsWith('ci-')
+}
+
+// What a resolved Ship ask reads as in Your decisions.
+function shipDecided(a: Ask) {
+  const deploy = a.id === 'deploy' || a.id.startsWith('deploy-')
+  if (deploy || a.id === 'redeploy') return a.answer === 'approve' ? `${a.id === 'redeploy' ? 'Redeployed' : 'Deployed'} ${RELEASE.app} ${RELEASE.version} to production` : 'Held the deploy'
+  if (a.id === 'redirect') return a.answer === 'redeploy' ? 'Added the production redirect URI and redeployed' : `Kept ${RELEASE.previous} live`
+  return a.answerLabel ?? ''
+}
 
 export function fmtTokens(n: number) {
   return n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k tokens` : `${Math.round(n)} tokens`

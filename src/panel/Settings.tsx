@@ -1,9 +1,11 @@
 // Settings, opened from the gear in the panel header. Every page is a view of homestead.toml.
 import './settings.css'
+import './ship.css'
 import { GATE_ORDER, GATES } from '../sim/review'
 import { HARNESSES, MODELS, type Settings } from '../sim/settings'
 import { Kbd, useEngine } from '../ui'
 import { Row } from './Overview'
+import { TemplatesView, templatesName, templatesStatus } from './Templates'
 
 type E = ReturnType<typeof useEngine>
 
@@ -14,15 +16,19 @@ const NAMES: Record<string, string> = {
   sandbox: 'Sandbox',
   limits: 'Limits',
   ask: 'When agents ask you',
+  deploy: 'Deploy',
   keys: 'Keyboard',
   config: 'homestead.toml',
+  templates: 'Templates',
 }
 
 export function settingsName(id?: string): string {
+  if (id?.startsWith('templates')) return templatesName(id)
   return id ? (NAMES[id] ?? 'Settings') : 'Settings'
 }
 
 export function settingsStatus(id: string | undefined, _e: E): string | undefined {
+  if (id?.startsWith('templates')) return templatesStatus(id, _e)
   switch (id) {
     case undefined:
       return 'Saved to homestead.toml in web-app. Every run reads it.'
@@ -36,6 +42,8 @@ export function settingsStatus(id: string | undefined, _e: E): string | undefine
       return 'Production secrets never reach an agent.'
     case 'ask':
       return 'Everything else, agents decide and log under Decided without you.'
+    case 'deploy':
+      return 'Deploying to production always asks you. Rolling back only restores what was live before.'
     case 'config':
       return 'Changes here open a pull request on the file.'
     default:
@@ -47,6 +55,7 @@ const tools = (e: E) => e.library.filter((x) => x.kind === 'tool')
 const k = (tokens: string) => `${(Number(tokens) || 0) / 1000}k`
 
 export function SettingsView({ id }: { id?: string }) {
+  if (id?.startsWith('templates')) return <TemplatesView id={id} />
   switch (id) {
     case 'agents':
       return <Agents />
@@ -60,6 +69,8 @@ export function SettingsView({ id }: { id?: string }) {
       return <Limits />
     case 'ask':
       return <Ask />
+    case 'deploy':
+      return <Deploy />
     case 'keys':
       return <Keys />
     case 'config':
@@ -102,6 +113,8 @@ function Root() {
     { id: 'sandbox', label: 'Sandbox', sub: 'Where agents run, network, secrets' },
     { id: 'limits', label: 'Limits', sub: `${k(S.run.budget_tokens)} tokens, $${S.run.budget_usd}, ${S.run.timeout_min} min per run` },
     { id: 'ask', label: 'When agents ask you', sub: 'Rules for interrupting, and where' },
+    { id: 'deploy', label: 'Deploy', sub: `${S.deploy.pipeline}, ${S.deploy.canary_pct}% canary, ${S.deploy.auto_rollback ? 'rolls back on its own' : 'asks before rolling back'}` },
+    { id: 'templates', label: 'Templates', sub: `Agent and team templates. This farm uses ${e.team.name}`, end: String(e.customTeams.length + 4) },
     { id: 'keys', label: 'Keyboard', sub: 'J and K to move, Enter to open' },
     { id: 'config', label: 'homestead.toml', sub: 'All of this as a file, and the CLI' },
   ]
@@ -295,6 +308,78 @@ function Limits() {
   )
 }
 
+function Deploy() {
+  const e = useEngine()
+  const D = e.settings.deploy
+  const monitors = tools(e).filter((t) => t.name === 'Sentry' || t.name === 'GitHub Actions')
+  return (
+    <div className="settings">
+      <section className="section">
+        <h4>Pipeline</h4>
+        <ul className="rows">
+          <li>
+            <Row label={`${D.pipeline}, on every merge to main`} sub={<span className="mono">{D.workflow}</span>} />
+          </li>
+        </ul>
+      </section>
+      <section className="section">
+        <h4>Environments</h4>
+        <ul className="rows">
+          {D.environments.map((x) => (
+            <li key={x.name}>
+              <Row label={`${x.name.charAt(0).toUpperCase() + x.name.slice(1)}, ${x.url}`} sub={x.gate} />
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section className="section">
+        <h4>Rollout</h4>
+        <div className="rollout-fields">
+          <label>
+            Canary
+            <span className="unit-input">
+              <input className="mono" value={D.canary_pct} onChange={(x) => e.setSetting('deploy', 'canary_pct', x.target.value)} aria-label="Canary percent" />%
+            </span>
+          </label>
+          <label>
+            For
+            <span className="unit-input">
+              <input className="mono" value={D.canary_min} onChange={(x) => e.setSetting('deploy', 'canary_min', x.target.value)} aria-label="Canary minutes" />
+              min
+            </span>
+          </label>
+        </div>
+        <p className="quiet">Then everyone, if every health check passes.</p>
+      </section>
+      <section className="section">
+        <h4>Health checks</h4>
+        <ul className="rows">
+          {D.checks.map((c) => (
+            <li key={c.name}>
+              <Row label={c.name} sub={`From ${c.source}`} end={c.threshold} />
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section className="section">
+        <ul className="opt-list">
+          <Opt checked={D.auto_rollback} onChange={(on) => e.setSetting('deploy', 'auto_rollback', on)} label="Roll back on its own when a check fails" ev="It only restores the version that was live before, and logs it under Decided without you." testId="settings-auto-rollback" />
+        </ul>
+      </section>
+      <section className="section">
+        <h4>Monitoring, read only</h4>
+        <ul className="rows">
+          {monitors.map((t) => (
+            <li key={t.name}>
+              <Row mark={<span className="kind tool">T</span>} label={t.name} sub={t.what} end="Read only" onClick={() => e.go({ kind: 'lib', id: t.name })} />
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  )
+}
+
 function Ask() {
   const e = useEngine()
   const A = e.settings.ask
@@ -317,6 +402,7 @@ function Ask() {
         <ul className="opt-list">
           <Opt checked={N.slack} onChange={(on) => e.setSetting('notify', 'slack', on)} label="Slack, as a DM" />
           <Opt checked={N.email} onChange={(on) => e.setSetting('notify', 'email', on)} label="Email" />
+          <Opt checked={N.chime} onChange={(on) => e.setSetting('notify', 'chime', on)} label="Chime when an agent asks" ev="A soft sound in this tab. Nothing else makes a sound." testId="settings-chime" />
         </ul>
       </section>
     </div>
@@ -329,7 +415,9 @@ const KEYS: [string, string[]][] = [
   ['Back', ['Esc']],
   ['Answer the open question', ['1', '2']],
   ['Approve, at harvest', ['A']],
-  ['Open or close the panel', ['Tab']],
+  ['Agent tree: every valley, field and plot', ['Tab']],
+  ['Region view, and back', ['V']],
+  ['Open or close the panel', ['B']],
   ['Jump to anything', ['⌘', 'K']],
 ]
 

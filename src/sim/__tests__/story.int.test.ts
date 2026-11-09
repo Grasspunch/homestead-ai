@@ -1,7 +1,9 @@
 // A whole run through the engine, the way the Playwright run drives the app.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CHECKS, GATE_ORDER, OUTPUT } from '../review'
+import { CI_JOBS, LESSON_REDIRECT, RELEASE, SHIP_TEXT } from '../ship'
 import { LESSON_STAGING, LESSON_TRACE, MISSING } from '../scenario'
+import { stepOf } from '../steps'
 import { freshEngine, toGrow, until } from './helpers'
 
 beforeEach(() => {
@@ -12,10 +14,12 @@ afterEach(() => {
 })
 
 describe('Google sign-in, end to end', () => {
-  it('catches the retired endpoint, re-plans, fails the review once, then merges', async () => {
+  it('catches the retired endpoint, re-plans, fails the review once, merges, rolls back once, then goes live', async () => {
     const e = freshEngine()
+    expect(stepOf(e.phase)).toBe('plant')
     await toGrow(e)
     expect(e.phase).toBe('grow')
+    expect(stepOf(e.phase)).toBe('grow')
 
     // Frontend reuses /v1/session; the end-to-end run on staging fails before anyone asks you.
     await until(e, () => e.gates.tests?.e2e?.state === 'fail', 'e2e failure')
@@ -57,6 +61,7 @@ describe('Google sign-in, end to end', () => {
     // The harvest: the review fails first.
     e.openHarvest()
     expect(e.phase).toBe('harvest')
+    expect(stepOf(e.phase)).toBe('harvest')
     e.skipHarvestMap()
     await until(e, () => !e.gatesRunning, 'review result', 20)
     expect(e.harvestGates.review.state).toBe('fail')
@@ -71,12 +76,44 @@ describe('Google sign-in, end to end', () => {
 
     for (const c of CHECKS) e.toggleTick(c.id)
     e.approveHarvest()
-    e.startSend()
-    e.send()
+    // Merging is an ordinary step now: one click, no confirm.
+    e.merge()
     expect(e.sendState).toBe('sent')
-    expect(e.harvestHeadline).toBe(OUTPUT.merged)
+    expect(e.phase).toBe('ship')
+    expect(stepOf(e.phase)).toBe('harvest') // CI, deploy and the canary are the end of Harvest
     expect(e.neededYou).toBe(2)
     expect(e.decisions.map((d) => d.word)).toEqual(['Plan', 'Looks wrong', 'Failed', 'Review', 'Merge'])
+
+    // CI on main: the known flaky test retries once on its own, then the deploy asks you.
+    await until(e, () => e.activeAsk?.id === 'deploy', 'deploy ask', 30)
+    expect(CI_JOBS.every((j) => e.ci[j.id].state === 'pass')).toBe(true)
+    expect(e.autoDecided.some((l) => l.text.startsWith('Retried a known flaky test'))).toBe(true)
+    const deploy = e.activeAsk!
+    expect(deploy.label).toBe('Irreversible')
+    e.answer('deploy', 'approve')
+    expect(deploy.status).toBe('confirming')
+    expect(deploy.confirmList).toEqual(expect.arrayContaining([`${RELEASE.app} ${RELEASE.version}`, `Rollout: ${RELEASE.canary}`]))
+    e.answer('deploy', 'approve')
+
+    // The canary fails on sign-in, and Homestead rolls back without asking.
+    await until(e, () => e.activeAsk?.id === 'redirect', 'redirect ask', 30)
+    expect(e.rolledBack).toBe(true)
+    expect(e.autoDecided.some((l) => l.text.includes('5% of users for 6 minutes'))).toBe(true)
+    expect(e.activeAsk!.label).toBe('Anomaly')
+    expect(e.activeAsk!.link?.out).toBe('guide')
+    expect(e.pendingSeeds.map((s) => s.file)).toContain(LESSON_REDIRECT.file)
+
+    // You add the URI; the redeploy opens on its confirm.
+    e.answer('redirect', 'redeploy')
+    expect(e.activeAsk?.id).toBe('redeploy')
+    expect(e.activeAsk?.status).toBe('confirming')
+    e.answer('redeploy', 'approve')
+    await until(e, () => e.shipStage === 'live', 'live', 30)
+    expect(e.rollout).toBe(100)
+    expect(e.shipHeadline).toBe(SHIP_TEXT.live)
+    expect(e.shipHeadline.startsWith('Live for 12,400 users')).toBe(true)
+    expect(e.neededYou).toBe(5)
+    expect(e.decisions.map((d) => d.word)).toEqual(['Plan', 'Looks wrong', 'Failed', 'Review', 'Merge', 'Deploy', 'Looks wrong', 'Deploy'])
   })
 
   it('with the changelog attached at Plan, Frontend calls /v2/session and no crow comes', async () => {

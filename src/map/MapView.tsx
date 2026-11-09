@@ -4,7 +4,7 @@ import { clampCamera, fitCamera, render, type Camera, type Hit } from './render'
 import { engine } from '../sim/engine'
 import { useEngine } from '../ui'
 
-const ORDER: Hit['kind'][] = ['crow', 'chicken', 'farmhand', 'head', 'pest', 'sign', 'signpost', 'prop', 'plot', 'neighbour', 'nplot', 'farm']
+const ORDER: Hit['kind'][] = ['crow', 'crate', 'chicken', 'farmhand', 'head', 'pest', 'sign', 'signpost', 'prop', 'plot', 'neighbour', 'nplot', 'farm']
 
 export function MapView() {
   const e = useEngine()
@@ -42,7 +42,7 @@ export function MapView() {
           const free = engine.freeCam
           if (free) cam.current = free
           else {
-            const target = fitCamera(engine.cameraTarget(), W, H, engine.view === 'valley' || engine.intro ? 0 : 76)
+            const target = fitCamera(engine.cameraTarget(), W, H, engine.view === 'valley' || engine.intro ? 0 : 76, engine.cameraInteger)
             if (!cam.current) cam.current = target
             else {
               // The opening pans slowly; everything else settles quickly.
@@ -52,6 +52,8 @@ export function MapView() {
                 x: cam.current.x + (target.x - cam.current.x) * k,
                 y: cam.current.y + (target.y - cam.current.y) * k,
               }
+              // Settle exactly on the target so a whole-number zoom stays whole.
+              if (Math.abs(cam.current.scale - target.scale) < 0.004 && Math.abs(cam.current.x - target.x) < 0.05 && Math.abs(cam.current.y - target.y) < 0.05) cam.current = target
             }
           }
           const ctx = c.getContext('2d')!
@@ -85,6 +87,8 @@ export function MapView() {
     switch (h.kind) {
       case 'plot':
         return engine.openTask(h.id)
+      case 'crate':
+        return engine.openDraft(h.id)
       case 'farmhand':
         return engine.pokeFarmhand(h.id as never)
       case 'pest': {
@@ -141,7 +145,7 @@ export function MapView() {
         const h = pick(ev.clientX, ev.clientY)
         engine.hover(h?.kind === 'plot' ? h.id : null)
         const r = w.getBoundingClientRect()
-        const tip = h && (h.kind === 'plot' || h.kind === 'farmhand' || h.kind === 'nplot' || h.kind === 'neighbour' || h.kind === 'head' || (h.kind === 'farm' && engine.view === 'valley') || h.kind === 'signpost' || h.kind === 'crow')
+        const tip = h && (h.kind === 'plot' || h.kind === 'farmhand' || h.kind === 'nplot' || h.kind === 'neighbour' || h.kind === 'head' || (h.kind === 'farm' && engine.view === 'valley') || h.kind === 'signpost' || h.kind === 'crow' || h.kind === 'crate')
         setHover(h ? { hit: tip ? h : { ...h, title: '' }, x: ev.clientX - r.left, y: ev.clientY - r.top } : null)
       }}
       onPointerUp={(ev) => {

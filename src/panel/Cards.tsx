@@ -1,9 +1,10 @@
 // The one raised object on the panel: whatever needs you right now.
 import { useState } from 'react'
-import { REASON_WORD } from '../sim/engine'
+import { REASON_WORD, type OutId } from '../sim/engine'
 import { CLASH, MISSING } from '../sim/scenario'
 import type { Ask } from '../sim/types'
 import { Kbd, useEngine } from '../ui'
+import './ship.css'
 
 export const PROV: Record<string, string> = { live: 'Found by a live Claude call' }
 
@@ -23,10 +24,19 @@ export function AskOptions({ ask }: { ask: Ask }) {
   if (ask.status === 'confirming')
     return (
       <div className="confirm">
-        <p>{ask.confirm}</p>
+        <p>
+          <b>{ask.confirm}</b>
+        </p>
+        {ask.confirmList && (
+          <ul className="confirm-list" data-testid="confirm-list">
+            {ask.confirmList.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        )}
         <div className="opts">
           <button className="btn out" onClick={() => e.answer(ask.id, 'approve')} data-testid="confirm">
-            {ask.options.find((o) => o.value === 'approve')?.label}
+            {ask.confirmLabel ?? ask.options.find((o) => o.value === 'approve')?.label} <Kbd>⏎</Kbd>
           </button>
           <button className="btn ghost" onClick={() => e.cancelConfirm(ask.id)}>
             Back
@@ -81,7 +91,12 @@ export function AskCard({ ask }: { ask: Ask }) {
           })}
         </div>
       )}
-      {ask.status === 'open' && <p className="consequence">{ask.impact[0]}</p>}
+      {ask.status === 'open' && (out ? ask.impact[1] : ask.impact[0]) && <p className="consequence">{out ? ask.impact[1] : ask.impact[0]}</p>}
+      {ask.link && ask.status === 'open' && (
+        <button className="linkish" onClick={() => e.go({ kind: 'out', id: ask.link!.out as OutId })} data-testid={`ask-link-${ask.id}`}>
+          {ask.link.label}
+        </button>
+      )}
       <AskOptions ask={ask} />
       <button className="linkish" onClick={() => e.go({ kind: 'why', id: ask.id })}>
         Why it’s asking

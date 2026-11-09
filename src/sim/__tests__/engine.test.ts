@@ -176,3 +176,66 @@ describe('story setup', () => {
     expect(e.neededYou).toBe(1)
   })
 })
+
+describe('Grow rows and drafts', () => {
+  it('sorts Needs you, then Working, then Done, keeping the plan order inside a group', async () => {
+    const e = freshEngine()
+    await toGrow(e)
+    expect(e.growRows().map((r) => r.t.id)).toEqual(['backend', 'frontend', 'tests', 'docs'])
+    // Docs ripe, Tests asking: Tests moves up, Docs moves down.
+    finishSteps(e, 'docs')
+    await until(e, () => e.activeAsk?.id === 'crow', 'crow ask')
+    const rows = e.growRows()
+    expect(rows[0]).toMatchObject({ group: 'needs' })
+    expect(rows[0].t.id).toBe('tests')
+    expect(rows.map((r) => r.group)).toEqual([...rows.map((r) => r.group)].sort((a, b) => ['needs', 'working', 'done'].indexOf(a) - ['needs', 'working', 'done'].indexOf(b)))
+    expect(rows[rows.length - 1].t.id).toBe('docs')
+    expect(rows[rows.length - 1].group).toBe('done')
+    expect(e.growCounts).toMatch(/^1 needs you, \d working, \d done$/)
+  })
+
+  it('a task has a draft only once a step is done, and the guide opens its own view', async () => {
+    const e = freshEngine()
+    finishSteps(e, 'backend')
+    expect(e.draftFor('backend')).toBeNull() // still in the brief
+    await toGrow(e)
+    expect(e.draftFor('frontend')).toBeNull()
+    expect(e.draftFor('backend')).toEqual({ label: 'Add /auth/google/callback with state and PKCE', nav: [{ kind: 'task', id: 'backend' }] })
+    finishSteps(e, 'docs')
+    expect(e.draftFor('docs')?.nav).toEqual([{ kind: 'task', id: 'docs' }, { kind: 'out', id: 'guide' }])
+    e.openDraft('docs')
+    expect(e.panelOpen).toBe(true)
+    expect(e.nav[e.nav.length - 1]).toEqual({ kind: 'out', id: 'guide' })
+  })
+
+  it('the chime is on by default and stays silent in node', () => {
+    const e = freshEngine()
+    expect(e.settings.notify.chime).toBe(true)
+    expect(() => e.chime()).not.toThrow()
+    expect(e.settingsToml()).toContain('chime = true')
+  })
+})
+
+describe('three steps', () => {
+  it('maps the engine phases onto Plant, Grow and Harvest', async () => {
+    const { stepOf, STEPS, STEP_LABEL } = await import('../steps')
+    expect(STEPS.map((s) => STEP_LABEL[s])).toEqual(['Plant', 'Grow', 'Harvest'])
+    expect((['brief', 'clarify', 'plan'] as const).map(stepOf)).toEqual(['plant', 'plant', 'plant'])
+    expect(stepOf('grow')).toBe('grow')
+    expect(stepOf('harvest')).toBe('harvest')
+    expect(stepOf('ship')).toBe('harvest')
+  })
+
+  it('the agent tree lists the crew Needs you, then Working, then Done', async () => {
+    const { crewOrder } = await import('../../panel/AgentTree')
+    const e = freshEngine()
+    await toGrow(e)
+    await until(e, () => e.activeAsk?.id === 'crow', 'crow ask')
+    e.farmhands.docs.status = 'done'
+    const order = crewOrder(Object.values(e.farmhands)).map((f) => f.status)
+    expect(order[0]).toBe('asking')
+    expect(['done', 'idle']).toContain(order[order.length - 1])
+    expect(order.indexOf('done')).toBeGreaterThan(order.lastIndexOf('working') === -1 ? 0 : order.lastIndexOf('working'))
+    expect(crewOrder(Object.values(e.farmhands))[0].id).toBe('tests')
+  })
+})

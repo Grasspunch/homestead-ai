@@ -1,0 +1,179 @@
+/* The agent tree (Tab) and the state glyphs it shares with the map. */
+
+.tree-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(36, 29, 51, 0.12);
+}
+
+.agent-tree {
+  position: absolute;
+  left: 20px;
+  top: 64px;
+  width: min(420px, calc(100vw - 40px));
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: 0 4px 0 var(--ink);
+  padding: 10px 6px 8px;
+  font-size: 14px;
+}
+
+.tree-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px 8px;
+}
+
+.tree-head strong {
+  font-size: 15px;
+}
+
+.tree-head span {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+}
+
+.tree-list {
+  outline: none;
+  border-radius: 8px;
+}
+
+.tree-list:focus-visible {
+  box-shadow: 0 0 0 2px var(--sprout);
+}
+
+.tree-row {
+  display: grid;
+  grid-template-columns: 22px auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  min-height: 30px;
+}
+
+.tree-row.d1 {
+  padding-left: 22px;
+}
+
+.tree-row.d2 {
+  padding-left: 40px;
+}
+
+.tree-row.d3 {
+  padding-left: 70px;
+  min-height: 26px;
+  font-size: 13px;
+}
+
+.tree-row.d3 .tree-label {
+  font-weight: 400;
+}
+
+.tree-row.on {
+  background: var(--sheet-sunk);
+}
+
+.tree-label {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tree-row.d2 .tree-label {
+  font-weight: 600;
+}
+
+.tree-sub {
+  color: var(--ink-soft);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-row.asking .tree-sub {
+  color: var(--needs);
+  font-weight: 700;
+}
+
+/* ---- glyphs: one shape per state, on a light plate ---- */
+
+.glyph {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--sheet-sunk);
+  border: 1px solid var(--rule-strong);
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.glyph.none {
+  background: none;
+  border-color: transparent;
+}
+
+.glyph.ask.fail {
+  color: var(--failure);
+}
+
+.glyph.ask.out {
+  color: var(--out);
+}
+
+.glyph.sleep {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.glyph.work {
+  grid-auto-flow: column;
+  gap: 2px;
+  place-content: center;
+}
+
+.glyph.work i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--sprout);
+  animation: glyph-work 1.2s infinite ease-in-out;
+}
+
+.glyph.work i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.glyph.work i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes glyph-work {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyph.work i {
+    animation: none;
+  }
+}
+
+/* Grow rows slide when their state changes, and only then. */
+.rows.nested.sorting > li {
+  will-change: transform;
+}

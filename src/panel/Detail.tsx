@@ -5,13 +5,16 @@ import type { Nav, OutId } from '../sim/engine'
 import { CLASH, FARM, LESSON_TRACE, MISSING, BUILDERS } from '../sim/scenario'
 import { DOCS } from '../sim/docs'
 import { KIND_NAME } from '../sim/library'
-import { CHECKS, COMMIT_STATS, COMMITS, GATE_DETAIL, GATE_ORDER, GATES, GUIDE, OUTPUT, TASK_GATES, type GateId, type GateState } from '../sim/review'
+import { CHECKS, COMMIT_STATS, COMMITS, GATE_DETAIL, GATE_ORDER, GATES, OUTPUT, TASK_GATES, type GateId, type GateState } from '../sim/review'
 import type { LogEntry, RoleId, Task } from '../sim/types'
 import { fmtK, fmtT, Portrait, useEngine } from '../ui'
+import { GUIDE_STEPS } from '../sim/ship'
+import './ship.css'
 import { AskOptions, PROV, ReplyBox } from './Cards'
 import { Context, LibraryView, LibView, PickView } from './Library'
 import { Crop, Mark, Row } from './Overview'
 import { settingsName, settingsStatus, SettingsView } from './Settings'
+import { staffName } from './Templates'
 
 export interface ViewSpec {
   title: string
@@ -38,7 +41,7 @@ const OUT_NAME: Record<string, string> = { pr: `Pull request #${OUTPUT.pr}`, gui
 export function navName(n: Nav, e: ReturnType<typeof useEngine>): string {
   switch (n.kind) {
     case 'step':
-      return { brief: 'Your brief', clarify: 'Your answers', plan: 'The plan', grow: 'Grow', harvest: 'Harvest' }[n.id]
+      return { plant: 'Plant', brief: 'Your brief', clarify: 'Your answers', plan: 'The plan', grow: 'Grow', harvest: 'Harvest', ship: 'Harvest' }[n.id]
     case 'task':
       return e.task(n.id).name
     case 'log':
@@ -108,6 +111,17 @@ export function viewFor(n: Nav, e: ReturnType<typeof useEngine>): ViewSpec {
 
 function StepView({ id }: { id: string }) {
   const e = useEngine()
+  // Plant's review: the brief, your answers and the approved plan, read-only.
+  if (id === 'plant')
+    return (
+      <>
+        <StepView id="brief" />
+        <h4 className="group">Your answers</h4>
+        <StepView id="clarify" />
+        <h4 className="group">The plan</h4>
+        <StepView id="plan" />
+      </>
+    )
   if (id === 'brief') {
     const names = e.attachments.filter((a) => a.selected).map((a) => a.name)
     const group = (kind: 'file' | 'skill' | 'tool', label: string) => {
@@ -132,6 +146,13 @@ function StepView({ id }: { id: string }) {
       <>
         <Section title="Goal">
           <p>{e.goal}</p>
+        </Section>
+        <Section title="Crew">
+          <ul className="rows">
+            <li>
+              <Row label={e.team.name} sub={e.team.line} end={String(e.team.members.length)} onClick={() => e.go({ kind: 'settings', id: `templates:team:${e.crew}` })} />
+            </li>
+          </ul>
         </Section>
         {group('file', 'Files the crew may read')}
         {group('skill', 'Skills')}
@@ -161,27 +182,55 @@ function StepView({ id }: { id: string }) {
           Approved at {fmtT(approval?.t ?? 0)}. {approval?.reason ? `${approval.reason}.` : 'No changes.'}
         </p>
         {replan && <p className="quiet">Changed at {fmtT(replan.t)} by the re-plan: {e.task(MISSING.taskId).name} now reads {MISSING.file}.</p>}
+        <p className="quiet">Staffed from {e.team.name}.</p>
         <ul className="rows">
           {e.tasks.map((t) => (
             <li key={t.id}>
-              <Row mark={<Crop t={t} />} label={t.name} sub={`${e.farmhands[t.assignee].role}, ${t.signposts.length} files, skills and tools`} end={fmtK(t.budget)} onClick={() => e.go({ kind: 'task', id: t.id })} taskId={t.id} />
+              <Row mark={<Crop t={t} />} label={t.name} sub={`${staffName(e.team, t.assignee, e.farmhands[t.assignee].role)}, ${t.signposts.length} files, skills and tools`} end={fmtK(t.budget)} onClick={() => e.go({ kind: 'task', id: t.id })} taskId={t.id} />
             </li>
           ))}
         </ul>
       </>
     )
   }
+  if (id === 'harvest' && e.sendState === 'sent')
+    return (
+      <>
+        <p className="quiet">Every gate passed, you looked at {CHECKS.length} things and approved, then merged into {OUTPUT.base}.</p>
+        <ul className="rows">
+          <li>
+            <Row mark={<span className="kind pr">PR</span>} label={`Pull request #${OUTPUT.pr}`} sub={`Merged into ${OUTPUT.base}`} onClick={() => e.go({ kind: 'out', id: 'pr' })} />
+          </li>
+          {GATE_ORDER.map((g) => (
+            <li key={g}>
+              <Row mark={<GateMark s="pass" />} label={GATES[g].name} sub={e.harvestGates[g].text} end="Passed" tone="done" onClick={() => e.go({ kind: 'out', id: g })} />
+            </li>
+          ))}
+        </ul>
+      </>
+    )
+  // Grow's review: every task with its state, then the activity and what the crew decided alone.
   return (
-    <ul className="rows">
-      {e.tasks.map((t) => (
-        <li key={t.id}>
-          <Row mark={<Crop t={t} />} label={t.name} sub={e.farmhands[t.assignee].role} end="Done" tone="done" onClick={() => e.go({ kind: 'task', id: t.id })} taskId={t.id} />
+    <>
+      <ul className="rows">
+        {e.growRows().map(({ t }) => {
+          const st = e.taskStatus(t)
+          return (
+            <li key={t.id}>
+              <Row mark={<Crop t={t} />} label={t.name} sub={e.farmhands[t.assignee].role} end={st.text} tone={st.tone} onClick={() => e.go({ kind: 'task', id: t.id })} taskId={t.id} testId={`task-${t.id}`} />
+            </li>
+          )
+        })}
+      </ul>
+      <ul className="rows">
+        <li>
+          <Row label="All activity" end={String(e.log.length)} onClick={() => e.go({ kind: 'log', tab: 'all' })} testId="filter-all" />
         </li>
-      ))}
-      <li>
-        <Row label="All activity" end={String(e.log.length)} onClick={() => e.go({ kind: 'log', tab: 'all' })} />
-      </li>
-    </ul>
+        <li>
+          <Row label="Decided without you" end={String(e.autoDecided.length)} onClick={() => e.go({ kind: 'log', tab: 'auto' })} testId="filter-auto" />
+        </li>
+      </ul>
+    </>
   )
 }
 
@@ -672,10 +721,23 @@ function PrView() {
 }
 
 function GuideView() {
+  const e = useEngine()
+  // While the redirect URI ask is open, its step is the one in focus.
+  const focus = e.asks.some((a) => a.id === 'redirect')
   return (
     <div className="doc">
       <b>Google sign-in</b>
-      <p>{GUIDE}</p>
+      <p className="soft">Written by Docs. Steps 2 and 3 need a person who can sign in to the Google console.</p>
+      <ol className="guide-steps">
+        {GUIDE_STEPS.map((s, i) => (
+          <li key={s.id} id={`guide-${s.id}`} className={focus && s.id === 'redirect' ? 'focus' : ''} data-testid={`guide-${s.id}`}>
+            <b>
+              {i + 1}. {s.text}
+            </b>
+            <span>{s.who}</span>
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }

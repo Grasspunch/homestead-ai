@@ -23,8 +23,17 @@ export interface Settings {
   gates: Record<GateId, { run: string; required: boolean }>
   sandbox: { where: 'worktree' | 'container' | 'ci'; branch: string; network: string[]; secrets: string[] }
   ask: Record<string, boolean>
-  notify: { slack: boolean; email: boolean }
+  notify: { slack: boolean; email: boolean; chime: boolean }
   ci_checks: boolean
+  deploy: {
+    pipeline: string
+    workflow: string
+    environments: { name: string; url: string; gate: string }[]
+    canary_pct: string
+    canary_min: string
+    checks: { name: string; threshold: string; source: string }[]
+    auto_rollback: boolean
+  }
 }
 
 export function defaultSettings(): Settings {
@@ -52,8 +61,24 @@ export function defaultSettings(): Settings {
       secrets: ['GOOGLE_CLIENT_ID (staging)', 'GOOGLE_CLIENT_SECRET (staging)'],
     },
     ask: { gate_fails_twice: true, needs_new_permission: true, other_team: true, spend_80: true, never_for_style: true },
-    notify: { slack: true, email: false },
+    notify: { slack: true, email: false, chime: true },
     ci_checks: true,
+    deploy: {
+      pipeline: 'GitHub Actions',
+      workflow: '.github/workflows/main.yml',
+      environments: [
+        { name: 'staging', url: 'staging.web-app.dev', gate: 'Deploys on every merge to main' },
+        { name: 'production', url: 'app.example.com', gate: 'Deploys only after you approve' },
+      ],
+      canary_pct: '5',
+      canary_min: '10',
+      checks: [
+        { name: 'Google sign-in success', threshold: 'At least 99%', source: 'Sentry' },
+        { name: '5xx rate', threshold: 'Under 0.5%', source: 'Sentry' },
+        { name: 'p95 latency', threshold: 'Under 800 ms', source: 'Sentry' },
+      ],
+      auto_rollback: true,
+    },
   }
 }
 
@@ -91,6 +116,9 @@ export function toml(s: Settings, ctx: TomlContext): string {
   L.push('', '[sandbox]', `where = ${q(s.sandbox.where)}`, `branch = ${q(s.sandbox.branch)}`, `network = [${s.sandbox.network.map(q).join(', ')}]`, '')
   for (const t of ctx.tools) L.push(`[mcp.${t.name.toLowerCase()}]`, `allow = [${t.access.filter((a) => a.on).map((a) => q(a.label.toLowerCase())).join(', ')}]`, '')
   L.push('[ask]', ...Object.entries(s.ask).map(([k, v]) => `${k} = ${v}`), '')
+  const d = s.deploy
+  L.push('[deploy]', `pipeline = ${q(d.pipeline)}`, `workflow = ${q(d.workflow)}`, `environments = [${d.environments.map((x) => q(x.name)).join(', ')}]`, `canary = { percent = ${d.canary_pct}, minutes = ${d.canary_min} }`, `auto_rollback = ${d.auto_rollback}`, '')
+  for (const c of d.checks) L.push(`[[deploy.check]]`, `name = ${q(c.name)}`, `threshold = ${q(c.threshold)}`, `source = ${q(c.source.toLowerCase())}`, '')
   L.push('[notify]', ...Object.entries(s.notify).map(([k, v]) => `${k} = ${v}`))
   return L.join('\n')
 }

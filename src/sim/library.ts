@@ -105,7 +105,7 @@ export const LIBRARY: Record<string, LibItem> = {
   },
   Sentry: {
     kind: 'tool',
-    what: 'Read errors the web app hits in production',
+    what: 'Read errors and health checks for the web app in production',
     owner: 'MCP server, read only',
     updated: '',
     tokens: 1_200,
@@ -113,6 +113,18 @@ export const LIBRARY: Record<string, LibItem> = {
     access: [
       { label: 'Read issues and stack traces', kind: 'read', on: true },
       { label: 'Resolve or mute issues', kind: 'write', on: false },
+    ],
+  },
+  'GitHub Actions': {
+    kind: 'tool',
+    what: 'Read workflow runs and logs on main',
+    owner: 'MCP server, read only',
+    updated: '',
+    tokens: 900,
+    preview: 'list_workflow_runs\nget_workflow_run\nget_job_logs',
+    access: [
+      { label: 'Read workflow runs and job logs', kind: 'read', on: true },
+      { label: 'Re-run or cancel a workflow', kind: 'write', on: false },
     ],
   },
 }

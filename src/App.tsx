@@ -3,6 +3,7 @@ import './styles.css'
 import { useEffect, useRef } from 'react'
 import { MapView } from './map/MapView'
 import { Panel } from './panel/Panel'
+import { AgentTree } from './panel/AgentTree'
 import { BEATS, engine } from './sim/engine'
 import { FARM } from './sim/scenario'
 import { Kbd, useEngine } from './ui'
@@ -14,8 +15,8 @@ function Hud() {
   return (
     <div className="hud">
       <div className="crumbs" role="group" aria-label="Map view">
-        <button aria-pressed={e.view === 'valley'} onClick={() => e.setView('valley')} data-testid="view-valley">
-          Valley
+        <button aria-pressed={e.view === 'valley'} onClick={() => e.setView('valley')} data-testid="view-valley" title="Every project in your organisation (V)">
+          Region
         </button>
         <span className="sep">/</span>
         <button aria-pressed={e.view === 'farm'} onClick={() => e.setView('farm')} data-testid="view-farm">
@@ -51,15 +52,19 @@ function Toasts() {
 }
 
 const GLOSSARY: [string, string][] = [
-  ['Farm', 'A project, named after it'],
+  ['Region', 'Your organisation, one valley per project'],
+  ['Valley', 'A project, named after it'],
+  ['Field', 'One agent: its farmhand and its plots'],
   ['Head farmer', 'Plans the work and asks you questions'],
-  ['Farmhand', 'An agent with one role'],
+  ['Farmhand', 'The agent at work on its field'],
   ['Plot and crop', 'A task, and how far along it is'],
   ['Gate', 'A check a crop must pass to ripen'],
   ['Energy', 'Tokens the crew spends'],
   ['Pest', 'A failing test the crew fixes alone'],
   ['Crow', 'A clash with another team’s project'],
-  ['Harvest', 'Your review before anything merges'],
+  ['Plant', 'Your goal, the crew, and the plan you approve'],
+  ['Grow', 'The crew works and the gates run'],
+  ['Harvest', 'Your review, the merge and the deploy'],
 ]
 
 function Help() {
@@ -71,9 +76,10 @@ function Help() {
     ['1 / 2', 'Pick an option'],
     ['R', 'Reply'],
     ['P', 'Pause everything'],
-    ['V', 'Valley view'],
+    ['V', 'Region view, and back'],
     ['Esc', 'Back'],
-    ['Tab', 'Open or close the panel'],
+    ['Tab', 'Agent tree'],
+    ['B', 'Open or close the panel'],
     ['Drag', 'Move around the map'],
   ]
   return (
@@ -135,6 +141,8 @@ function onKey(ev: KeyboardEvent) {
     } else if (ev.key === 'Escape') e.skipIntro()
     return
   }
+  // The agent tree handles its own keys while it is open.
+  if (e.treeOpen) return
   const el = ev.target as HTMLElement
   const typing = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT'
   const mod = ev.metaKey || ev.ctrlKey
@@ -152,7 +160,7 @@ function onKey(ev: KeyboardEvent) {
   if (mod || ev.altKey) return
   const k = ev.key.toLowerCase()
   const ask = e.activeAsk
-  const growing = e.phase === 'grow' || e.phase === 'harvest'
+  const growing = e.phase === 'grow' || e.phase === 'harvest' || e.phase === 'ship'
 
   if (k === 'escape') {
     if (e.showHelp) e.showHelp = false
@@ -165,6 +173,10 @@ function onKey(ev: KeyboardEvent) {
   }
   if (k === 'tab' && !ev.shiftKey && (!el || el === document.body || el.closest('.map-col'))) {
     ev.preventDefault()
+    e.setTree(true)
+    return
+  }
+  if (k === 'b') {
     e.setPanel(!e.panelOpen)
     return
   }
@@ -181,12 +193,14 @@ function onKey(ev: KeyboardEvent) {
     else if (e.phase === 'plan') e.approvePlan()
     else if (e.phase === 'harvest' && e.harvestStage === 'map') e.skipHarvestMap()
     else if (e.phase === 'harvest' && e.canApprove && !e.approved) e.approveHarvest()
+    else if (e.phase === 'harvest' && e.approved && e.sendState !== 'sent') e.merge()
     else if (e.trace) e.saveSeed()
     else if (ask?.status === 'confirming') e.answer(ask.id, 'approve')
     else if (ask) {
       const rec = ask.options.find((o) => o.recommended) ?? ask.options[0]
       e.answer(ask.id, rec.value)
     } else if (e.replan?.status === 'open') e.applyReplan()
+    else if (e.phase === 'ship' && e.shipStage === 'held') e.requestDeploy()
     else if (e.harvestReady && e.phase === 'grow') e.openHarvest()
     return
   }
@@ -238,6 +252,7 @@ export function App() {
       </main>
       <Panel />
       <Help />
+      <AgentTree />
     </div>
   )
 }
