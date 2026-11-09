@@ -80,8 +80,14 @@ export function Clarify() {
           <h3>{q.q}</h3>
           <p>{q.why}</p>
           <div className="opts">
-            {q.options.map((o) => (
-              <button key={o} className="opt" aria-pressed={e.clarifyAnswers[q.id] === o} onClick={() => e.answerClarify(q.id, o)}>
+            {q.options.map((o, j) => (
+              <button
+                key={o}
+                className={`opt ${j === 0 && !e.clarifyAnswers[q.id] ? 'assumed' : ''}`}
+                title={j === 0 && !e.clarifyAnswers[q.id] ? 'Assumed if you skip' : undefined}
+                aria-pressed={e.clarifyAnswers[q.id] === o}
+                onClick={() => e.answerClarify(q.id, o)}
+              >
                 {o}
               </button>
             ))}

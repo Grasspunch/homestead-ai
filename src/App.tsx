@@ -45,7 +45,7 @@ function Hud() {
               <b>{e.simSteps}</b>
               <em>steps</em>
             </div>
-            <div className="meter" data-testid="meter-needed">
+            <div className="meter needed" data-testid="meter-needed">
               <span>Needed you</span>
               <b>{e.neededYou}</b>
               <em>times</em>
@@ -177,7 +177,7 @@ function onKey(ev: KeyboardEvent) {
     return
   }
   if (k === 'enter') {
-    if (el.tagName === 'BUTTON' || el.tagName === 'SUMMARY') return // the focused control handles it
+    if (el.tagName === 'BUTTON' || el.tagName === 'SUMMARY' || el.getAttribute('role') === 'button') return // the focused control handles it
     ev.preventDefault()
     if (e.phase === 'brief') e.submitBrief()
     else if (e.phase === 'clarify') e.finishClarify()

@@ -206,7 +206,16 @@ export function Crew() {
           else if (f.status === 'walking') status = 'Walking to a plot'
         }
         return (
-          <div key={r} className={`hand ${e.selected === r ? 'sel' : ''} ${f.paused ? 'paused' : ''}`} style={{ ['--c' as string]: f.color }} onClick={() => e.select(r)} role="button" tabIndex={0}>
+          <div key={r} className={`hand ${e.selected === r ? 'sel' : ''} ${f.paused ? 'paused' : ''}`} style={{ ['--c' as string]: f.color }} onClick={() => e.select(r)}
+            onKeyDown={(ev) => {
+              if (ev.target !== ev.currentTarget || (ev.key !== 'Enter' && ev.key !== ' ')) return
+              ev.preventDefault()
+              e.select(r)
+            }}
+            role="button"
+            aria-pressed={e.selected === r}
+            tabIndex={0}
+          >
             <div className="role">
               {f.role} <span>{f.name}</span>
             </div>

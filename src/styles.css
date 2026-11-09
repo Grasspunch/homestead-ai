@@ -205,6 +205,17 @@ button {
   min-width: 132px;
 }
 
+/* The count the whole product is about leads the HUD. */
+.meter.needed {
+  background: var(--ink);
+  color: var(--parchment);
+}
+
+.meter.needed span,
+.meter.needed em {
+  color: var(--parchment-deep);
+}
+
 .meter b small {
   font-weight: 400;
   color: var(--ink-faint);
@@ -231,7 +242,7 @@ button {
   display: block;
   height: 100%;
   background: var(--sprout);
-  transition: width 0.3s;
+  transition: width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .bar i.warn {
@@ -524,9 +535,31 @@ button {
   transition: transform 0.06s, box-shadow 0.06s;
 }
 
+.btn:hover:not(:disabled) {
+  background: var(--parchment-deep);
+}
+
 .btn:active {
   transform: translateY(2px);
   box-shadow: 0 0 0 var(--ink);
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--sprout-deep);
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: var(--failure);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  border-color: var(--ink-soft);
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--sprout);
+  outline-offset: 2px;
 }
 
 .btn.primary {
@@ -558,6 +591,10 @@ button {
 .btn.rec {
   outline: 3px solid rgba(79, 143, 63, 0.35);
   outline-offset: 1px;
+}
+
+.btn.rec:focus-visible {
+  outline-color: var(--sprout);
 }
 
 kbd {
@@ -770,6 +807,15 @@ textarea.goal {
   font-size: 13px;
 }
 
+.opt:hover {
+  border-color: var(--ink-soft);
+}
+
+.opt.assumed {
+  border-style: dashed;
+  border-color: var(--ink-soft);
+}
+
 .opt[aria-pressed='true'] {
   background: var(--ink);
   border-color: var(--ink);
@@ -918,6 +964,14 @@ textarea.goal {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.hand {
+  cursor: pointer;
+}
+
+.hand:hover {
+  border-color: var(--ink-soft);
 }
 
 .hand.sel {
@@ -1169,7 +1223,7 @@ textarea.goal {
 }
 
 .chip button:hover {
-  color: var(--danger, #b03a2e);
+  color: var(--irreversible);
 }
 
 .chips select {
@@ -1282,18 +1336,18 @@ details.why pre {
 }
 
 .diff .plus {
-  background: #e6f2dc;
-  color: #2c5a22;
+  background: var(--sprout-wash);
+  color: var(--sprout-deep);
 }
 
 .diff .mod {
-  background: #fdf3dc;
-  color: #6f4c0e;
+  background: var(--harvest-wash);
+  color: var(--cost);
 }
 
 .diff .minus {
-  background: #f9e0dc;
-  color: #7a271c;
+  background: var(--irreversible-wash);
+  color: var(--irreversible);
 }
 
 /* trace */
