@@ -1,0 +1,933 @@
+/* Homestead components. Built only from tokens.css. */
+
+.hs-sprite,
+.hs-icon,
+.hs-portrait {
+  display: inline-block;
+  flex: none;
+  image-rendering: pixelated;
+  vertical-align: middle;
+}
+
+.hs-icon {
+  background-image: url('/ui/emoji.png');
+}
+
+/* ---------- Button ---------- */
+
+.hs-btn {
+  --b: var(--ink);
+  --bg: var(--sheet);
+  --fg: var(--ink);
+  --bg-hover: var(--sheet-hover);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  height: var(--control);
+  padding: 0 var(--s-4);
+  border: 2px solid var(--b);
+  border-radius: var(--r-2);
+  background: var(--bg);
+  color: var(--fg);
+  font: var(--label);
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--b);
+  transition:
+    transform var(--t-press) var(--ease),
+    box-shadow var(--t-press) var(--ease),
+    background-color var(--t-quick) var(--ease);
+}
+
+.hs-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.hs-btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 var(--b);
+}
+
+.hs-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 2px 0 var(--b), var(--focus);
+}
+
+.hs-btn.sprout {
+  --b: var(--sprout-deep);
+  --bg: var(--sprout);
+  --fg: var(--on-sprout);
+  --bg-hover: var(--sprout-strong);
+}
+
+.hs-btn.out {
+  --b: var(--out-deep);
+  --bg: var(--out);
+  --fg: var(--on-out);
+  --bg-hover: var(--out-strong);
+}
+
+.hs-btn.quiet {
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--ink-2);
+  padding: 0 var(--s-3);
+}
+
+.hs-btn.quiet:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--sheet-hover);
+}
+
+.hs-btn.quiet:active:not(:disabled) {
+  transform: none;
+  background: var(--sheet-press);
+}
+
+.hs-btn.sm {
+  height: var(--control-sm);
+  padding: 0 var(--s-3);
+  font: var(--label);
+  font-size: 13px;
+}
+
+/* Disabled is a flat grey shape, never a faded copy: text stays at --ink-3. */
+.hs-btn:disabled {
+  --b: var(--rule-strong);
+  --bg: var(--sheet-sunk);
+  --fg: var(--ink-3);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.hs-btn[aria-busy='true'] {
+  cursor: progress;
+}
+
+.hs-btn .hs-kbd {
+  margin-left: var(--s-1);
+}
+
+.hs-btn.sprout .hs-kbd,
+.hs-btn.out .hs-kbd {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.55);
+  color: var(--sheet);
+}
+
+/* ---------- Seed loader ---------- */
+
+.hs-seed {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.hs-seed i {
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+  animation: hs-seed 900ms steps(1) infinite;
+}
+
+.hs-seed i:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.hs-seed i:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes hs-seed {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-3px);
+  }
+}
+
+/* ---------- Keycap ---------- */
+
+.hs-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--rule-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--r-1);
+  background: var(--sheet);
+  color: var(--ink-2);
+  font: var(--mono);
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* ---------- Checkbox ---------- */
+
+.hs-check {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  min-height: var(--hit);
+  padding: var(--s-2) 0;
+  cursor: pointer;
+}
+
+.hs-check input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.hs-check-box {
+  position: relative;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -1px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-1);
+  background: var(--sheet);
+}
+
+/* The check is drawn over the box and spills out of its top right, like a mark made by hand. */
+.hs-check-box > * {
+  position: absolute;
+  left: 1px;
+  top: -8px;
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity var(--t-quick) var(--ease-enter),
+    transform var(--t-quick) var(--ease-enter);
+}
+
+.hs-check input:checked + .hs-check-box > * {
+  opacity: 1;
+  transform: none;
+}
+
+.hs-check-fallback {
+  width: 16px;
+  height: 16px;
+  background: var(--sprout);
+}
+
+.hs-check:hover .hs-check-box {
+  background: var(--sheet-hover);
+}
+
+.hs-check input:focus-visible + .hs-check-box {
+  box-shadow: var(--focus);
+}
+
+.hs-check input:disabled + .hs-check-box {
+  border-color: var(--rule-strong);
+  background: var(--sheet-sunk);
+}
+
+.hs-check:has(input:disabled) {
+  cursor: not-allowed;
+  color: var(--ink-3);
+}
+
+.hs-check-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.hs-check-text small {
+  font: var(--caption);
+  color: var(--ink-3);
+}
+
+/* ---------- Toggle ---------- */
+
+.hs-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  min-height: var(--hit);
+}
+
+.hs-toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-2);
+  background: transparent;
+  cursor: pointer;
+}
+
+.hs-toggle:not(.pixel) i {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: var(--r-1);
+  background: var(--ink-3);
+}
+
+.hs-toggle:not(.pixel) i::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--sheet);
+  transition: transform var(--t-quick) var(--ease);
+}
+
+.hs-toggle:not(.pixel)[aria-checked='true'] i {
+  background: var(--sprout);
+}
+
+.hs-toggle:not(.pixel)[aria-checked='true'] i::after {
+  transform: translateX(20px);
+}
+
+.hs-toggle:focus-visible {
+  box-shadow: var(--focus);
+}
+
+.hs-toggle:disabled {
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+/* ---------- Text fields ---------- */
+
+.hs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hs-field > label {
+  font: var(--label);
+}
+
+.hs-input {
+  width: 100%;
+  height: var(--control);
+  padding: 0 var(--s-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-2);
+  background: var(--sheet-sunk);
+  color: var(--ink);
+  font: var(--body);
+  transition:
+    background-color var(--t-quick) var(--ease),
+    border-color var(--t-quick) var(--ease);
+}
+
+.hs-input::placeholder {
+  color: var(--ink-3);
+}
+
+.hs-input:hover {
+  border-color: var(--rule-strong);
+}
+
+.hs-input:focus {
+  outline: none;
+  background: var(--sheet);
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+.hs-textarea {
+  height: auto;
+  min-height: 96px;
+  padding: 10px var(--s-3);
+  resize: vertical;
+}
+
+.hs-field-hint {
+  margin: 0;
+  font: var(--caption);
+  color: var(--ink-3);
+}
+
+.hs-field.has-error .hs-input {
+  border-color: var(--fail);
+  box-shadow: 0 0 0 1px var(--fail);
+}
+
+.hs-field-error {
+  margin: 0;
+  font: var(--caption);
+  font-weight: 700;
+  color: var(--fail);
+}
+
+/* ---------- Choice (ask options) ---------- */
+
+.hs-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-3);
+  background: var(--sheet);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--t-quick) var(--ease),
+    border-color var(--t-quick) var(--ease);
+}
+
+.hs-choice > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hs-choice b {
+  font: var(--label);
+}
+
+.hs-choice small {
+  font: var(--caption);
+  color: var(--ink-2);
+}
+
+.hs-choice .hs-kbd {
+  margin-top: 1px;
+}
+
+.hs-choice:hover {
+  background: var(--sheet-hover);
+  border-color: var(--ink-3);
+}
+
+.hs-choice.assumed {
+  border-style: dashed;
+  border-color: var(--ink-3);
+}
+
+.hs-choice[aria-pressed='true'] {
+  border: 1px solid var(--sprout);
+  background: var(--sprout-soft);
+  box-shadow: inset 0 0 0 1px var(--sprout);
+}
+
+/* ---------- Energy ticks ---------- */
+
+.hs-energy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.hs-energy-ticks {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.hs-energy-ticks > i {
+  width: 6px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--ink-3);
+}
+
+.hs-energy-ticks > i.on {
+  background: var(--sprout);
+}
+
+.hs-energy b {
+  font: var(--label);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Progress ---------- */
+
+.hs-progress {
+  display: block;
+  height: 6px;
+  background: var(--sheet-press);
+  overflow: hidden;
+}
+
+.hs-progress i {
+  display: block;
+  height: 100%;
+  background: var(--sprout);
+  transition: width var(--t-base) var(--ease);
+}
+
+.hs-progress.fail i {
+  background: var(--fail);
+}
+
+/* ---------- Step bar ---------- */
+
+.hs-steps {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hs-steps li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.hs-steps li + li::before {
+  content: '';
+  width: 24px;
+  height: 2px;
+  background: var(--rule-strong);
+}
+
+.hs-steps li.done + li::before {
+  background: var(--sprout);
+}
+
+.hs-steps span,
+.hs-steps button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: var(--control-sm);
+  padding: 0 var(--s-2) 0 var(--s-1);
+  border: 0;
+  border-radius: var(--r-2);
+  background: transparent;
+  font: var(--label);
+  color: var(--ink-3);
+}
+
+.hs-steps button {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+
+.hs-steps button:hover {
+  background: var(--sheet-hover);
+  color: var(--ink);
+}
+
+.hs-steps i {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--rule-strong);
+  border-radius: var(--r-1);
+  font: var(--caption);
+  font-weight: 700;
+  font-style: normal;
+}
+
+.hs-steps .done i {
+  border-color: var(--sprout);
+  background: var(--sprout);
+  color: var(--on-sprout);
+}
+
+.hs-steps .now span {
+  color: var(--ink);
+}
+
+.hs-steps .now i {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+/* ---------- Ruled rows ---------- */
+
+.hs-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hs-row {
+  border-top: 1px solid var(--rule);
+}
+
+.hs-row:last-child {
+  border-bottom: 1px solid var(--rule);
+}
+
+.hs-row > div,
+.hs-row > button {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--s-2) var(--s-2);
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.hs-row > button {
+  cursor: pointer;
+  transition: background-color var(--t-quick) var(--ease);
+}
+
+.hs-row > button:hover {
+  background: var(--sheet-hover);
+}
+
+.hs-row[aria-selected='true'] > * {
+  background: var(--sheet-sunk);
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+
+.hs-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hs-row-main b {
+  font: var(--label);
+}
+
+.hs-row-main small {
+  font: var(--caption);
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hs-row-trail {
+  flex: none;
+  color: var(--ink-2);
+  font: var(--caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.hs-portrait {
+  border-radius: var(--r-1);
+  background: var(--sky);
+}
+
+.hs-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font: var(--label);
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.hs-state.needs {
+  color: var(--ink);
+}
+
+.hs-state.working {
+  color: var(--ink-2);
+}
+
+/* ---------- Reason label ---------- */
+
+.hs-reason {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  font: var(--label);
+  color: var(--ink);
+}
+
+.hs-reason.fail {
+  color: var(--fail);
+}
+
+.hs-reason.out {
+  color: var(--out);
+}
+
+/* ---------- Ask card: the one raised object ---------- */
+
+.hs-ask {
+  padding: var(--s-4);
+  border: var(--raise-border);
+  border-radius: var(--r-3);
+  background: var(--sheet);
+  box-shadow: var(--raise-shadow);
+}
+
+.hs-ask header {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: -4px 0 var(--s-2) -4px;
+}
+
+.hs-ask-who {
+  font: var(--caption);
+  color: var(--ink-2);
+}
+
+.hs-ask-x {
+  margin-left: auto;
+  height: 28px;
+  padding: 0 var(--s-2);
+  border: 0;
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--caption);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hs-ask-x:hover {
+  background: var(--sheet-hover);
+  color: var(--ink);
+}
+
+.hs-ask h3 {
+  margin: 0 0 var(--s-4);
+  font: var(--title);
+  font-size: 17px;
+  line-height: 24px;
+  text-wrap: pretty;
+}
+
+.hs-ask-opts {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.hs-why {
+  margin-top: var(--s-3);
+  border-top: 1px solid var(--rule);
+  padding-top: var(--s-2);
+}
+
+.hs-why summary {
+  font: var(--label);
+  font-size: 13px;
+  color: var(--ink-2);
+  cursor: pointer;
+  list-style: none;
+  padding: 6px 0;
+}
+
+.hs-why summary::-webkit-details-marker {
+  display: none;
+}
+
+.hs-why summary::before {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 8px;
+  border: 4px solid transparent;
+  border-left: 6px solid currentColor;
+  border-right: 0;
+  transition: transform var(--t-quick) var(--ease);
+}
+
+.hs-why[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.hs-why > div {
+  color: var(--ink-2);
+  padding: var(--s-1) 0 var(--s-1) 14px;
+}
+
+/* ---------- Tooltip ---------- */
+
+.hs-tip {
+  position: relative;
+  display: inline-flex;
+  border-bottom: 1px dotted var(--ink-3);
+  cursor: help;
+}
+
+.hs-tip [role='tooltip'] {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  translate: -50% 0;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px var(--s-2);
+  border-radius: var(--r-1);
+  background: var(--ink);
+  color: var(--sheet);
+  font: var(--caption);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition:
+    opacity var(--t-quick) var(--ease),
+    transform var(--t-quick) var(--ease);
+  z-index: 10;
+}
+
+.hs-tip:hover [role='tooltip'],
+.hs-tip:focus-visible [role='tooltip'] {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------- Field glyph: a light plate with stepped pixel corners and a tail ---------- */
+
+.hs-glyph {
+  --step: var(--px);
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 var(--s-1);
+  background: var(--plate);
+  clip-path: polygon(
+    0 var(--step), var(--step) var(--step), var(--step) 0,
+    calc(100% - var(--step)) 0, calc(100% - var(--step)) var(--step), 100% var(--step),
+    100% calc(100% - var(--step) - 6px), calc(100% - var(--step)) calc(100% - var(--step) - 6px), calc(100% - var(--step)) calc(100% - 6px),
+    calc(50% + 6px) calc(100% - 6px), 50% 100%, calc(50% - 6px) calc(100% - 6px),
+    var(--step) calc(100% - 6px), var(--step) calc(100% - var(--step) - 6px), 0 calc(100% - var(--step) - 6px)
+  );
+  padding-bottom: 6px;
+  image-rendering: pixelated;
+}
+
+.hs-glyph.fail {
+  background: var(--fail-soft);
+}
+
+.hs-glyph.out {
+  background: var(--out-soft);
+}
+
+.hs-glyph.pulse {
+  animation: hs-pulse var(--t-slow) var(--ease-enter) 1;
+}
+
+@keyframes hs-pulse {
+  0% {
+    transform: scale(0.7);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.hs-glyph-work {
+  display: inline-flex;
+  gap: var(--px);
+}
+
+.hs-glyph-work i {
+  width: calc(var(--px) * 2);
+  height: calc(var(--px) * 2);
+  background: var(--sprout);
+  animation: hs-seed 900ms steps(1) infinite;
+}
+
+.hs-glyph-work i:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.hs-glyph-work i:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+.hs-fieldline {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--r-1);
+  background: var(--plate);
+  color: var(--ink-2);
+  font: var(--caption);
+  white-space: nowrap;
+}
+
+.hs-fieldline b {
+  color: var(--ink);
+}
+
+.hs-hand {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.hs-hand-sprite {
+  margin: -36px 0 -30px;
+}
+
+.hs-hand.dim {
+  opacity: 0.6;
+}
+
+.hs-plot {
+  position: relative;
+  display: inline-block;
+  image-rendering: pixelated;
+}
+
+.hs-plot-sign {
+  position: absolute;
+  left: -6px;
+  top: -30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.hs-plot-bar {
+  display: block;
+  width: 42px;
+  height: 9px;
+  padding: 2px;
+  background: var(--plate);
+}
+
+.hs-plot-bar i {
+  display: block;
+  height: 100%;
+  background: var(--sprout);
+}
+
+.hs-plot-crate {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hs-seed i,
+  .hs-glyph-work i,
+  .hs-glyph.pulse {
+    animation: none;
+  }
+}

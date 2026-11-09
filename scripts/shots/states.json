@@ -1,0 +1,73 @@
+{
+  "_doc": "States that scripts/shots.mjs screenshots. kind ref: compared by npm run shots:check against shots/ref/. kind media: remade by npm run shots, never compared. clock: run the page on Playwright's fake clock (the map only moves when a wait or until advances it). Actions run in order: ready (a JS expression, waited for in real time without moving the clock; use it for loading), click, hover, key, fill [selector, text], scroll, wait (ms), waitFor (selector), until (a JS expression, time advances every 'every' ms up to 'max'). fitHeight grows the window to the scroll height of that element. crop [x, y, w, h] or element (a selector) narrows the picture.",
+  "defaults": { "viewport": [1280, 800] },
+  "states": [
+    { "id": "lib-overview", "kind": "ref", "url": "/design.html#/", "fitHeight": ".ds-main" },
+    { "id": "lib-color", "kind": "ref", "url": "/design.html#/color", "fitHeight": ".ds-main" },
+    { "id": "lib-type", "kind": "ref", "url": "/design.html#/type", "fitHeight": ".ds-main" },
+    { "id": "lib-components", "kind": "ref", "url": "/design.html#/components", "fitHeight": ".ds-main" },
+    { "id": "lib-glyphs", "kind": "ref", "url": "/design.html#/glyphs", "fitHeight": ".ds-main" },
+    { "id": "lib-art-used", "kind": "ref", "url": "/design.html#/art/used", "fitHeight": ".ds-main" },
+    { "id": "lib-workflow", "kind": "ref", "url": "/design.html#/workflow", "fitHeight": ".ds-main" },
+
+    {
+      "id": "app-intro",
+      "kind": "media",
+      "url": "/?replay",
+      "clock": true,
+      "actions": [{ "ready": "window.engine.ready" }, { "wait": 2500 }]
+    },
+    {
+      "id": "app-plant-brief",
+      "kind": "media",
+      "url": "/?replay",
+      "clock": true,
+      "actions": [{ "ready": "window.engine.ready" }, { "key": "Escape" }, { "wait": 2500 }]
+    },
+    {
+      "id": "app-grow-ask",
+      "kind": "media",
+      "url": "/?replay",
+      "clock": true,
+      "actions": [
+        { "ready": "window.engine.ready" },
+        { "key": "Escape" },
+        { "wait": 1000 },
+        { "click": "[data-testid=send-brief]" },
+        { "until": "window.engine.phase === 'clarify' && window.engine.headThinking === 0" },
+        { "click": "button:has-text(\"Skip the rest\")" },
+        { "until": "window.engine.planReady" },
+        { "click": "[data-testid=approve]" },
+        { "until": "window.engine.activeAsk?.id === 'crow'", "every": 1000, "max": 600000 },
+        { "wait": 2500 }
+      ]
+    },
+    {
+      "id": "app-harvest",
+      "kind": "media",
+      "url": "/?replay",
+      "clock": true,
+      "actions": [
+        { "ready": "window.engine.ready" },
+        { "key": "Escape" },
+        { "wait": 1000 },
+        { "click": "[data-testid=send-brief]" },
+        { "until": "window.engine.phase === 'clarify' && window.engine.headThinking === 0" },
+        { "click": "button:has-text(\"Skip the rest\")" },
+        { "until": "window.engine.planReady" },
+        { "click": "[data-testid=approve]" },
+        { "until": "window.engine.activeAsk?.id === 'crow'", "every": 1000, "max": 600000 },
+        { "click": "[data-testid=opt-v2]" },
+        { "click": "[data-testid=apply-replan]" },
+        { "until": "window.engine.harvestReady", "every": 1000, "max": 900000 },
+        { "key": "h" },
+        { "until": "window.engine.phase === 'harvest'" },
+        { "click": ".map-wrap canvas" },
+        { "until": "window.engine.harvestStage === 'review' && !window.engine.gatesRunning", "every": 500 },
+        { "click": "[data-testid=send-back]" },
+        { "until": "!window.engine.gatesRunning", "every": 500 },
+        { "wait": 1000 }
+      ]
+    }
+  ]
+}

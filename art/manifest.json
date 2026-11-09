@@ -1,0 +1,370 @@
+{
+  "_doc": [
+    "The frames the app draws, cut from the Sprout Lands packs by scripts/build-atlas.py into",
+    "public/sprites/atlas.png and src/map/atlas.json. Edit this file, then run: npm run art:atlas",
+    "packs: pack id -> the folder name the pack unzips to (under public/assets/sprout-lands).",
+    "groups: group id -> list of sheets. A sheet is one PNG: {pack, file (path inside the pack), frames}.",
+    "A frame is {name, tile: [column, row]} for one cell of the sheet's tile grid (\"tile\" on the sheet, default 16 px),",
+    "or {name, rect: [x, y, w, h]} in source pixels. \"trim\": true crops the frame to its opaque pixels.",
+    "A sheet with \"anim\" holds character animations: cells of anim.cell px, anim.columns per row, one row per dir,",
+    "each animation starting at its row in anim.rows. Frames are named <prefix>_<anim>_<dir>_<n>, empty cells skipped,",
+    "and the frame count of each <anim>_<dir> goes to atlas.json \"counts\".",
+    "Frames that come out fully transparent are left out. Atlas names must be unique.",
+    "copies: files copied out of the packs as they are (scale: whole-number nearest-neighbour upscale).",
+    "Group titles are shown in the design library (Art, Used by the app)."
+  ],
+  "packs": {
+    "sprites-premium": "Sprout Lands - Sprites - premium pack",
+    "sprites-basic": "Sprout Lands - Sprites - Basic pack",
+    "ui-premium": "Sprout Lands - UI Pack - Premium pack",
+    "ui-basic": "Sprout Lands - UI Pack - Basic pack",
+    "authored": "./art/authored"
+  },
+  "atlas": {"png": "public/sprites/atlas.png", "json": "src/map/atlas.json", "width": 512, "gap": 1},
+  "titles": {
+    "characters": "Characters",
+    "crops": "Crops",
+    "ground": "Ground",
+    "buildings": "Buildings",
+    "decor": "Decor",
+    "emotes": "UI emotes",
+    "ui": "Panel controls and icons",
+    "glyphs": "Field glyphs (our own art)"
+  },
+  "groups": {
+    "characters": [
+      {
+        "pack": "sprites-premium",
+        "file": "Characters/Premium Charakter Spritesheet.png",
+        "anim": {
+          "prefix": "char",
+          "cell": [48, 48],
+          "columns": 8,
+          "dirs": ["down", "up", "left", "right"],
+          "rows": {"idle": 0, "walk": 4, "till": 12, "chop": 16, "water": 20}
+        }
+      }
+    ],
+    "crops": [
+      {
+        "pack": "sprites-premium",
+        "file": "Objects/Farming Plants.png",
+        "_note": "Columns are growth stages: seed, sprout, growing, ripe.",
+        "frames": [
+          {"name": "crop_carrot_0", "tile": [0, 2]},
+          {"name": "crop_carrot_1", "tile": [1, 2]},
+          {"name": "crop_carrot_2", "tile": [2, 2]},
+          {"name": "crop_carrot_3", "tile": [3, 2]},
+          {"name": "crop_tulip_0", "tile": [0, 6]},
+          {"name": "crop_tulip_1", "tile": [1, 6]},
+          {"name": "crop_tulip_2", "tile": [2, 6]},
+          {"name": "crop_tulip_3", "tile": [3, 6]},
+          {"name": "crop_cabbage_0", "tile": [0, 7]},
+          {"name": "crop_cabbage_1", "tile": [1, 7]},
+          {"name": "crop_cabbage_2", "tile": [2, 7]},
+          {"name": "crop_cabbage_3", "tile": [3, 7]},
+          {"name": "crop_wheat_0", "tile": [0, 8]},
+          {"name": "crop_wheat_1", "tile": [1, 8]},
+          {"name": "crop_wheat_2", "tile": [2, 8]},
+          {"name": "crop_wheat_3", "tile": [3, 8]},
+          {"name": "crop_pumpkin_0", "tile": [0, 9]},
+          {"name": "crop_pumpkin_1", "tile": [1, 9]},
+          {"name": "crop_pumpkin_2", "tile": [2, 9]},
+          {"name": "crop_pumpkin_3", "tile": [3, 9]}
+        ]
+      }
+    ],
+    "ground": [
+      {
+        "pack": "sprites-premium",
+        "file": "Tilesets/ground tiles/New tiles/Grass_tiles_v2.png",
+        "frames": [
+          {"name": "grass", "tile": [1, 1]},
+          {"name": "grass_deco_0", "tile": [0, 5]},
+          {"name": "grass_deco_1", "tile": [1, 5]},
+          {"name": "grass_deco_2", "tile": [2, 5]},
+          {"name": "grass_deco_3", "tile": [3, 5]},
+          {"name": "grass_deco_4", "tile": [4, 5]},
+          {"name": "grass_deco_5", "tile": [5, 5]},
+          {"name": "grass_deco_6", "tile": [0, 6]},
+          {"name": "grass_deco_7", "tile": [1, 6]},
+          {"name": "grass_deco_8", "tile": [2, 6]},
+          {"name": "grass_deco_9", "tile": [3, 6]},
+          {"name": "grass_deco_10", "tile": [4, 6]},
+          {"name": "grass_deco_11", "tile": [5, 6]}
+        ]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Tilesets/ground tiles/New tiles/Darker_Soil_Ground_Tiles.png",
+        "_note": "Watered bed, 3x3 autotile.",
+        "frames": [
+          {"name": "bed_wet_00", "tile": [0, 0]},
+          {"name": "bed_wet_10", "tile": [1, 0]},
+          {"name": "bed_wet_20", "tile": [2, 0]},
+          {"name": "bed_wet_01", "tile": [0, 1]},
+          {"name": "bed_wet_11", "tile": [1, 1]},
+          {"name": "bed_wet_21", "tile": [2, 1]},
+          {"name": "bed_wet_02", "tile": [0, 2]},
+          {"name": "bed_wet_12", "tile": [1, 2]},
+          {"name": "bed_wet_22", "tile": [2, 2]}
+        ]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Tilesets/ground tiles/New tiles/Soil_Ground_Tiles.png",
+        "_note": "Dry bed, 3x3 autotile.",
+        "frames": [
+          {"name": "bed_dry_00", "tile": [0, 0]},
+          {"name": "bed_dry_10", "tile": [1, 0]},
+          {"name": "bed_dry_20", "tile": [2, 0]},
+          {"name": "bed_dry_01", "tile": [0, 1]},
+          {"name": "bed_dry_11", "tile": [1, 1]},
+          {"name": "bed_dry_21", "tile": [2, 1]},
+          {"name": "bed_dry_02", "tile": [0, 2]},
+          {"name": "bed_dry_12", "tile": [1, 2]},
+          {"name": "bed_dry_22", "tile": [2, 2]}
+        ]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Tilesets/ground tiles/Old tiles/Tilled_Dirt_v2.png",
+        "_note": "Dirt path, 3x3 autotile.",
+        "frames": [
+          {"name": "path_00", "tile": [0, 0]},
+          {"name": "path_10", "tile": [1, 0]},
+          {"name": "path_20", "tile": [2, 0]},
+          {"name": "path_01", "tile": [0, 1]},
+          {"name": "path_11", "tile": [1, 1]},
+          {"name": "path_21", "tile": [2, 1]},
+          {"name": "path_02", "tile": [0, 2]},
+          {"name": "path_12", "tile": [1, 2]},
+          {"name": "path_22", "tile": [2, 2]}
+        ]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Tilesets/ground tiles/Water.png",
+        "frames": [
+          {"name": "water_0", "tile": [0, 0]},
+          {"name": "water_1", "tile": [1, 0]},
+          {"name": "water_2", "tile": [2, 0]},
+          {"name": "water_3", "tile": [3, 0]}
+        ]
+      }
+    ],
+    "buildings": [
+      {
+        "pack": "sprites-premium",
+        "file": "Tilesets/Building parts/Fences.png",
+        "_note": "4x4 autotile.",
+        "frames": [
+          {"name": "fence_00", "tile": [0, 0]},
+          {"name": "fence_10", "tile": [1, 0]},
+          {"name": "fence_20", "tile": [2, 0]},
+          {"name": "fence_30", "tile": [3, 0]},
+          {"name": "fence_01", "tile": [0, 1]},
+          {"name": "fence_11", "tile": [1, 1]},
+          {"name": "fence_21", "tile": [2, 1]},
+          {"name": "fence_31", "tile": [3, 1]},
+          {"name": "fence_02", "tile": [0, 2]},
+          {"name": "fence_12", "tile": [1, 2]},
+          {"name": "fence_22", "tile": [2, 2]},
+          {"name": "fence_32", "tile": [3, 2]},
+          {"name": "fence_03", "tile": [0, 3]},
+          {"name": "fence_13", "tile": [1, 3]},
+          {"name": "fence_23", "tile": [2, 3]},
+          {"name": "fence_33", "tile": [3, 3]}
+        ]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Tilesets/Building parts/Animal Structures/Chikcen_Houses.png",
+        "_note": "One roof colour per farm.",
+        "frames": [
+          {"name": "house_0", "rect": [0, 0, 64, 64], "trim": true},
+          {"name": "house_1", "rect": [64, 0, 64, 64], "trim": true},
+          {"name": "house_2", "rect": [128, 0, 64, 64], "trim": true},
+          {"name": "house_3", "rect": [192, 0, 64, 64], "trim": true},
+          {"name": "house_4", "rect": [256, 0, 64, 64], "trim": true},
+          {"name": "house_5", "rect": [320, 0, 64, 64], "trim": true}
+        ]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Tilesets/Building parts/Chest.png",
+        "_note": "The seed library.",
+        "frames": [
+          {"name": "chest", "rect": [0, 0, 48, 48], "trim": true},
+          {"name": "chest_open", "rect": [96, 0, 48, 48], "trim": true}
+        ]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Objects/Water well.png",
+        "frames": [{"name": "well", "rect": [0, 0, 32, 32], "trim": true}]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Objects/work station.png",
+        "frames": [{"name": "workstation", "rect": [0, 0, 32, 32], "trim": true}]
+      }
+    ],
+    "decor": [
+      {
+        "pack": "sprites-premium",
+        "file": "Objects/signs.png",
+        "_note": "Blank sign (attached context) and crop markers.",
+        "frames": [
+          {"name": "sign_blank", "tile": [0, 0]},
+          {"name": "sign_carrot", "tile": [2, 0]},
+          {"name": "sign_wheat", "tile": [2, 1]},
+          {"name": "sign_cabbage", "tile": [5, 2]},
+          {"name": "sign_tulip", "tile": [0, 1]},
+          {"name": "sign_pumpkin", "tile": [3, 1]}
+        ]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Objects/Trees, stumps and bushes.png",
+        "frames": [
+          {"name": "tree_small", "rect": [0, 0, 16, 32]},
+          {"name": "tree", "rect": [16, 0, 32, 32]},
+          {"name": "tree_apple", "rect": [48, 0, 32, 32]},
+          {"name": "tree_orange", "rect": [80, 0, 32, 32]},
+          {"name": "tree_pear", "rect": [112, 0, 32, 32]},
+          {"name": "tree_peach", "rect": [144, 0, 32, 32]},
+          {"name": "tree_big", "rect": [144, 48, 48, 48], "trim": true},
+          {"name": "bush_0", "tile": [0, 3]},
+          {"name": "bush_1", "tile": [1, 3]}
+        ]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Objects/Mushrooms, Flowers, Stones.png",
+        "frames": [
+          {"name": "flower_0", "tile": [0, 3]},
+          {"name": "flower_1", "tile": [1, 3]},
+          {"name": "flower_2", "tile": [4, 3]},
+          {"name": "flower_3", "tile": [5, 3]},
+          {"name": "flower_4", "tile": [8, 3]},
+          {"name": "flower_5", "tile": [0, 4]},
+          {"name": "flower_6", "tile": [4, 4]},
+          {"name": "flower_7", "tile": [5, 4]},
+          {"name": "flower_8", "tile": [0, 0]},
+          {"name": "flower_9", "tile": [1, 0]},
+          {"name": "flower_10", "tile": [0, 1]},
+          {"name": "flower_11", "tile": [1, 1]},
+          {"name": "sunflower", "rect": [48, 48, 16, 32]}
+        ]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Objects/Piknik basket.png",
+        "frames": [{"name": "basket", "rect": [0, 0, 16, 16], "trim": true}]
+      },
+      {
+        "pack": "sprites-premium",
+        "file": "Animals/Chicken/chicken default.png",
+        "frames": [{"name": "chicken_0", "rect": [0, 0, 16, 16]}, {"name": "chicken_1", "rect": [16, 0, 16, 16]}]
+      }
+    ],
+    "emotes": [
+      {
+        "pack": "ui-premium",
+        "file": "emojis/Emoji spritesheet.png",
+        "_note": "Status emotes over plots.",
+        "frames": [
+          {"name": "emote_check", "rect": [0, 256, 32, 32], "trim": true},
+          {"name": "emote_cross", "rect": [64, 256, 32, 32], "trim": true},
+          {"name": "emote_alert", "rect": [160, 256, 32, 32], "trim": true},
+          {"name": "emote_question", "rect": [192, 256, 32, 32], "trim": true},
+          {"name": "emote_sleep", "rect": [288, 256, 32, 32], "trim": true}
+        ]
+      }
+    ],
+    "ui": [
+      {
+        "pack": "ui-premium",
+        "file": "UI Sprites/Other UI sprites/Xs and check marks/Xs and check marks.png",
+        "frames": [{"name": "ui_check", "rect": [2, 3, 12, 11]}, {"name": "ui_x", "rect": [3, 50, 10, 12]}]
+      },
+      {
+        "pack": "ui-premium",
+        "file": "UI Sprites/Other UI sprites/UI Settings Buttons.png",
+        "_note": "The wooden switch and the tick meter.",
+        "frames": [
+          {"name": "ui_toggle_off", "rect": [2, 151, 28, 18]},
+          {"name": "ui_toggle_on", "rect": [66, 151, 28, 18]},
+          {"name": "ui_tick_on", "rect": [6, 178, 4, 12]},
+          {"name": "ui_tick_off", "rect": [22, 178, 4, 12]}
+        ]
+      },
+      {
+        "pack": "ui-premium",
+        "file": "UI Sprites/Icons/All Icons.png",
+        "_note": "16px panel icons, the darkest filled set (columns 12 to 15).",
+        "frames": [
+          {"name": "icon_gear", "tile": [12, 0]},
+          {"name": "icon_question", "tile": [13, 0]},
+          {"name": "icon_star", "tile": [14, 0]},
+          {"name": "icon_podium", "tile": [12, 1]},
+          {"name": "icon_trophy", "tile": [13, 1]},
+          {"name": "icon_crown", "tile": [14, 1]},
+          {"name": "icon_slash", "tile": [15, 1]},
+          {"name": "icon_check", "tile": [12, 2]},
+          {"name": "icon_cross", "tile": [13, 2]},
+          {"name": "icon_no", "tile": [14, 2]},
+          {"name": "icon_music", "tile": [15, 2]},
+          {"name": "icon_forward", "tile": [12, 3]},
+          {"name": "icon_play", "tile": [13, 3]},
+          {"name": "icon_pause", "tile": [14, 3]},
+          {"name": "icon_music_off", "tile": [15, 3]},
+          {"name": "icon_heart", "tile": [12, 4]},
+          {"name": "icon_plant", "tile": [13, 4]},
+          {"name": "icon_plants", "tile": [14, 4]},
+          {"name": "icon_note", "tile": [15, 4]},
+          {"name": "icon_gamepad", "tile": [12, 5]},
+          {"name": "icon_chat", "tile": [13, 5]},
+          {"name": "icon_skull", "tile": [14, 5]},
+          {"name": "icon_note_off", "tile": [15, 5]},
+          {"name": "icon_alert", "tile": [12, 6]},
+          {"name": "icon_coin", "tile": [13, 6]},
+          {"name": "icon_cart", "tile": [14, 6]},
+          {"name": "icon_sound", "tile": [15, 6]},
+          {"name": "icon_plus", "tile": [12, 7]},
+          {"name": "icon_minus", "tile": [13, 7]},
+          {"name": "icon_house", "tile": [14, 7]},
+          {"name": "icon_mute", "tile": [15, 7]},
+          {"name": "icon_power", "tile": [12, 8]},
+          {"name": "icon_enter", "tile": [13, 8]},
+          {"name": "icon_exit", "tile": [14, 8]},
+          {"name": "icon_volume_down", "tile": [15, 8]},
+          {"name": "icon_paw", "tile": [14, 9]},
+          {"name": "icon_volume_up", "tile": [15, 9]}
+        ]
+      }
+    ],
+    "glyphs": [
+      {
+        "pack": "authored",
+        "file": "glyph_envelope.png",
+        "_note": "Drawn by us with the Sprout Lands palette.",
+        "frames": [{"name": "glyph_envelope", "rect": [0, 0, 16, 16]}]
+      }
+    ]
+  },
+  "copies": [
+    {
+      "pack": "ui-premium",
+      "file": "fonts/Font files TTF/pixelFont-1-5x4-sproutLands.ttf",
+      "to": "public/fonts/sprout-lands.ttf"
+    },
+    {
+      "pack": "ui-premium",
+      "file": "UI Sprites/Mouse sprites/Catpaw Mouse icon.png",
+      "to": "public/cursor-paw.png",
+      "scale": 2
+    }
+  ]
+}

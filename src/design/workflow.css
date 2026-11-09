@@ -1,0 +1,185 @@
+/* Workflow page: commands, steps and tables as ruled rows on the white sheet. */
+
+/* Commands are typed as written: no "--" ligature that reads as a dash. */
+.wf-page .ds-code {
+  font-variant-ligatures: none;
+}
+
+.wf-cmds {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--s-8);
+  margin: 0 0 var(--s-5);
+  max-width: 88ch;
+}
+
+.wf-cmds > div {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--rule);
+}
+
+.wf-cmds > div:last-child {
+  border-bottom: 1px solid var(--rule);
+}
+
+.wf-cmds dt {
+  margin: 0;
+}
+
+.wf-cmds dt .ds-code {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.wf-cmds dd {
+  margin: 0;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.wf-after {
+  color: var(--ink-2);
+  margin: var(--s-4) 0 0;
+  max-width: 72ch;
+  text-wrap: pretty;
+}
+
+/* Numbered steps: the number sits in its own column so wrapped lines align. */
+.wf-steps {
+  list-style: none;
+  counter-reset: wf-step;
+  margin: 0;
+  padding: 0;
+  max-width: 76ch;
+}
+
+.wf-steps li {
+  counter-increment: wf-step;
+  position: relative;
+  padding: var(--s-2) 0 var(--s-2) var(--s-8);
+  text-wrap: pretty;
+}
+
+.wf-steps li::before {
+  content: counter(wf-step);
+  position: absolute;
+  left: 0;
+  font: var(--label);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-steps li + li {
+  border-top: 1px solid var(--rule-soft);
+}
+
+/* Tables: hairline rules between rows, no boxes. */
+.wf-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.wf-table th,
+.wf-table td {
+  padding: var(--s-3) var(--s-4) var(--s-3) 0;
+  vertical-align: top;
+  border-top: 1px solid var(--rule);
+  text-wrap: pretty;
+}
+
+.wf-table thead th {
+  font: var(--caption);
+  font-weight: 700;
+  color: var(--ink-3);
+  padding-top: 0;
+  padding-bottom: var(--s-2);
+  border-top: 0;
+}
+
+.wf-table tbody tr:last-child > * {
+  border-bottom: 1px solid var(--rule);
+}
+
+.wf-table tbody th {
+  font: var(--label);
+}
+
+.wf-table td {
+  color: var(--ink-2);
+}
+
+.wf-table .ds-code {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.wf-checks {
+  max-width: 80ch;
+}
+
+.wf-checks tbody th {
+  width: 34%;
+}
+
+.wf-generated tbody th {
+  font: var(--body);
+}
+
+.wf-generated th:nth-child(1) {
+  width: 25%;
+}
+
+.wf-generated :is(th, td):nth-child(2) {
+  width: 28%;
+}
+
+.wf-generated :is(th, td):nth-child(3) {
+  width: 27%;
+}
+
+/* A command reads as one unit; it breaks only at a space when it has to. */
+.wf-generated :is(td:nth-child(3), td:nth-child(4)) .ds-code {
+  overflow-wrap: normal;
+}
+
+@media (max-width: 760px) {
+  .wf-cmds {
+    grid-template-columns: 1fr;
+  }
+
+  .wf-cmds > div {
+    row-gap: var(--s-1);
+  }
+
+  .wf-generated thead {
+    display: none;
+  }
+
+  .wf-generated tr {
+    display: block;
+    border-top: 1px solid var(--rule);
+    padding: var(--s-3) 0;
+  }
+
+  .wf-generated th,
+  .wf-generated td {
+    display: block;
+    width: auto !important;
+    border: 0 !important;
+    padding: 0 0 var(--s-1);
+  }
+
+  .wf-generated td::before {
+    content: attr(data-label);
+    display: block;
+    font: var(--caption);
+    font-weight: 700;
+    color: var(--ink-3);
+    margin-top: var(--s-2);
+  }
+}
