@@ -3,9 +3,9 @@ import { useState } from 'react'
 import { LESSON_DATES, ROLE_ORDER } from '../sim/scenario'
 import { DOCS } from '../sim/docs'
 import type { Ask, LogEntry } from '../sim/types'
-import { fmtK, fmtT, Kbd, Term, useEngine } from '../ui'
+import { fmtT, Kbd, Reason, Term, useEngine } from '../ui'
 
-const PIPS = { High: 3, Medium: 2, Low: 1 }
+const PROV = { live: 'Found by a live Claude call', replay: 'From a recorded run', sim: 'Scripted step' }
 
 export function AskCard({ ask }: { ask: Ask }) {
   const e = useEngine()
@@ -15,13 +15,9 @@ export function AskCard({ ask }: { ask: Ask }) {
   return (
     <div className="ask" data-testid={`ask-${ask.id}`}>
       <div className="ask-head">
-        <span className={`reason ${ask.label}`}>{ask.label}</span>
-        <span>
-          {ask.fromName} · {task.name}
-        </span>
-        <span className={`prov ${ask.provenance}`} title={ask.provenance === 'live' ? 'Found by a live Claude call' : 'Scripted step or a recorded run'}>
-          {ask.provenance === 'live' ? 'Live' : ask.provenance === 'replay' ? 'Replay' : 'Simulated'}
-        </span>
+        <Reason label={ask.label} />
+        <span title={task.name}>{ask.fromName}</span>
+        {ask.status !== 'confirming' && <span className="conf">{ask.confidence} confidence</span>}
       </div>
       {ask.status === 'confirming' ? (
         <>
@@ -41,7 +37,7 @@ export function AskCard({ ask }: { ask: Ask }) {
               Back
             </button>
             <button className="btn danger" onClick={() => e.answer(ask.id, 'approve')} data-testid="confirm">
-              Send <Kbd>⏎</Kbd>
+              Send
             </button>
           </div>
         </>
@@ -70,17 +66,6 @@ export function AskCard({ ask }: { ask: Ask }) {
               </li>
             ))}
           </ul>
-          <div className="confidence">
-            <span>
-              Confidence: <b>{ask.confidence}</b>
-            </span>
-            <span className="pips">
-              {[1, 2, 3].map((n) => (
-                <i key={n} className={n <= PIPS[ask.confidence] ? 'on' : ''} />
-              ))}
-            </span>
-          </div>
-          {ask.basis && <p className="basis">{ask.basis}</p>}
           <div className="actions">
             {ask.options.map((o) => (
               <button key={o.value} className={`btn ${o.kind === 'approve' ? 'primary' : ''} ${o.recommended ? 'rec' : ''}`} onClick={() => e.answer(ask.id, o.value)} data-testid={`opt-${o.value}`}>
@@ -88,21 +73,23 @@ export function AskCard({ ask }: { ask: Ask }) {
               </button>
             ))}
           </div>
-          <form
-            className="reply"
-            onSubmit={(ev) => {
-              ev.preventDefault()
-              e.reply(ask.id, reply)
-              setReply('')
-            }}
-          >
-            <input id="reply-input" value={reply} onChange={(ev) => setReply(ev.target.value)} placeholder={`Reply to the ${ask.fromName}…  (R)`} />
-          </form>
           <details className="why">
-            <summary>Details: reasoning and sources</summary>
+            <summary>Why it’s asking</summary>
+            {ask.basis && <p>{ask.basis}</p>}
             <p>{ask.details.reasoning}</p>
-            <p className="mono">{ask.details.sources.join(' · ')}</p>
+            <p className="mono">{ask.details.sources.join(', ')}</p>
             {ask.details.preview && <pre>{ask.details.preview}</pre>}
+            <p className="src-note">{PROV[ask.provenance]}</p>
+            <form
+              className="reply"
+              onSubmit={(ev) => {
+                ev.preventDefault()
+                e.reply(ask.id, reply)
+                setReply('')
+              }}
+            >
+              <input id="reply-input" value={reply} onChange={(ev) => setReply(ev.target.value)} placeholder={`Reply to the ${ask.fromName}`} />
+            </form>
           </details>
         </div>
       )}
@@ -116,8 +103,7 @@ export function ReplanCard() {
   return (
     <div className="ask" data-testid="replan">
       <div className="ask-head">
-        <span className="reason Anomaly">Re-plan</span>
-        <span>Head farmer</span>
+        <Reason label="Re-plan" icon="hammer" />
       </div>
       <div className="ask-body">
         <h2>{r.title}</h2>
@@ -131,7 +117,7 @@ export function ReplanCard() {
         </div>
         <div className="actions">
           <button className="btn primary" onClick={() => e.applyReplan()} data-testid="apply-replan">
-            Apply re-plan <Kbd>⏎</Kbd>
+            Apply re-plan
           </button>
         </div>
       </div>
@@ -149,27 +135,22 @@ export function TraceCard() {
   return (
     <div className="ask" data-testid="trace">
       <div className="ask-head">
-        <span className="reason Cost" style={{ ['--c' as string]: 'var(--cost)' }}>
-          Trace
-        </span>
+        <Reason label="Trace" icon="question" />
         <span>
-          Writer · {entry ? fmtT(entry.t) : ''} · why did it use {draft?.data.launch_date ?? 'March 12'}?
+          Why the Writer used {draft?.data.launch_date ?? 'March 12'}
+          {entry ? ` at ${fmtT(entry.t)}` : ''}
         </span>
-        <span className={`prov ${draft?.provenance ?? 'replay'}`}>{draft?.provenance === 'live' ? 'Live output' : 'Replay'}</span>
       </div>
       <div className="ask-body">
         <ol className="trace-steps">
           <li>
-            Its signposts were <span className="mono">{seen.join(', ')}</span>, plus the almanac page <span className="mono">{writer.almanac.join(', ')}</span>.
+            It could read <span className="mono">{[...seen, ...writer.almanac].join(', ')}</span>.
           </li>
           <li>
-            The only launch date in them: <i>“{quote}”</i> <span className="mono">(customer-call-notes.md, Jan 28)</span>
-          </li>
-          <li>
-            Stated reason: <i>“{entry?.reason ?? 'Source: customer-call-notes.md'}”</i>
+            The only launch date in them was <i>“{quote}”</i> from the Jan 28 call notes.
           </li>
           <li className="missing">
-            <span className="mono">eng-standup-notes/</span> was in the brief’s picker, but it wasn’t attached and plan review didn’t add it as a signpost, so no farmhand on this farm could see the delay.
+            <span className="mono">eng-standup-notes/</span> was never attached, so no farmhand on this farm could see the move to March 26.
           </li>
         </ol>
         <div className="seed-card">
@@ -317,7 +298,7 @@ function LogLine({ l }: { l: LogEntry }) {
         <span className="who">{l.who}</span> {l.text}
         {l.kind === 'auto' && <span className="tag auto">auto</span>}
         {traceable && <button className="why-btn">Why?</button>}
-        {l.reason && <span className="why">{l.reason}</span>}
+        {l.reason && l.kind === 'auto' && <span className="why">{l.reason}</span>}
       </span>
     </li>
   )
@@ -335,7 +316,7 @@ export function Grow() {
       ) : ask ? (
         <>
           <AskCard ask={ask} key={ask.id} />
-          {queued > 0 && <div className="queue-note">+ {queued} more waiting in the queue</div>}
+          {queued > 0 && <div className="queue-note">{queued} more waiting</div>}
         </>
       ) : e.replan?.status === 'open' ? (
         <ReplanCard />
@@ -343,17 +324,15 @@ export function Grow() {
         <div className="nudge">
           <p>
             <b>Why did the Writer use {e.out.draft?.data.launch_date ?? 'March 12'}?</b>
-            Replay what it read, then save the lesson for next time.
           </p>
           <button className="btn" onClick={() => e.openTrace('date')} data-testid="open-trace">
             Trace it
           </button>
         </div>
       ) : e.harvestReady ? (
-        <div className="nudge" style={{ background: 'var(--sprout-wash)' }}>
+        <div className="nudge">
           <p>
             <b>Every crop is ripe.</b>
-            The harvest report is ready.
           </p>
           <button className="btn primary" onClick={() => e.openHarvest()} data-testid="open-harvest">
             Open the report
@@ -364,10 +343,7 @@ export function Grow() {
       {e.selected ? <FarmhandCard /> : null}
 
       <div className="section-title">
-        <span>
-          <Term w="Crew" m="Your agents on this farm" />
-        </span>
-        <span>{fmtK(e.energyUsed)} energy so far</span>
+        <Term w="Crew" m="Your agents on this farm" />
       </div>
       <Crew />
       <QuestLog />

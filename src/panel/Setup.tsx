@@ -1,87 +1,70 @@
 // Brief → Clarify → Quest plan. The owner sets direction once; after that agents only ask when it matters.
 import { ROLE_ORDER } from '../sim/scenario'
 import type { RoleId } from '../sim/types'
-import { Avatar, fmtK, Kbd, Sprite, Term, useEngine } from '../ui'
+import { Avatar, fmtK, Sprite, Term, useEngine } from '../ui'
+
+function Thinking({ text }: { text: string }) {
+  return (
+    <div className="voice">
+      <Avatar />
+      <div className="bubble">
+        {text} <span className="dots"><i /><i /><i /></span>
+      </div>
+    </div>
+  )
+}
 
 export function Brief() {
   const e = useEngine()
-  const selected = e.attachments.filter((a) => a.selected).length
   return (
     <>
-      <div className="voice">
-        <Avatar />
-        <div className="bubble">
-          <div className="who">Head farmer</div>
-          What should this farm grow? Write the goal, tick the files I may read, and set how much energy the crew can spend.
-        </div>
-      </div>
+      <label className="field-label" htmlFor="goal">
+        Goal
+      </label>
+      <textarea
+        id="goal"
+        className="goal"
+        value={e.goal}
+        readOnly={e.live === false}
+        title={e.live === false ? 'Replay mode runs this goal only' : undefined}
+        onChange={(ev) => e.setGoal(ev.target.value)}
+      />
 
-      <div className="section-title">
-        <span>Goal</span>
-        {e.live === false && <span className="demo-tag">Replay mode runs this goal only</span>}
-      </div>
-      <textarea className="goal" value={e.goal} readOnly={e.live === false} onChange={(ev) => e.setGoal(ev.target.value)} aria-label="Goal" />
-
-      <div className="section-title">
-        <span>Context for the crew</span>
-        <span>{selected} of {e.attachments.length} attached</span>
-      </div>
-      <div className="picker" role="group" aria-label="Context picker">
+      <span className="field-label">Files the crew may read</span>
+      <div className="picker" role="group" aria-label="Files the crew may read">
         {e.attachments.map((a) => (
-          <button key={a.id} className="pick" role="checkbox" aria-checked={a.selected} onClick={() => e.toggleAttachment(a.id)}>
+          <button key={a.id} className="pick" role="checkbox" aria-checked={a.selected} onClick={() => e.toggleAttachment(a.id)} title={a.note}>
             <span className="box">{a.selected ? '✓' : ''}</span>
-            <span>
-              <code>{a.name}</code>
-              <div className="note">{a.note}</div>
-            </span>
+            <code>{a.name}</code>
           </button>
         ))}
       </div>
 
-      <div className="section-title">
+      <label className="field-label" htmlFor="energy">
         <Term w="Energy" m="Token budget for the whole crew" />
-        <span>suggested 120k</span>
-      </div>
+      </label>
       <div className="budget">
-        <input type="range" min={40_000} max={240_000} step={10_000} value={e.budget} onChange={(ev) => e.setBudget(Number(ev.target.value))} aria-label="Energy budget" />
+        <input id="energy" type="range" min={40_000} max={240_000} step={10_000} value={e.budget} onChange={(ev) => e.setBudget(Number(ev.target.value))} />
         <b>{fmtK(e.budget)}</b>
       </div>
-      <p className="hint">Suggested from the brief: about 5 tasks of 6k to 30k each, plus room for re-plans.</p>
     </>
   )
 }
 
 export function Clarify() {
   const e = useEngine()
-  if (e.headThinking > 0)
-    return (
-      <div className="voice">
-        <Avatar />
-        <div className="bubble">
-          <div className="who">Head farmer</div>
-          Reading the brief and {e.attachments.filter((a) => a.selected).length} files <span className="dots"><i /><i /><i /></span>
-        </div>
-      </div>
-    )
+  if (e.headThinking > 0) return <Thinking text={`Reading the brief and ${e.attachments.filter((a) => a.selected).length} files`} />
   return (
     <>
-      <div className="voice">
-        <Avatar />
-        <div className="bubble">
-          <div className="who">Head farmer</div>
-          {e.questions.length} things I can’t work out from the brief. Answer or skip; I’ll assume the first option for anything you skip.
-        </div>
-      </div>
       {e.questions.map((q, i) => (
         <div className="q" key={q.id} style={{ animationDelay: `${i * 80}ms` }}>
           <h3>{q.q}</h3>
-          <p>{q.why}</p>
           <div className="opts">
             {q.options.map((o, j) => (
               <button
                 key={o}
                 className={`opt ${j === 0 && !e.clarifyAnswers[q.id] ? 'assumed' : ''}`}
-                title={j === 0 && !e.clarifyAnswers[q.id] ? 'Assumed if you skip' : undefined}
+                title={j === 0 && !e.clarifyAnswers[q.id] ? 'Used if you skip' : q.why}
                 aria-pressed={e.clarifyAnswers[q.id] === o}
                 onClick={() => e.answerClarify(q.id, o)}
               >
@@ -97,49 +80,30 @@ export function Clarify() {
 
 export function Plan() {
   const e = useEngine()
-  if (e.headThinking > 0)
-    return (
-      <div className="voice">
-        <Avatar />
-        <div className="bubble">
-          <div className="who">Head farmer</div>
-          Laying out the quest plan and recruiting a crew <span className="dots"><i /><i /><i /></span>
-        </div>
-      </div>
-    )
-  const total = e.tasks.reduce((s, t) => s + t.budget, 0)
+  if (e.headThinking > 0) return <Thinking text="Laying out the plan" />
   return (
     <>
-      <div className="voice">
-        <Avatar />
-        <div className="bubble">
-          <div className="who">Head farmer</div>
-          Here’s the plan: 5 tasks, a crew of 4 and {fmtK(total)} of {fmtK(e.budget)} energy. Each farmhand reads only the files signposted on its task, so add any file it should see before you approve.
-        </div>
-      </div>
-
-      <div className="section-title">
-        <span>Quest plan</span>
-        <span>{fmtK(total)} energy</span>
-      </div>
       {e.tasks.map((t, i) => {
         const changed = t.assignee !== t.proposedAssignee
         return (
-          <div key={t.id} className={`plan-task ${changed ? 'changed' : ''}`} style={{ animationDelay: `${i * 70}ms` }}>
+          <div key={t.id} className="plan-task" style={{ animationDelay: `${i * 70}ms` }}>
             <Sprite name={`crop_${t.crop}_3`} className="crop-icon" />
             <div>
               <h3>
-                <span>
-                  {i + 1}. {t.name}
-                </span>
-                <span className="mono">{fmtK(t.budget)}</span>
+                <span>{t.name}</span>
+                <span className="cost">{fmtK(t.budget)}</span>
               </h3>
-              <ul>
-                {t.subtasks.map((s) => (
-                  <li key={s.id}>{s.name}</li>
-                ))}
-              </ul>
-              <div className="chips" aria-label={`Signposts for ${t.name}`}>
+              <div className="assign">
+                <select value={t.assignee} onChange={(ev) => e.reassign(t.id, ev.target.value as RoleId)} aria-label={`Assign ${t.name}`}>
+                  {ROLE_ORDER.map((r) => (
+                    <option key={r} value={r}>
+                      {e.farmhands[r].role}
+                    </option>
+                  ))}
+                </select>
+                {changed ? <span className="flag ok">Changed by you</span> : t.proposalNote && <span className="flag">{t.proposalNote}</span>}
+              </div>
+              <div className="chips" aria-label={`Files ${t.name} may read`}>
                 {t.signposts.map((p) => (
                   <span className="chip" key={p}>
                     {p}
@@ -149,8 +113,8 @@ export function Plan() {
                   </span>
                 ))}
                 {e.attachments.some((a) => !t.signposts.includes(a.name)) && (
-                  <select value="" onChange={(ev) => ev.target.value && e.toggleSignpost(t.id, ev.target.value)} aria-label={`Add a signpost to ${t.name}`}>
-                    <option value="">+ signpost</option>
+                  <select value="" onChange={(ev) => ev.target.value && e.toggleSignpost(t.id, ev.target.value)} aria-label={`Add a file to ${t.name}`}>
+                    <option value="">+ file</option>
                     {e.attachments
                       .filter((a) => !t.signposts.includes(a.name))
                       .map((a) => (
@@ -162,45 +126,59 @@ export function Plan() {
                   </select>
                 )}
               </div>
-              <div className="assign">
-                <Term w="Farmhand" m="The agent that does this task" />
-                <select value={t.assignee} onChange={(ev) => e.reassign(t.id, ev.target.value as RoleId)} aria-label={`Assign ${t.name}`}>
-                  {ROLE_ORDER.map((r) => (
-                    <option key={r} value={r}>
-                      {e.farmhands[r].role}
-                    </option>
-                  ))}
-                </select>
-                {t.proposalNote && !changed && <span className="flag">{t.proposalNote}</span>}
-                {changed && <span className="flag" style={{ color: 'var(--sprout-deep)', background: 'var(--sprout-wash)' }}>Changed by you</span>}
-              </div>
             </div>
           </div>
         )
       })}
-
-      <div className="section-title">
-        <span>Crew</span>
-        <span>each sees only its signposts</span>
-      </div>
-      <div className="crew-grid">
-        {ROLE_ORDER.map((r) => {
-          const f = e.farmhands[r]
-          return (
-            <div key={r} className="hand" style={{ ['--c' as string]: f.color }}>
-              <div className="role">
-                {f.role} <span>{f.name}</span>
-              </div>
-              <div className="meta">{f.tools.join(' · ')}</div>
-              <div className="meta">
-                {f.context.length} files{f.almanac.length ? ` · almanac: ${f.almanac.join(', ')}` : ''}
-              </div>
-              {f.seeds.length > 0 && <div className="meta" style={{ color: 'var(--sprout-deep)' }}>Saved seed: {f.seeds[0]}</div>}
-            </div>
-          )
-        })}
-      </div>
     </>
+  )
+}
+
+// Read-only look back at a finished step.
+export function Review({ step }: { step: 'brief' | 'clarify' | 'plan' }) {
+  const e = useEngine()
+  if (step === 'brief')
+    return (
+      <dl className="review">
+        <dt>Goal</dt>
+        <dd>{e.goal}</dd>
+        <dt>Files the crew may read</dt>
+        <dd>
+          <ul>
+            {e.attachments.map((a) => (
+              <li key={a.id} className="mono">
+                {a.name}
+                {a.selected ? '' : ' (not attached)'}
+              </li>
+            ))}
+          </ul>
+        </dd>
+        <dt>Energy</dt>
+        <dd>{fmtK(e.budget)}</dd>
+      </dl>
+    )
+  if (step === 'clarify')
+    return (
+      <dl className="review">
+        {e.questions.map((q) => (
+          <span key={q.id} style={{ display: 'contents' }}>
+            <dt>{q.q}</dt>
+            <dd>{e.clarifyAnswers[q.id] ?? `${q.options[0]} (assumed)`}</dd>
+          </span>
+        ))}
+      </dl>
+    )
+  return (
+    <dl className="review">
+      {e.tasks.map((t) => (
+        <span key={t.id} style={{ display: 'contents' }}>
+          <dt>{t.name}</dt>
+          <dd>
+            {e.farmhands[t.assignee].role}, reading <span className="mono">{t.signposts.join(', ') || 'no files'}</span>
+          </dd>
+        </span>
+      ))}
+    </dl>
   )
 }
 
@@ -209,7 +187,7 @@ export function SetupFooter() {
   if (e.phase === 'brief')
     return (
       <button className="btn primary grow" onClick={() => e.submitBrief()}>
-        Send to the head farmer <Kbd>⌘⏎</Kbd>
+        Send to the head farmer
       </button>
     )
   if (e.phase === 'clarify')
@@ -219,14 +197,14 @@ export function SetupFooter() {
           Skip all
         </button>
         <button className="btn primary grow" disabled={e.headThinking > 0} onClick={() => e.finishClarify()}>
-          Continue <Kbd>⏎</Kbd>
+          Continue
         </button>
       </>
     )
   if (e.phase === 'plan')
     return (
       <button className="btn primary grow" disabled={e.headThinking > 0} onClick={() => e.approvePlan()}>
-        Approve and start <Kbd>⏎</Kbd>
+        Approve and start
       </button>
     )
   return null

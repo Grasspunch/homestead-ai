@@ -205,25 +205,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
         const st = dry ? Math.max(0, np.stage - 1) : np.stage
         draw(ctx, `crop_${np.crop}_${st}`, (np.plot.x + i) * TILE, (np.plot.y + j) * TILE)
       }
-    hits.push({ kind: 'nplot', id: np.name, rect: px(np.plot), title: `${np.name} · Priya’s farm`, body: dry ? 'Drought: blocked by the auth dependency' : 'Growing' })
-  }
-
-  // Order line between plots (the quest plan's sequence).
-  if (showPlan || planned) {
-    ctx.save()
-    ctx.strokeStyle = planned ? 'rgba(92,78,146,0.28)' : 'rgba(92,78,146,0.65)'
-    ctx.lineWidth = 1.5
-    ctx.setLineDash([3, 3])
-    ctx.lineDashOffset = -clock * 6
-    ctx.beginPath()
-    e.tasks.forEach((t, i) => {
-      const cx = (t.plot.x + t.plot.w / 2) * TILE
-      const cy = (t.plot.y + t.plot.h / 2) * TILE
-      if (i === 0) ctx.moveTo(cx, cy)
-      else ctx.lineTo(cx, cy)
-    })
-    ctx.stroke()
-    ctx.restore()
+    hits.push({ kind: 'nplot', id: np.name, rect: px(np.plot), title: `${np.name}, Priya’s farm`, body: dry ? 'Drought: blocked by the auth dependency' : 'Growing' })
   }
 
   // Plots.
@@ -236,8 +218,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       ctx.globalAlpha = k
       ctx.fillStyle = 'rgba(255,248,220,0.35)'
       ctx.fillRect(r.x * TILE, r.y * TILE, r.w * TILE, r.h * TILE)
-      ctx.strokeStyle = '#5c4e92'
-      ctx.setLineDash([4, 3])
+      ctx.strokeStyle = 'rgba(92, 78, 146, 0.6)'
       ctx.lineWidth = 1
       ctx.strokeRect(r.x * TILE + 0.5, r.y * TILE + 0.5, r.w * TILE - 1, r.h * TILE - 1)
       ctx.restore()
@@ -277,7 +258,6 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       ctx.save()
       ctx.globalAlpha = 0.5 + 0.3 * Math.sin(clock * 5)
       ctx.strokeStyle = '#d9715f'
-      ctx.setLineDash([2, 2])
       ctx.strokeRect(sx + 1.5, sy + 1.5, 13, 13)
       ctx.restore()
     }
@@ -298,15 +278,15 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       rect: px(r),
       title: t.name,
       body: planned
-        ? `${t.subtasks.filter((s) => s.done).length}/${t.subtasks.length} crops ripe · ${fmtK(t.used)} of ${fmtK(t.budget)} energy${t.dry ? ' · dry (75%+ used)' : ''}`
-        : `Proposed for the ${cap(t.assignee)} · ${t.subtasks.length} subtasks · ${fmtK(t.budget)} energy`,
+        ? `${t.subtasks.filter((s) => s.done).length} of ${t.subtasks.length} crops ripe${t.dry ? ', energy running low' : ''}`
+        : `Proposed for the ${cap(t.assignee)}`,
     })
   })
 
   // Seed library chest.
   const sl = FARM.seedLibrary
   draw(ctx, e.seedFly && e.seedFly.t > 0.8 ? 'chest_open' : 'chest', sl.x * TILE, sl.y * TILE)
-  hits.push({ kind: 'seeds', id: 'seeds', rect: { x: sl.x * TILE, y: sl.y * TILE, w: 24, h: 20 }, title: `Seed library · ${e.seeds.length} seeds`, body: e.seeds.map((s) => s.file).join('\n') })
+  hits.push({ kind: 'seeds', id: 'seeds', rect: { x: sl.x * TILE, y: sl.y * TILE, w: 24, h: 20 }, title: `Seed library (${e.seeds.length})`, body: e.seeds.map((s) => s.file).join('\n') })
 
   // ---- characters, sorted by y ----
   type Drawable = { y: number; fn: () => void }
@@ -324,14 +304,14 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     for (const fh of Object.values(e.farmhands)) {
       if (e.phase === 'plan') continue
       list.push({ y: fh.y, fn: () => drawFarmhand(ctx, e, fh, clock) })
-      hits.push({ kind: 'farmhand', id: fh.id, rect: { x: fh.x * TILE - 8, y: fh.y * TILE - 20, w: 16, h: 22 }, title: `${fh.role} · ${fh.name}`, body: fhStatus(e, fh) })
+      hits.push({ kind: 'farmhand', id: fh.id, rect: { x: fh.x * TILE - 8, y: fh.y * TILE - 20, w: 16, h: 22 }, title: fh.role, body: fhStatus(e, fh) })
     }
   }
 
   // Neighbour Priya and her crew, wandering between plots.
   const priya = { x: 64.5 + Math.sin(clock * 0.3) * 0.4, y: 8.6 }
   list.push({ y: priya.y, fn: () => drawChar(ctx, priya.x, priya.y, 'idle', 'down', clock, { body: '#d7c6f0', shade: '#a596c9' }) })
-  hits.push({ kind: 'neighbour', id: 'priya', rect: { x: priya.x * TILE - 8, y: priya.y * TILE - 18, w: 16, h: 20 }, title: 'Priya · Eng lead', body: 'Owner of Auth SDK v2 · 4 agents' })
+  hits.push({ kind: 'neighbour', id: 'priya', rect: { x: priya.x * TILE - 8, y: priya.y * TILE - 18, w: 16, h: 20 }, title: 'Priya, eng lead', body: 'Runs the Auth SDK v2 farm' })
   NEIGHBOUR_PLOTS.slice(0, 3).forEach((np, i) => {
     const ph = clock * 0.22 + i * 2.1
     const k = (Math.sin(ph) + 1) / 2
@@ -376,8 +356,6 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       const ours = e.task('draft').plot
       const theirs = NEIGHBOUR_PLOTS.find((p) => p.drought)?.plot ?? NEIGHBOUR_PLOTS[0].plot
       ctx.save()
-      ctx.setLineDash([4, 3])
-      ctx.lineDashOffset = -clock * 12
       ctx.lineWidth = 1.5
       ctx.strokeStyle = 'rgba(122, 82, 170, 0.9)'
       for (const r of [ours, theirs]) {
@@ -386,7 +364,6 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
         ctx.lineTo((r.x + r.w / 2) * TILE, r.y * TILE - 2)
         ctx.stroke()
       }
-      ctx.setLineDash([])
       for (let k = 0; k < 2; k++) {
         const ph = (clock * 0.8 + k * 0.5) % 1
         ctx.strokeStyle = `rgba(122, 82, 170, ${0.8 * (1 - ph)})`
@@ -435,8 +412,9 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
   if (e.view === 'farm' && (showPlan || planned)) {
     // Plot labels. Each one moves down until it clears the labels already placed.
     const placed: { x: number; y: number; w: number; h: number }[] = []
-    e.tasks.forEach((t, i) => {
-      if (showPlan && reveal < i * 0.18 + 0.2) return
+    const focus = new Set(e.tasks.filter((t) => (e.selected && t.assignee === e.selected) || e.activeAsk?.taskId === t.id).map((t) => t.id))
+    e.tasks.forEach((t) => {
+      if (!focus.has(t.id)) return
       const p = toScreen(t.plot.x + t.plot.w / 2, t.plot.y + t.plot.h + (planned ? 1.35 : 0.2))
       const sub = planned ? `${t.subtasks.filter((s) => s.done).length}/${t.subtasks.length}` : cap(t.assignee)
       const accent = planned ? e.farmhands[t.assignee].color : undefined
@@ -458,7 +436,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       }
     }
     const pp = toScreen(priya.x, priya.y - 1.55)
-    nameTag(ctx, pp.x, pp.y, 'Priya · Eng lead', '#d7c6f0')
+    nameTag(ctx, pp.x, pp.y, 'Priya', '#d7c6f0')
 
     if (e.crow.state === 'landed') {
       const p = toScreen(CROW_SPOT.x, CROW_SPOT.y - 2.2)
@@ -468,9 +446,9 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
 
   // Farm name banners (farm view: just this farm and the neighbour; valley view: all four with stats).
   const farmsForBanner = [
-    { name: FARM.name, rect: FARM.rect, owner: 'You · PM' },
-    { name: NEIGHBOUR.name, rect: NEIGHBOUR.rect, owner: 'Priya · Eng lead' },
-    ...OTHER_FARMS.map((f) => ({ name: f.name, rect: f.rect, owner: `${f.owner} · ${f.ownerRole}` })),
+    { name: FARM.name, rect: FARM.rect, owner: 'You (PM)' },
+    { name: NEIGHBOUR.name, rect: NEIGHBOUR.rect, owner: 'Priya (eng lead)' },
+    ...OTHER_FARMS.map((f) => ({ name: f.name, rect: f.rect, owner: `${f.owner} (${f.ownerRole})` })),
   ]
   for (const f of farmsForBanner) {
     if (e.view === 'farm' && !(f.name === FARM.name || f.name === NEIGHBOUR.name)) continue
@@ -590,7 +568,7 @@ function label(ctx: CanvasRenderingContext2D, x: number, y: number, text: string
   if (scale < 1.2) return
   ctx.save()
   ctx.font = `16px ${FONT}`
-  const t = `${text}  ·  ${sub}`
+  const t = `${text}  ${sub}`
   const w = Math.ceil(ctx.measureText(t).width) + 12
   const rx = Math.round(Math.max(4, Math.min(viewW - w - 4, x - w / 2)))
   let ry = Math.round(y)
@@ -633,8 +611,7 @@ function banner(ctx: CanvasRenderingContext2D, x: number, y: number, text: strin
 function valleyCard(ctx: CanvasRenderingContext2D, x: number, y: number, name: string, owner: string, s: ReturnType<typeof statsFor>) {
   ctx.save()
   const lines = [
-    `${s.agents} agents · ${fmtK(s.energyWeek)} energy this week`,
-    `${s.harvests} harvest${s.harvests === 1 ? '' : 's'} · ${s.pests} pest${s.pests === 1 ? '' : 's'} · ${s.waiting} waiting on a human`,
+    `${s.agents} agents, ${s.waiting} waiting on a human`,
     ...(s.unattended ? [s.unattended] : []),
     ...(name === FARM.name ? [] : ['(simulated farm for the demo)']),
   ]

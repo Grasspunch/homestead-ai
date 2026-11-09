@@ -1,6 +1,6 @@
 // The harvest report: what grew, what it cost, and every time the crew needed you.
 import { INVITE_LIST } from '../sim/scenario'
-import { fmtK, useEngine } from '../ui'
+import { fmtK, Reason, useEngine } from '../ui'
 
 // Outputs a person can take away: the announcement, the calendar invite and the recipient list.
 function download(name: string, type: string, body: string) {
@@ -88,7 +88,6 @@ export function Harvest() {
       <div className="harvest" role="dialog" aria-label="Harvest report" data-testid="harvest">
         <div className="harvest-top">
           <div>
-            <div className="eyebrow">Harvest report</div>
             {caught ? (
               <h1>
                 A wrong launch date nearly went to {count} {audience}.
@@ -98,7 +97,7 @@ export function Harvest() {
             )}
             {caught && (
               <p className="harvest-sub">
-                The draft said {original}, from a promise in the call notes. Priya’s standup moved the release to {e.launchDate}, in notes you hadn’t attached. The head farmer found the conflict by checking {e.docsChecked} documents across 2 farms, and you picked the date before anything went out.
+                The draft used {original} from the call notes. Engineering had moved launch to {e.launchDate} in standup notes the crew never saw, and you fixed it before anything was sent.
               </p>
             )}
           </div>
@@ -107,25 +106,18 @@ export function Harvest() {
           <span className="lead">
             The crew needed you <b>{e.neededYou}</b> times
           </span>
-          <span>
-            <b>{e.liveCalls || e.replayCalls}</b> {e.liveCalls ? 'live' : 'replayed'} model calls ({fmtK(e.modelTokens)} tokens)
-          </span>
-          <span>
-            <b>{e.simSteps}</b> simulated steps
-          </span>
-          <span title={saved ? `${fmtK(saved)} saved at a dry plot` : undefined}>
-            <b>{fmtK(e.energyUsed)}</b> of {fmtK(e.budget)} energy
+          <span title={`${e.liveCalls || e.replayCalls} ${e.liveCalls ? 'live' : 'replayed'} model calls (${fmtK(e.modelTokens)} tokens) and ${e.simSteps} simulated steps${saved ? `; ${fmtK(saved)} saved at a dry plot` : ''}`}>
+            {fmtK(e.energyUsed)} of {fmtK(e.budget)} energy
           </span>
         </div>
         <div className="harvest-grid">
           <section>
             <div className="section-title">
               <span>Announcement</span>
-              <span>{draft?.provenance === 'live' ? 'written live by Claude' : 'from a recorded run'}, brand voice checked</span>
             </div>
             <div className="doc">
               <h2>{d?.headline ?? e.questTitle}</h2>
-              {d?.launch_date && <div className="dateline">{demo ? `For the pilot customers, launching ${e.launchDate}` : e.launchDate}</div>}
+              {d?.launch_date && <div className="dateline">{e.launchDate}</div>}
               {(d?.paragraphs ?? []).map((p, i) => (
                 <p key={i}>{render(p)}</p>
               ))}
@@ -158,12 +150,11 @@ export function Harvest() {
 
             <div className="section-title">
               <span>Your decisions</span>
-              <span>{decisions.length}</span>
             </div>
             <ul className="decisions">
               {decisions.map((x, i) => (
                 <li key={i}>
-                  <span className={`reason ${x.label}`}>{x.label}</span>
+                  <Reason label={x.label} icon={x.label === 'Plan' ? 'sprout' : undefined} />
                   <span>{x.text}</span>
                   <span>{x.answer}</span>
                 </li>
@@ -175,43 +166,37 @@ export function Harvest() {
               <>
                 <div className="section-title">
                   <span>Webinar invites</span>
-                  <span>{invited ? `${invited} people invited` : 'held, nothing sent'}</span>
                 </div>
-                <table className="list">
-                  <tbody>
-                    {INVITE_LIST.map((r) => (
-                      <tr key={r.company}>
-                        <td>{r.company}</td>
-                        <td>{sentAll || (sentAcme && r.company === 'Acme') ? `${r.contacts} sent` : `${r.contacts} queued`}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="hint">Simulated send. Webinar {e.webinarDate}, 10:00 PT, shown in each person’s time zone.</p>
+                <p className="sent">
+                  {invited ? (
+                    <>
+                      <b>{invited} sent</b> for {e.webinarDate}, 10:00 PT
+                    </>
+                  ) : (
+                    'Held. Nothing was sent.'
+                  )}
+                </p>
               </>
             ) : (
               <>
                 <div className="section-title">
                   <span>{action}</span>
-                  <span>{sentAll ? `${count} sent` : 'held, nothing sent'}</span>
                 </div>
-                <p className="hint">
-                  Simulated send to {count} {audience}.
-                </p>
+                <p className="sent">{sentAll ? <b>{count} sent</b> : 'Held. Nothing was sent.'}</p>
               </>
             )}
 
             <div className="section-title">
-              <span>Seed library</span>
-              <span>{e.seeds.length} lessons</span>
+              <span>Lessons saved</span>
             </div>
             <ul className="decisions">
-              {e.seeds.slice(0, 4).map((s) => (
-                <li key={s.file}>
-                  <code>{s.file}</code>
-                  <span>{s.isNew || s.file.includes('launch-dates') ? 'New today' : s.from}</span>
-                </li>
-              ))}
+              {e.seeds
+                .filter((s) => s.isNew || s.file.includes('launch-dates'))
+                .map((s) => (
+                  <li key={s.file}>
+                    <code>{s.file}</code>
+                  </li>
+                ))}
               {e.pendingSeeds.map((s) => (
                 <li key={s.file}>
                   <code>{s.file}</code>

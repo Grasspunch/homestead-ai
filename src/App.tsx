@@ -33,22 +33,14 @@ function Hud() {
               <b>
                 {fmtK(e.energyUsed)} <small>/ {fmtK(e.budget)}</small>
               </b>
-              <em>{fmtK(e.modelTokens)} from model calls</em>
             </div>
-            <div className="meter" data-testid="meter-calls" title="Each model call is one Claude request in this run">
-              <span>Model calls</span>
-              <b>{e.liveCalls || e.replayCalls}</b>
-              <em>{e.liveCalls ? 'live' : 'replayed'}</em>
-            </div>
-            <div className="meter" data-testid="meter-sim" title="Scripted farmhand steps that stand in for tool use">
-              <span>Simulated</span>
-              <b>{e.simSteps}</b>
-              <em>steps</em>
-            </div>
-            <div className="meter needed" data-testid="meter-needed">
+            <div
+              className="meter needed"
+              data-testid="meter-needed"
+              title={`${e.liveCalls || e.replayCalls} ${e.liveCalls ? 'live' : 'replayed'} model calls, ${e.simSteps} simulated steps`}
+            >
               <span>Needed you</span>
               <b>{e.neededYou}</b>
-              <em>times</em>
             </div>
           </>
         )}
@@ -113,20 +105,13 @@ function Intro() {
   return (
     <div className="intro" role="dialog" aria-label="Homestead AI">
       <div className="intro-card">
-        <div className="brand">
-          <img src="/favicon.svg" alt="" /> Homestead AI
-        </div>
         <h1>Your agents don’t know what other teams decided.</h1>
         <p>
-          Four farms in this valley run their own crews of agents. Yours is about to announce Relay v2 for March 12, the date you promised Acme. Engineering, two
-          fences away, moved the release to March 26 and wrote it in standup notes you didn’t attach. Your agents only read what you give them.
-        </p>
-        <p>
-          On a homestead you set the goal and approve the plan, and the farmhands do the work. They stop and ask you when a step costs more than planned, carries risk,
-          can’t be undone, fails, or looks wrong, like this date.
+          You promised Acme Relay v2 on March 12. Engineering moved it to March 26 in standup notes your agents were never given. Brief your crew and watch what
+          they catch.
         </p>
         <button className="btn primary" onClick={() => e.startDemo()} data-testid="start" autoFocus>
-          Walk onto the farm <Kbd>⏎</Kbd>
+          Walk onto the farm
         </button>
       </div>
     </div>
@@ -202,7 +187,9 @@ function onKey(ev: KeyboardEvent) {
     }
     if (k === 'r') {
       ev.preventDefault()
-      document.getElementById('reply-input')?.focus()
+      const input = document.getElementById('reply-input')
+      input?.closest('details')?.setAttribute('open', '')
+      input?.focus()
       return
     }
   }
@@ -228,7 +215,7 @@ export function App() {
         <Intro />
         {e.paused && (
           <div className="paused-veil">
-            <span>Paused · press P to resume</span>
+            <span>Paused</span>
           </div>
         )}
       </main>

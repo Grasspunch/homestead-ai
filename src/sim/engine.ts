@@ -628,14 +628,14 @@ export class Engine {
       const c = this.out.clarify!
       this.call('Head farmer', c)
       this.questions = c.data.questions.slice(0, 3).map((q, i) => ({ id: q.id || `q${i}`, q: q.q, why: q.why, options: q.options.slice(0, 2) }))
-      this.addLog('Head farmer', `Asked ${this.questions.length} questions it couldn’t answer from the brief`, 'info', undefined, `${c.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'} · ${fmtTokens(c.tokens)}`)
+      this.addLog('Head farmer', `Asked ${this.questions.length} questions it couldn’t answer from the brief`, 'info', undefined, `${c.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'}, ${fmtTokens(c.tokens)}`)
     }
     if (key === 'plan') {
       const p = this.out.plan!
       this.call('Head farmer', p)
       this.applyPlan(p.data)
       this.planRevealT = this.clock
-      this.addLog('Head farmer', `Proposed a quest plan: 5 tasks, a crew of 4`, 'info', undefined, `${p.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'} · ${fmtTokens(p.tokens)}. Each task gets only the documents it needs.`)
+      this.addLog('Head farmer', `Proposed a quest plan: 5 tasks, a crew of 4`, 'info', undefined, `${p.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'}, ${fmtTokens(p.tokens)}. Each task gets only the documents it needs.`)
       if (/webinar|invite/i.test(this.goal)) this.addLog('Head farmer', 'Planted a saved seed in the Scheduler’s card: lesson-webinar-timezones.md', 'auto', 'invites', 'It matched “webinar” in the brief.')
       this.webinarDate = this.webinarFor(this.launchDate)
     }
@@ -647,7 +647,7 @@ export class Engine {
         this.webinarDate = this.webinarFor(this.launchDate)
       }
       const unsourced = d.data.claims.filter((c) => !c.source).length
-      this.addLog('Writer', `Drafted “${d.data.headline}” (${d.data.claims.length} claims, ${unsourced} without a source)`, 'info', 'draft', `${d.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'} · ${fmtTokens(d.tokens)}`)
+      this.addLog('Writer', `Drafted “${d.data.headline}” (${d.data.claims.length} claims, ${unsourced} without a source)`, 'info', 'draft', `${d.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'}, ${fmtTokens(d.tokens)}`)
     }
     if (key === 'claims') {
       this.call('Reviewer', this.out.claims!, 'factcheck')
@@ -987,7 +987,7 @@ export class Engine {
     }
     if (sub.id === 'f1') {
       const c = this.out.claims!
-      this.addLog(fh.role, `Checked ${c.data.checked} claims: ${c.data.issues.length} without a source`, 'info', 'factcheck', `${c.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'} · ${fmtTokens(c.tokens)}`)
+      this.addLog(fh.role, `Checked ${c.data.checked} claims: ${c.data.issues.length} without a source`, 'info', 'factcheck', `${c.provenance === 'live' ? 'Live call' : 'Replay of a recorded call'}, ${fmtTokens(c.tokens)}`)
       const issue = c.data.issues[0]
       if (issue) {
         const draft = this.task('draft')
@@ -1021,8 +1021,8 @@ export class Engine {
       question: 'Two launch dates are in play. Which one should the announcement use?',
       impact: [`Changes the announcement, the webinar date and the invite emails on your farm, and tells Priya’s crew`, 'Nothing has been sent yet', 'Can be undone until the invites go out'],
       sides: [
-        { title: ours.date, who: 'Writer · Q1 Launch (your farm)', source: ours.source, quote: ours.quote },
-        { title: theirs.date, who: 'Engineering crew · Auth SDK v2 (Priya)', source: theirs.source, quote: theirs.quote },
+        { title: ours.date, who: 'Your Writer, from the call notes', source: ours.source, quote: ours.quote },
+        { title: theirs.date, who: 'Priya’s engineering crew', source: theirs.source, quote: theirs.quote },
       ],
       options: [
         { key: '1', label: `Use ${theirs.date}`, value: 'theirs', recommended: recommendTheirs, kind: 'alt' },

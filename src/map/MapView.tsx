@@ -4,19 +4,6 @@ import { fitCamera, render, type Camera, type Hit } from './render'
 import { engine } from '../sim/engine'
 import { useEngine } from '../ui'
 
-const TERMS: Record<Hit['kind'], string> = {
-  plot: 'Plot · a task',
-  farmhand: 'Farmhand · a subagent',
-  head: 'Head farmer · the orchestrator agent',
-  signpost: 'Signpost · context this task’s farmhand can see',
-  pest: 'Pest · a problem an agent found',
-  crow: 'Crow · conflicting facts across farms',
-  seeds: 'Seed library · lessons saved as .md files',
-  neighbour: 'Neighbour · another person in the org',
-  nplot: 'Plot on a neighbour’s farm',
-  farm: 'Farm · a project',
-}
-
 export function MapView() {
   const e = useEngine()
   const wrap = useRef<HTMLDivElement>(null)
@@ -90,7 +77,7 @@ export function MapView() {
       onMouseMove={(ev) => {
         const h = pick(ev.clientX, ev.clientY)
         const r = wrap.current!.getBoundingClientRect()
-        setHover(h ? { hit: h, x: ev.clientX - r.left, y: ev.clientY - r.top } : null)
+        setHover(h && !(h.kind === 'farm' && engine.view === 'farm') ? { hit: h, x: ev.clientX - r.left, y: ev.clientY - r.top } : null)
       }}
       onMouseLeave={() => setHover(null)}
       onClick={(ev) => {
@@ -105,7 +92,6 @@ export function MapView() {
       {!ready && <div className="paused-veil"><span>Loading the valley…</span></div>}
       {hover && (
         <div className="tooltip" style={{ left: Math.min(hover.x + 16, (wrap.current?.clientWidth ?? 800) - 290), top: hover.y + 16 }}>
-          <span className="term">{TERMS[hover.hit.kind]}</span>
           <b>{hover.hit.title}</b>
           {hover.hit.body && <p>{hover.hit.body}</p>}
         </div>

@@ -1,5 +1,5 @@
-/* Homestead AI. A cozy pixel farm for awareness; a field ledger for decisions.
-   Tokens are named for the farm's world: ink, parchment, sprout, harvest, crow. */
+/* Homestead AI. The farm is pixel art; the panel is a clean sheet beside it.
+   Ink and sprout come from the Sprout Lands palette; the panel stays neutral so the farm carries the colour. */
 
 @font-face {
   font-family: 'SproutLands';
@@ -8,19 +8,19 @@
 }
 
 :root {
-  --ink: #2c2340;
-  --ink-soft: #5b5170;
-  --ink-faint: #8e86a0;
-  --parchment: #fbf6e9;
-  --parchment-deep: #f3ead2;
-  --paper: #fffdf6;
-  --rule: #e4d8b8;
-  --rule-strong: #cdbd94;
+  --ink: #241d33;
+  --ink-soft: #5a5468;
+  --ink-faint: #8d889a;
+  --parchment: #ffffff;
+  --parchment-deep: #f2f2f5;
+  --paper: #ffffff;
+  --rule: rgba(36, 29, 51, 0.09);
+  --rule-strong: rgba(36, 29, 51, 0.2);
   --sprout: #4f8f3f;
   --sprout-deep: #3b6f2f;
   --sprout-wash: #e5f0d6;
   --harvest: #c8892a;
-  --harvest-wash: #fbefd6;
+  --harvest-wash: #f2f2f5;
   --cost: #a86a12;
   --cost-wash: #fbefd6;
   --risk: #b9531b;
@@ -35,8 +35,8 @@
   --replay: #9a6a12;
   --sky: #a9d8ef;
   --shadow: 0 1px 0 rgba(44, 35, 64, 0.06), 0 8px 24px -12px rgba(44, 35, 64, 0.35);
-  --font-display: 'Alegreya', Georgia, serif;
-  --font-body: 'Alegreya Sans', 'Segoe UI', sans-serif;
+  --font-display: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+  --font-body: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --font-pixel: 'SproutLands', 'JetBrains Mono', monospace;
   --panel-w: 452px;
@@ -58,7 +58,7 @@ body {
   background: var(--parchment);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
@@ -136,7 +136,7 @@ button {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: rgba(255, 253, 246, 0.94);
+  background: rgba(255, 255, 255, 0.96);
   border: 2px solid var(--ink);
   border-radius: 6px;
   padding: 3px;
@@ -168,7 +168,7 @@ button {
 .meters {
   display: flex;
   align-items: stretch;
-  background: rgba(255, 253, 246, 0.94);
+  background: rgba(255, 255, 255, 0.96);
   border: 2px solid var(--ink);
   border-radius: 6px;
   box-shadow: 0 3px 0 rgba(44, 35, 64, 0.25);
@@ -391,14 +391,6 @@ button {
   position: relative;
 }
 
-.panel::before {
-  /* ledger ruling */
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: repeating-linear-gradient(to bottom, transparent 0 27px, rgba(205, 189, 148, 0.18) 27px 28px);
-  pointer-events: none;
-}
 
 .panel-head {
   padding: 16px 20px 12px;
@@ -883,10 +875,12 @@ textarea.goal {
 
 .flag {
   font-size: 13px;
-  color: var(--cost);
-  background: var(--cost-wash);
-  border-radius: 5px;
-  padding: 2px 7px;
+  color: var(--ink-faint);
+}
+
+.flag.ok {
+  color: var(--sprout-deep);
+  font-weight: 700;
 }
 
 .crew-grid {
@@ -1009,21 +1003,35 @@ textarea.goal {
 }
 
 .reason {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-weight: 700;
-  font-size: 12.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 4px;
+  font-size: 14px;
   color: var(--c);
-  background: var(--w);
+  white-space: nowrap;
 }
 
-.reason.Cost { --c: var(--cost); --w: var(--cost-wash); }
-.reason.Risk { --c: var(--risk); --w: var(--risk-wash); }
-.reason.Irreversible { --c: var(--irreversible); --w: var(--irreversible-wash); }
-.reason.Failure { --c: var(--failure); --w: var(--failure-wash); }
-.reason.Anomaly { --c: var(--anomaly); --w: var(--anomaly-wash); }
+/* Only the step you can't take back gets a colour. */
+.reason {
+  --c: var(--ink);
+}
+
+.reason.Irreversible {
+  --c: var(--irreversible);
+}
+
+.ask-head .conf {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+.why .src-note {
+  font-size: 13px;
+  color: var(--ink-faint);
+  font-style: italic;
+}
 
 .prov {
   margin-left: auto;
@@ -1089,8 +1097,7 @@ textarea.goal {
 .side blockquote {
   margin: 4px 0 0;
   font-size: 13.5px;
-  border-left: 3px solid var(--anomaly);
-  padding-left: 7px;
+  font-style: italic;
 }
 
 .side .src {
@@ -1112,29 +1119,16 @@ textarea.goal {
 }
 
 .impact li {
-  padding: 2px 0 2px 16px;
-  position: relative;
+  padding: 1px 0;
+  color: var(--ink-soft);
 }
 
-.impact li::before {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 9px;
-  width: 6px;
-  height: 6px;
-  background: var(--rule-strong);
-  transform: rotate(45deg);
-}
 
 .impact li.irrev {
   color: var(--irreversible);
   font-weight: 600;
 }
 
-.impact li.irrev::before {
-  background: var(--irreversible);
-}
 
 .confidence {
   font-size: 13.5px;
@@ -1202,7 +1196,7 @@ textarea.goal {
 
 .chips select {
   font-size: 12.5px;
-  border: 1px dashed var(--rule-strong);
+  border: 1px solid var(--rule-strong);
   background: transparent;
   border-radius: 4px;
   padding: 1px 4px;
@@ -1239,7 +1233,7 @@ textarea.goal {
 
 details.why {
   margin-top: 10px;
-  border-top: 1.5px dashed var(--rule);
+  border-top: 1px solid var(--rule);
   padding-top: 8px;
   font-size: 13.5px;
 }
@@ -1375,7 +1369,7 @@ details.why pre {
 }
 
 .seed-card {
-  border: 1.5px dashed var(--sprout);
+  border: 1.5px solid var(--sprout);
   background: var(--sprout-wash);
   border-radius: 9px;
   padding: 10px 12px;
@@ -1921,4 +1915,93 @@ table.list td:last-child {
   gap: 6px;
   flex-wrap: wrap;
   margin: 10px 0 4px;
+}
+
+/* ---- pixel icons from the Sprout Lands UI pack ---- */
+.icon {
+  display: inline-block;
+  flex: none;
+  background-image: url('/ui/emoji.png');
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
+/* ---- review a finished step ---- */
+.steps button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  border-bottom: 2px solid transparent;
+}
+
+.steps button:hover {
+  color: var(--ink);
+  border-bottom-color: var(--rule-strong);
+}
+
+.steps li.viewing {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.steps li.viewing button {
+  border-bottom-color: var(--ink);
+}
+
+.review-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.review dl {
+  margin: 0;
+}
+
+.review dt {
+  font-weight: 700;
+  margin-top: 14px;
+}
+
+.review dd {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+}
+
+.review ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  color: var(--ink-soft);
+}
+
+.field-label {
+  display: block;
+  font-weight: 700;
+  font-size: 14px;
+  margin: 20px 0 6px;
+}
+
+.field-label:first-child {
+  margin-top: 0;
+}
+
+.panel-lead {
+  margin: 0 0 4px;
+  color: var(--ink-soft);
+}
+
+.sent {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink-soft);
+}
+
+.sent b {
+  color: var(--ink);
 }
