@@ -260,10 +260,25 @@ class Store {
   }
 
   async enableNotifications(on: boolean) {
-    if (on && typeof Notification !== 'undefined') {
-      const p = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission
-      this.notifications = p === 'granted'
-    } else this.notifications = false
+    this.notifications = false
+    if (on) {
+      let framed = false
+      try {
+        framed = window.top !== window.self
+      } catch {
+        framed = true
+      }
+      // A browser never asks inside a frame, such as Lovable's preview, and a block it remembers stays silent; say so.
+      if (typeof Notification === 'undefined') this.say('This browser can’t show desktop notifications.')
+      else if (framed && Notification.permission !== 'granted') this.say('Open the app in its own tab to turn on desktop notifications.')
+      else {
+        const p = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission
+        if (p === 'granted') {
+          this.notifications = true
+          new Notification('Desktop notifications are on', { body: 'You’ll get one when a farmer needs you and this tab is in the background.', icon: '/apple-touch-icon.png' })
+        } else this.say('Your browser blocks notifications for this site. Allow them in the site settings, then try again.')
+      }
+    }
     this.notify()
   }
 

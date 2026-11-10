@@ -10,7 +10,6 @@ import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
 import { discuss, getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode } from './run/agent'
-import { probeKeys, type Keys } from './run/live'
 import type { Scope } from './run/reshape'
 import { planInto } from './run/planning'
 import { scenario } from './run/simPlan'
@@ -299,8 +298,8 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         <b>Planner</b>
         <span className="tag grey">Plan</span>
         {p.plannedLive && (
-          <span className="tag sky" title={`This plan came from a live call to ${pl?.model ?? 'Claude Opus 5.5'}, through ${p.liveSource ?? 'Lovable AI'}`}>
-            Planned live: {cap(p.liveSource ?? 'Lovable AI')}
+          <span className="tag sky" title={`This plan came from a live call to ${pl?.model ?? 'Claude Opus 5.5'}`}>
+            Planned live
           </span>
         )}
         {!p.plannedLive && noKey && <span className="tag gold">{p.liveNote}</span>}
@@ -926,7 +925,6 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
     store.noteFor(p.id, r.data.to, msg)
     store.chatTo(p.id, { from: 'planner', text: r.data.reply, to: r.data.to })
     if (r.error) store.say(r.error)
-    else if (r.source && r.source !== 'Lovable AI') store.say(`Out of Lovable credits, answered through ${r.source}`)
   }
   return (
     <Dialogue farmer="planner" side={side}>
@@ -998,20 +996,10 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
   )
 }
 
-const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
 
 function Settings() {
   const st = useStore()
   const [live, setLive] = useState(getLiveMode())
-  // Whether the server can make live calls, and how. Keys never leave the server.
-  const [keys, setKeys] = useState<Keys | null>(null)
-  useEffect(() => {
-    let on = true
-    probeKeys().then((k) => on && setKeys(k))
-    return () => {
-      on = false
-    }
-  }, [])
   return (
     <div className="pop wood" role="dialog" aria-label="Settings">
       <h3 className="px-s">Settings</h3>
@@ -1025,23 +1013,9 @@ function Settings() {
         <span className={`switch${live ? ' on' : ''}`} />
         <span>
           Live mode
-          <small>On, the Planner calls Claude or Codex through Lovable AI. Off, it’s simulated and free.</small>
+          <small>On, the farmers call real models. Off, it’s simulated and free.</small>
         </span>
       </button>
-      <dl className="keys" aria-label="Live calls">
-        <div>
-          <dt>Live:</dt>
-          <dd className={keys?.gateway || keys?.anthropic ? 'yes' : 'no'}>
-            {!keys ? '…' : keys.gateway ? 'Lovable AI (uses workspace credits)' : keys.anthropic || keys.openai ? 'Your own keys' : 'Not set up'}
-          </dd>
-        </div>
-        {keys && (keys.own.anthropic || keys.own.openai) && (
-          <div>
-            <dt>{keys.gateway ? 'Out of credits:' : 'Keys:'}</dt>
-            <dd className="yes">{[keys.own.anthropic && 'your Anthropic key', keys.own.openai && 'your OpenAI key'].filter(Boolean).join(', ')}</dd>
-          </div>
-        )}
-      </dl>
       <button className="toggle" onClick={() => store.enableNotifications(!st.notifications)}>
         <span className={`switch${st.notifications ? ' on' : ''}`} />
         <span>
