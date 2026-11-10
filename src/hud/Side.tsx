@@ -1,0 +1,552 @@
+// The wood panel on the right: one page at a time (a task, a farmer, the inbox, spend, the harvest, control).
+import { CREW } from '../agent/agents'
+import { store, type Project } from '../run/store'
+import type { Autonomy, AutonomyLevel, FarmerId, Moment, RunState, TaskState } from '../run/types'
+import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
+import { Ico, Portrait, Swatch, mins, tokens, usd } from './bits'
+import { ProofView, Rollout } from './Proof'
+
+const STATUS: Record<TaskState['status'], string> = {
+  waiting: 'Not started',
+  growing: 'Growing',
+  checking: 'Being checked',
+  wilted: 'Failed a check',
+  ripe: 'Done and checked',
+  accepted: 'Accepted',
+}
+
+const ago = (s: RunState, t: number) => {
+  const m = Math.max(0, Math.round((s.t - t) / 60000))
+  return m < 1 ? 'just now' : `${m} min ago`
+}
+
+function Panel({ children, label }: { children: React.ReactNode; label: string }) {
+  return (
+    <aside className="side wood" aria-label={label}>
+      <button className="close btn white xs" onClick={() => store.setDrawer(null)} aria-label="Close">
+        <Ico name="cross" size={16} />
+      </button>
+      <div className="scroll">{children}</div>
+    </aside>
+  )
+}
+
+export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string }) {
+  const t = s.tasks.find((x) => x.id === id)
+  if (!t) return null
+  const planning = !p.approved
+  const f = s.farmers[t.farmer]
+  const lines = s.activity.filter((a) => a.task === id).slice(-6).reverse()
+  const chat = /support|assistant|chat/i.test(p.name + p.goal)
+  const ask = s.asks.find((a) => a.task === id && !a.answer)
+  return (
+    <Panel label={`Task: ${t.name}`}>
+      <div>
+        <h3>Task</h3>
+        <h2>{t.name}</h2>
+      </div>
+      {!planning && (
+        <div className="sum">
+          {ask ? <b>Waiting for you. </b> : null}
+          {t.gate && s.deploy.length && s.deploy[s.deploy.length - 1].stage === 'rollback' && t.status !== 'ripe' ? <b>Rolled back by itself. </b> : null}
+          {STATUS[t.status]}
+          {t.status === 'growing' ? `, about ${Math.round(t.progress * 100)}% there.` : '.'} {f && t.status !== 'ripe' ? `${f.label} is on it.` : ''}
+          {t.summary && t.status === 'ripe' ? ` ${t.summary}.` : ''}
+        </div>
+      )}
+      <div className="meta">
+        {f && (
+          <button className="chip" onClick={() => store.setDrawer({ kind: 'farmer', id: f.id })}>
+            <Swatch farmer={f.id} />
+            {f.label}
+          </button>
+        )}
+        {!planning && (
+          <>
+            <span className="chip">
+              <i className="coin-s" />
+              {usd(t.usd)} so far
+            </span>
+            <span className="chip mono">{tokens(t.tokens)} tokens</span>
+          </>
+        )}
+        {t.gate && <span className="tag sky">Waits for you</span>}
+      </div>
+
+      <div>
+        <h3>Done when</h3>
+        {planning ? (
+          <div className="when paper">
+            <textarea
+              rows={2}
+              value={t.doneWhen}
+              aria-label="Done when"
+              onChange={(e) => store.editPlan(p.id, (tasks) => {
+                const x = tasks.find((k) => k.id === id)
+                if (x) x.doneWhen = e.target.value
+              })}
+            />
+          </div>
+        ) : (
+          <div className="when">{t.doneWhen}</div>
+        )}
+      </div>
+
+      {planning && (
+        <>
+          <div>
+            <h3>Who does it</h3>
+            <div className="row">
+              {FARMER_ORDER.filter((fid) => s.farmers[fid]).map((fid) => (
+                <button
+                  key={fid}
+                  className={`btn xs ${t.farmer === fid ? '' : 'tan'}`}
+                  aria-pressed={t.farmer === fid}
+                  onClick={() => store.editPlan(p.id, (tasks) => {
+                    const x = tasks.find((k) => k.id === id)
+                    if (x) x.farmer = fid
+                  })}
+                >
+                  <Swatch farmer={fid} />
+                  {s.farmers[fid]!.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button
+            className="toggle"
+            onClick={() => store.editPlan(p.id, (tasks) => {
+              const x = tasks.find((k) => k.id === id)
+              if (x) x.gate = !x.gate
+            })}
+          >
+            <span className={`box${t.gate ? ' on' : ''}`} />
+            <span>Wait for my go-ahead before this one runs</span>
+          </button>
+        </>
+      )}
+
+      {t.gate && s.deploy.length > 0 && (
+        <div>
+          <h3>Rollout</h3>
+          <Rollout state={s} />
+        </div>
+      )}
+
+      {t.checks.length > 0 && (
+        <div>
+          <h3>Checks</h3>
+          <div className="checks">
+            {[...t.checks].reverse().map((c, i) => (
+              <details key={c.t} open={i === 0} className={c.pass ? 'check ok-row' : 'check bad-row'}>
+                <summary>
+                  <span className={c.pass ? 'ok' : 'bad'}>{c.pass ? '✓' : '✗'}</span>
+                  <span className="grow">{c.notes}</span>
+                  <span className="sub">{s.farmers[c.by]?.label ?? c.by}, {ago(s, c.t)}</span>
+                </summary>
+                {c.proof && <ProofView proof={c.proof} chat={chat} />}
+              </details>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {lines.length > 0 && (
+        <div>
+          <h3>Latest</h3>
+          <div className="list">
+            {lines.map((a) => (
+              <div key={a.t + a.text}>
+                {a.farmer ? <Swatch farmer={a.farmer} /> : <Ico name="sprout" size={14} />}
+                <span className="grow">{a.text}</span>
+                <span className="sub">{ago(s, a.t)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+export function FarmerPanel({ s, id, p }: { s: RunState; id: FarmerId; p: Project }) {
+  const f = s.farmers[id]
+  if (!f) return null
+  const mine = s.tasks.filter((t) => t.farmer === id)
+  const pct = Math.min(1, f.usd / Math.max(0.01, f.limits.usd))
+  const agent = f.agent === 'codex' ? 'Codex' : f.agent === 'claude-code' ? 'Claude Code' : f.agent
+  const words = { idle: 'Waiting for its next task', working: f.lastTool ?? 'Working', stuck: 'Fixing a failed check', needs: 'Waiting for you', done: 'Finished' }[f.state]
+  return (
+    <Panel label={`Farmer: ${f.label}`}>
+      <div className="farmer-head">
+        <div className="portrait sm">
+          <Portrait farmer={id} size={72} />
+        </div>
+        <div>
+          <h3>Farmer</h3>
+          <h2>{f.label}</h2>
+          <div className="meta">
+            <span>{f.model} on {agent}</span>
+          </div>
+        </div>
+      </div>
+      {p.approved && <div className="sum">{words}.</div>}
+      <div>
+        <h3>Can read</h3>
+        <div className="slots">
+          {f.context.map((c) => (
+            <span key={c} className="slot mono">{c}</span>
+          ))}
+        </div>
+      </div>
+      <div>
+        <h3>Rules</h3>
+        {f.constraints.map((c) => (
+          <div className="rule" key={c}>
+            <Ico name="no" size={16} tone="light" />
+            {c}
+          </div>
+        ))}
+      </div>
+      <div>
+        <h3>Limit</h3>
+        <div className="stat">
+          <span className="big">{usd(f.usd)}</span>
+          <span>of {usd(f.limits.usd)}, and {mins(f.limits.minutes)} at most</span>
+        </div>
+        <div className="bar" style={{ marginTop: 6 }}>
+          <i style={{ width: `${pct * 100}%`, background: pct > 0.85 ? 'var(--honey)' : 'var(--leaf)' }} />
+        </div>
+      </div>
+      <div>
+        <h3>Its tasks</h3>
+        <div className="list">
+          {mine.map((t) => (
+            <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
+              <span className="grow">{t.name}</span>
+              <span className="sub">{p.approved ? STATUS[t.status] : t.gate ? 'Waits for you' : ''}</span>
+            </button>
+          ))}
+          {!mine.length && <div className="sub">Checks the others’ work.</div>}
+        </div>
+      </div>
+      <p className="fine">{CREW[id].role.charAt(0).toUpperCase() + CREW[id].role.slice(1)}.</p>
+    </Panel>
+  )
+}
+
+export function InboxPanel({ s }: { s: RunState }) {
+  const open = s.asks.filter((a) => !a.answer)
+  const decided = s.asks.filter((a) => a.answer).reverse()
+  const fixed = [...s.autoFixes].reverse()
+  return (
+    <Panel label="Inbox">
+      <div>
+        <h3>Inbox</h3>
+        <h2>{open.length ? `${open.length} need${open.length === 1 ? 's' : ''} you` : 'Nothing needs you'}</h2>
+      </div>
+      {open.length > 0 && (
+        <div className="list">
+          {open.map((a) => (
+            <button key={a.id} onClick={() => a.task && store.setDrawer({ kind: 'task', id: a.task })}>
+              <Swatch farmer={a.farmer} />
+              <span className="grow">
+                {a.question}
+                <span className="sub">Suggested: {a.suggested}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div>
+        <h3>Fixed without you</h3>
+        <div className="list">
+          {fixed.map((x) => (
+            <button key={x.t} onClick={() => x.task && store.setDrawer({ kind: 'task', id: x.task })}>
+              <Ico name="check" size={16} tone="green" />
+              <span className="grow">
+                {x.what}
+                <span className="sub">{ago(s, x.t)}</span>
+              </span>
+            </button>
+          ))}
+          {!fixed.length && <div className="sub">Nothing yet.</div>}
+        </div>
+      </div>
+      <div>
+        <h3>You decided</h3>
+        <div className="list">
+          {decided.map((a) => (
+            <button key={a.id} onClick={() => a.task && store.setDrawer({ kind: 'task', id: a.task })}>
+              <Swatch farmer={a.farmer} />
+              <span className="grow">
+                {a.answer!.choice}
+                <span className="sub">{a.question}</span>
+              </span>
+            </button>
+          ))}
+          {!decided.length && <div className="sub">Nothing yet.</div>}
+        </div>
+      </div>
+      <button className="btn tan sm" onClick={() => store.setDrawer({ kind: 'control' })}>
+        <Ico name="gear" size={20} />
+        How often the crew stops for you
+      </button>
+    </Panel>
+  )
+}
+
+interface Fix {
+  key: string
+  title: string
+  why: string
+  saves: number
+}
+
+function fixes(s: RunState): Fix[] {
+  const out: Fix[] = []
+  const total = Math.max(0.01, s.usage.usd)
+  const retry = s.usage.byKind.retry.usd
+  const read = s.usage.byKind.read.usd
+  if (retry / total > 0.04) out.push({ key: 'retry', title: 'Cap fix rounds at 2 per task', why: `Fixes after failed checks cost ${usd(retry)} this run.`, saves: retry * 0.4 })
+  if (read / total > 0.2) out.push({ key: 'read', title: 'Narrow the Builder to the folders it touched', why: `Reading files was ${Math.round((read / total) * 100)}% of the spend.`, saves: read * 0.35 })
+  const designer = s.farmers.designer
+  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', title: 'Check screenshots with Sol 6.1', why: 'The Designer’s screenshot checks don’t need the bigger model.', saves: designer.usd * 0.3 })
+  for (const r of s.replans) {
+    const t = s.tasks.find((x) => r.added.includes(x.id))
+    if (t) out.push({ key: `split-${t.id}`, title: `Plan "${t.name.split(': ')[1] ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.', saves: 0.25 })
+  }
+  return out
+}
+
+export function UsagePanel({ s }: { s: RunState }) {
+  const est = s.estimate
+  const ids = FARMER_ORDER.filter((id) => s.farmers[id])
+  const max = Math.max(0.01, ...ids.map((id) => s.farmers[id]!.usd))
+  const kinds = s.usage.byKind
+  const total = Math.max(0.01, s.usage.usd)
+  const list = fixes(s)
+  return (
+    <Panel label="Spend">
+      <div>
+        <h3>Spend</h3>
+        <div className="stat">
+          <span className="big">{usd(s.usage.usd)}</span>
+          {est && <span>of about {usd(est.usd)} planned</span>}
+        </div>
+        {est && (
+          <div className="bar" style={{ marginTop: 8 }}>
+            <i style={{ width: `${Math.min(100, (s.usage.usd / est.usd) * 100)}%`, background: s.usage.usd > est.usd ? 'var(--honey)' : 'var(--leaf)' }} />
+          </div>
+        )}
+        {s.singleAgentEstimate && est && (
+          <p className="fine">
+            One agent alone: about {usd(s.singleAgentEstimate.usd)} and {mins(s.singleAgentEstimate.minutes)}. This crew: {mins(est.minutes)}.
+          </p>
+        )}
+      </div>
+      {list.length > 0 && (
+        <div>
+          <h3>Ways to spend less</h3>
+          <div className="fixes">
+            {list.map((f) => (
+              <div className="fix" key={f.key}>
+                <span className="grow">
+                  {f.title}
+                  <span className="sub">{f.why} Saves about {usd(f.saves)} a run.</span>
+                </span>
+                {store.applied.has(f.key) ? (
+                  <span className="ok px-s">Applied</span>
+                ) : (
+                  <button
+                    className="btn xs"
+                    onClick={() => {
+                      store.applied.add(f.key)
+                      store.say('Applied. Your next run uses it.')
+                    }}
+                  >
+                    Apply
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div>
+        <h3>By farmer</h3>
+        <div className="list">
+          {ids.map((id) => {
+            const f = s.farmers[id]!
+            const over = f.usd > f.limits.usd * 0.85
+            return (
+              <button key={id} onClick={() => store.setDrawer({ kind: 'farmer', id })} className="spend-row">
+                <Swatch farmer={id} />
+                <span className="grow">
+                  {f.label} <span className="sub-inline">{f.model}</span>
+                  <span className="bar thin">
+                    <i style={{ width: `${(f.usd / max) * 100}%`, background: over ? 'var(--honey)' : '#c9a27a' }} />
+                  </span>
+                </span>
+                <span className="mono">{usd(f.usd)}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      <div>
+        <h3>On what</h3>
+        <div className="bar tall">
+          <i style={{ width: `${(kinds.read.usd / total) * 100}%`, background: '#98c2dc' }} title="Reading" />
+          <i style={{ width: `${(kinds.write.usd / total) * 100}%`, background: '#a9cf86' }} title="Writing" />
+          <i style={{ width: `${(kinds.retry.usd / total) * 100}%`, background: 'var(--honey)' }} title="Fixing" />
+        </div>
+        <div className="meta" style={{ marginTop: 6 }}>
+          <span className="chip"><span className="sw" style={{ background: '#98c2dc' }} />Reading {usd(kinds.read.usd)}</span>
+          <span className="chip"><span className="sw" style={{ background: '#a9cf86' }} />Writing {usd(kinds.write.usd)}</span>
+          <span className="chip"><span className="sw" style={{ background: 'var(--honey)' }} />Fixing {usd(kinds.retry.usd)}</span>
+        </div>
+      </div>
+      <p className="fine mono">{tokens(s.usage.tokens)} tokens, {s.actions} actions</p>
+    </Panel>
+  )
+}
+
+export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
+  const ripe = s.tasks.filter((t) => t.status === 'ripe' || t.status === 'accepted')
+  const decided = s.asks.filter((a) => a.answer)
+  const est = s.estimate
+  return (
+    <Panel label="Harvest">
+      <div>
+        <h3>Harvest</h3>
+        <h2>{s.done ? 'Everything is in' : `${ripe.length} of ${s.tasks.length} tasks in`}</h2>
+      </div>
+      {s.done && est && (
+        <div className="sum">
+          {usd(s.done.usd)} and {mins(s.done.minutes)}, against about {usd(est.usd)} and {mins(est.minutes)} planned.
+          {s.singleAgentEstimate ? ` One agent alone would have taken about ${mins(s.singleAgentEstimate.minutes)}.` : ''}
+        </div>
+      )}
+      <div>
+        <h3>Each task, with its proof</h3>
+        <div className="list">
+          {s.tasks.map((t) => {
+            const last = [...t.checks].reverse().find((c) => c.pass)
+            const proof = last?.proof
+            const what = !proof ? '' : proof.kind === 'screens' ? 'Screenshots' : proof.kind === 'rollout' ? 'Live metrics' : `${proof.tests?.filter((x) => x.pass).length} tests`
+            const done = t.status === 'ripe' || t.status === 'accepted'
+            return (
+              <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
+                <span className={done ? 'ok' : 'sub'}>{done ? '✓' : '·'}</span>
+                <span className="grow">
+                  {t.name}
+                  <span className="sub">{t.doneWhen}</span>
+                </span>
+                <span className="sub">{what}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      {s.deploy.length > 0 && (
+        <div>
+          <h3>Rollout</h3>
+          <Rollout state={s} compact />
+        </div>
+      )}
+      <div>
+        <h3>Stays with you</h3>
+        <div className="list">
+          {decided.map((a) => (
+            <div key={a.id}>
+              <Swatch farmer={a.farmer} />
+              <span className="grow">
+                {a.answer!.choice}
+                <span className="sub">{a.question}</span>
+              </span>
+            </div>
+          ))}
+          <div>
+            <Ico name="check" size={16} tone="green" />
+            <span className="grow">{s.autoFixes.length} things fixed without you</span>
+          </div>
+        </div>
+      </div>
+      {p.kind === 'sample' && s.done && (
+        <button className="btn sm" onClick={() => store.open(p.id)}>
+          <Ico name="back" size={20} />
+          Watch it again
+        </button>
+      )}
+    </Panel>
+  )
+}
+
+export const MOMENTS: { key: Moment | 'rollback'; label: string; auto: string }[] = [
+  { key: 'cost', label: 'A task goes over its limit', auto: 'The Planner splits or trims it' },
+  { key: 'disagree', label: 'Two farmers disagree', auto: 'The Planner picks, using the done-when' },
+  { key: 'failed', label: 'A check fails', auto: 'The farmer fixes it and checks again' },
+  { key: 'big', label: 'A big change across many files', auto: 'Lands it as one commit, with every test run before and after' },
+  { key: 'ship', label: 'Shipping to real users', auto: 'Ships to 10% first' },
+  { key: 'reship', label: 'Shipping again after a rollback', auto: 'Ships to 10% again once fixed' },
+  { key: 'rollback', label: 'A rollout goes bad', auto: 'Rolls back by itself, always' },
+]
+
+export const LEVELS: { key: AutonomyLevel; label: string }[] = [
+  { key: 'often', label: 'Often' },
+  { key: 'matters', label: 'When it matters' },
+  { key: 'undoable', label: 'Only what’s hard to undo' },
+]
+
+export function LevelPicker({ p, compact = false }: { p: Project; compact?: boolean }) {
+  return (
+    <div className={`levels${compact ? ' compact' : ''}`} role="radiogroup" aria-label="How often the crew stops for you">
+      {LEVELS.map((l) => (
+        <button key={l.key} role="radio" aria-checked={p.level === l.key} className={p.level === l.key ? 'on' : ''} onClick={() => store.setAutonomy(p.id, l.key, { ...AUTONOMY_PRESETS[l.key] })}>
+          {l.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function ControlPanel({ p }: { p: Project }) {
+  const set = (k: Moment, v: 'ask' | 'auto') => {
+    const next: Autonomy = { ...p.autonomy, [k]: v }
+    const level = (Object.keys(AUTONOMY_PRESETS) as AutonomyLevel[]).find((l) => MOMENTS.every((m) => m.key === 'rollback' || AUTONOMY_PRESETS[l][m.key] === next[m.key]))
+    store.setAutonomy(p.id, level ?? 'custom', next)
+  }
+  return (
+    <Panel label="How often the crew stops for you">
+      <div>
+        <h3>Control</h3>
+        <h2>How often should the crew stop for you?</h2>
+      </div>
+      <LevelPicker p={p} />
+      <div className="moments">
+        {MOMENTS.map((m) => {
+          const locked = m.key === 'rollback'
+          const v = locked ? 'auto' : p.autonomy[m.key as Moment]
+          return (
+            <div className="moment" key={m.key}>
+              <span className="grow">
+                {m.label}
+                <span className="sub">{v === 'ask' ? 'Asks you first, with a suggested answer' : m.auto}</span>
+              </span>
+              <div className="seg" role="radiogroup" aria-label={m.label}>
+                <button role="radio" aria-checked={v === 'ask'} className={v === 'ask' ? 'on' : ''} disabled={locked} onClick={() => set(m.key as Moment, 'ask')}>
+                  Ask me
+                </button>
+                <button role="radio" aria-checked={v === 'auto'} className={v === 'auto' ? 'on' : ''} disabled={locked} onClick={() => set(m.key as Moment, 'auto')}>
+                  Just do it
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {p.approved && <p className="fine">Changing this replays the run from the start with the new setting.</p>}
+    </Panel>
+  )
+}

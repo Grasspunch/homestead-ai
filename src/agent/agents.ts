@@ -1,9 +1,9 @@
-// The live agent calls in the demo: the head farmer's clarify, plan and cross-team check,
-// Backend's read of the opening hours and the Reviewer's review of the whole diff. Shared by the server route on Lovable (/api/agent)
+// The live agent calls: the Planner turns a goal into a crew and a plan, and routes the
+// person's messages to the right farmer. Shared by the server route on Lovable (/api/agent)
 // and the Vite dev server, so local and deployed runs use the same prompts.
 // The caller passes in an Anthropic client, which keeps this file free of runtime-specific imports.
 
-import { DOCS, NEIGHBOUR_DOCS, expandSignposts } from './docs'
+import type { Estimate, FarmerId, FarmerSetup, PlanTask } from '../run/types'
 
 export const MODEL = 'claude-opus-5-5'
 
@@ -29,7 +29,7 @@ export interface AgentResult<T> {
 async function callJSON<T>(client: ClaudeClient, system: string, user: string, schema: Record<string, unknown>): Promise<AgentResult<T>> {
   const res = await client.beta.messages.create({
     model: MODEL,
-    max_tokens: 4000,
+    max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
     output_config: { effort: 'low', format: { type: 'json_schema', schema } },
@@ -37,326 +37,217 @@ async function callJSON<T>(client: ClaudeClient, system: string, user: string, s
     messages: [{ role: 'user', content: user }],
   })
   if (res.stop_reason === 'refusal') throw new Error('The model declined this request.')
+  if (res.stop_reason === 'max_tokens') throw new Error('The answer was cut off before it finished.')
   const text = res.content.find((b) => b.type === 'text')?.text
   if (!text) throw new Error('No text in the response.')
   return { data: JSON.parse(text) as T, tokens: res.usage.input_tokens + res.usage.output_tokens, model: MODEL }
 }
 
-const doc = (name: string) => `<document name="${name}">\n${DOCS[name]}\n</document>`
+// ---- The crew ------------------------------------------------------------------------
 
-// ---- Head farmer: read the brief, ask what it can't work out, then plan ---------------
+export const FARMER_IDS: FarmerId[] = ['planner', 'builder', 'designer', 'tester', 'deployer']
 
-export const ROLES = {
-  frontend: 'Frontend: the pages owners see, on a phone first. Tools: GitHub, Playwright.',
-  backend: 'Backend: the availability search and the bookings API, with its data. Tools: GitHub.',
-  messaging: 'Messaging: reminder texts and emails to owners. Tools: Twilio (staging phones only), GitHub.',
-} as const
-export type Role = keyof typeof ROLES
-
-// The valley has one field per agent, so a plan has three tasks, each in a fixed slot.
-// The number of subtasks per slot matches the crops each field holds.
-export const SLOTS = [
-  { key: 'frontend', subtasks: 3, hint: 'the booking pages: pet, reason, vet and time, confirm' },
-  { key: 'backend', subtasks: 4, hint: 'the availability search and the bookings API' },
-  { key: 'messaging', subtasks: 2, hint: 'the reminder the owner asked for' },
-] as const
-
-export interface ClarifyOut {
-  questions: { id: string; q: string; why: string; options: string[] }[]
+// Which agent and model each farmer runs on in the product.
+export const CREW: Record<FarmerId, { label: string; role: string; agent: string; model: string }> = {
+  planner: { label: 'Planner', role: 'splits the goal into tasks, keeps the plan current, answers the person', agent: 'claude-code', model: 'Claude Opus 5.5' },
+  builder: { label: 'Builder', role: 'writes and changes the code', agent: 'codex', model: 'Sol 6.1' },
+  designer: { label: 'Designer', role: 'designs the screens, copy and flows people see', agent: 'claude-code', model: 'Claude Opus 5.5' },
+  tester: { label: 'Tester', role: 'checks each task against its done-when and runs the tests', agent: 'codex', model: 'Sol 6.1' },
+  deployer: { label: 'Deployer', role: 'ships to staging and production, watches the rollout', agent: 'codex or claude-code', model: 'Sol 6.1 or Claude Opus 5.5' },
 }
 
-export function clarify(client: ClaudeClient, input: { goal: string; attached: string[] }) {
-  const docs = expandSignposts(input.attached).filter((d) => DOCS[d]).map(doc).join('\n\n')
-  return callJSON<ClarifyOut>(
-    client,
-    'You are the head farmer: the orchestrator agent that turns an engineer\'s goal into a plan for a small crew of coding agents. You ask the owner only what you cannot work out from the brief and its documents, and only when the answer would change the plan.',
-    `The owner's goal:
-<goal>
-${input.goal}
-</goal>
+const STYLE = 'Write every string as one short plain line. No jargon, no em dashes, no "·" separators, no lists packed into one string.'
 
-Documents the owner attached:
-${docs || '(none)'}
+// ---- Plan ---------------------------------------------------------------------------
 
-Ask exactly 4 short questions whose answers would change the plan. For each, say in one sentence why you're asking (what in the brief or documents is ambiguous), and give 2 options, the most likely first. The owner may skip any question; you'll assume the first option.`,
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['questions'],
-      properties: {
-        questions: {
-          type: 'array',
-          description: 'Exactly 4',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['id', 'q', 'why', 'options'],
-            properties: {
-              id: { type: 'string', description: 'snake_case' },
-              q: { type: 'string' },
-              why: { type: 'string' },
-              options: { type: 'array', items: { type: 'string' } },
-            },
-          },
-        },
-      },
-    },
-  )
-}
-
-export interface PlanTask {
-  name: string
-  subtasks: string[]
-  assignee: Role
-  budget: number
-  signposts: string[]
-  note: string | null
+export interface PlanInput {
+  goal: string
+  crewSize?: number
 }
 
 export interface PlanOut {
-  quest_title: string
-  tasks: Record<(typeof SLOTS)[number]['key'], PlanTask>
-  irreversible: { action: string; audience: string; count: number }
+  name: string
+  farmers: FarmerSetup[]
+  tasks: PlanTask[]
+  estimate: Estimate
+  singleAgentEstimate: Estimate
 }
 
-export function plan(client: ClaudeClient, input: { goal: string; answers: Record<string, string>; attached: string[]; budget: number }) {
-  const docs = expandSignposts(input.attached).filter((d) => DOCS[d]).map(doc).join('\n\n')
-  const answers = Object.entries(input.answers).map(([q, a]) => `- ${q}: ${a}`).join('\n')
-  const task = (n: number) => ({
-    type: 'object',
-    additionalProperties: false,
-    required: ['name', 'subtasks', 'assignee', 'budget', 'signposts', 'note'],
-    properties: {
-      name: { type: 'string', description: '2 to 5 words' },
-      subtasks: { type: 'array', items: { type: 'string' }, description: `Exactly ${n}, each 2 to 5 words` },
-      assignee: { type: 'string', enum: Object.keys(ROLES) },
-      budget: { type: 'integer', description: 'Tokens, between 5000 and 30000' },
-      signposts: { type: 'array', items: input.attached.length ? { type: 'string', enum: input.attached } : { type: 'string' }, description: 'Attached files, skills and MCP tools this task may use. Least context that does the job.' },
-      note: { type: ['string', 'null'], description: 'Only if the assignee is a non-obvious choice: why, in one short sentence' },
+const limitsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['usd', 'minutes'],
+  properties: {
+    usd: { type: 'number', description: 'Dollars' },
+    minutes: { type: 'number', description: 'Wall-clock minutes' },
+  },
+}
+
+export const PLAN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['name', 'farmers', 'tasks', 'estimate', 'singleAgentEstimate'],
+  properties: {
+    name: { type: 'string', description: 'Project name, 2 to 4 words' },
+    farmers: {
+      type: 'array',
+      description: 'The crew, one entry per farmer, each id at most once',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'label', 'agent', 'model', 'context', 'constraints', 'limits'],
+        properties: {
+          id: { type: 'string', enum: FARMER_IDS },
+          label: { type: 'string', description: 'For example "Builder"' },
+          agent: { type: 'string', enum: ['codex', 'claude-code'] },
+          model: { type: 'string', enum: ['Sol 6.1', 'Claude Opus 5.5'] },
+          context: { type: 'array', items: { type: 'string' }, description: 'The only paths and docs this farmer may read, 2 to 5 entries, for example "docs/pricing.md" or "src/checkout/"' },
+          constraints: { type: 'array', items: { type: 'string' }, description: 'What it may and may not do, 2 to 4 entries, for example "May not deploy" or "Read only: src/"' },
+          limits: limitsSchema,
+        },
+      },
     },
-  })
+    tasks: {
+      type: 'array',
+      description: '3 to 8 tasks in the order they run',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'name', 'farmer', 'doneWhen', 'gate'],
+        properties: {
+          id: { type: 'string', description: 'kebab-case, unique, for example "docs-index"' },
+          name: { type: 'string', description: '2 to 6 words' },
+          farmer: { type: 'string', enum: FARMER_IDS },
+          doneWhen: { type: 'string', description: 'One short checkable sentence the Tester checks against' },
+          gate: { type: 'boolean', description: 'True when it cannot be undone or reaches real users, so it waits for the person' },
+        },
+      },
+    },
+    estimate: { ...limitsSchema, description: 'This crew, with tasks running in parallel where they can' },
+    singleAgentEstimate: { ...limitsSchema, description: 'One general agent doing every task alone, one after another' },
+  },
+}
+
+export function crewInstruction(crewSize?: number): string {
+  if (crewSize === undefined) {
+    return 'Choose the team size from the goal. A tiny job may need only Builder and Tester. A big one may need all five. Add a farmer only when it has real work.'
+  }
+  const n = Math.max(1, Math.min(5, Math.round(crewSize)))
+  if (n === 1) {
+    return 'Use exactly 1 farmer: one general agent with id "builder" and label "Builder" that does every task itself, including planning, testing and deploying. Every task has farmer "builder".'
+  }
+  return `Use exactly ${n} farmers, no more and no fewer. Always include the Builder and the Tester. Every task must belong to one of these ${n} farmers.`
+}
+
+export function planGoal(client: ClaudeClient, input: PlanInput) {
+  const crew = FARMER_IDS.map((id) => `- ${id} (${CREW[id].label}): ${CREW[id].role}. Runs on ${CREW[id].agent}, model ${CREW[id].model}.`).join('\n')
   return callJSON<PlanOut>(
     client,
-    'You are the head farmer: the orchestrator agent that plans work for a crew of coding agents. Each agent only sees the files, skills and tools you give its task (its signposts), so choose them deliberately. Plans are concrete and fit the budget.',
-    `The owner's goal:
+    `You are the Planner for Homestead, where a crew of AI coding agents ("farmers") builds software from a goal written in plain words. You pick the crew, give each farmer the least context it needs and clear limits, and split the work into tasks the Tester can check. ${STYLE}`,
+    `The person's goal:
 <goal>
 ${input.goal}
 </goal>
 
-The owner's answers to your questions:
-${answers || '(none)'}
+The farmers you can use:
+${crew}
 
-Energy budget: ${input.budget} tokens in total.
+Model rules: Builder and Tester use agent "codex" with model "Sol 6.1". Planner and Designer use agent "claude-code" with model "Claude Opus 5.5". The Deployer may use either pair. A single general agent uses "claude-code" with "Claude Opus 5.5".
 
-The crew:
-${Object.values(ROLES).map((r) => `- ${r}`).join('\n')}
+Team size: ${crewInstruction(input.crewSize)}
 
-Attached to the brief: ${input.attached.join(', ') || '(nothing)'}
-${docs}
+For each farmer:
+- context: the only paths and docs it may read, concrete and specific to this goal (for example "docs/pricing.md", "src/checkout/"), never "the codebase".
+- constraints: concrete rules (for example "May not deploy", "Read only: src/", "No network calls to production").
+- limits: a dollar and minute cap for its share of the work.
 
-Plan exactly three tasks, one per slot, in this order:
-${SLOTS.map((s) => `- ${s.key}: ${s.hint} (${s.subtasks} subtask${s.subtasks > 1 ? 's' : ''})`).join('\n')}
+Tasks: 3 to 8, in run order, kebab-case ids. Each has one farmer from the crew, a short done-when the Tester can check, and gate true only when it cannot be undone or reaches real users (deploys, sending messages, payments).
 
-Also describe the one step that reaches people outside the crew and can't be taken back. Say what it does, who it reaches and how many people.`,
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['quest_title', 'tasks', 'irreversible'],
-      properties: {
-        quest_title: { type: 'string', description: 'At most 4 words, for example "Vet booking"' },
-        tasks: {
-          type: 'object',
-          additionalProperties: false,
-          required: SLOTS.map((s) => s.key),
-          properties: Object.fromEntries(SLOTS.map((s) => [s.key, task(s.subtasks)])),
-        },
-        irreversible: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['action', 'audience', 'count'],
-          properties: {
-            action: { type: 'string', description: 'For example "Text every pet owner that booking is open"' },
-            audience: { type: 'string', description: 'For example "pet owners on the clinic\'s list"' },
-            count: { type: 'integer' },
-          },
-        },
-      },
-    },
+Estimates, for real agent runs: reason from the number of tasks, how long each takes an agent (often 5 to 20 minutes), what each costs in tokens (often $0.50 to $4 per task), and which tasks can run at the same time.
+- estimate: this crew. Minutes follow the longest chain of tasks that must wait on each other, since farmers work in parallel. Dollars add up, plus a little for handoffs and checks.
+- singleAgentEstimate: one general agent doing all tasks alone, one after another. Usually a bit cheaper, since there are no handoffs, but slower, since nothing runs in parallel.
+The farmers' limits should add up to roughly the crew estimate, with some headroom.`,
+    PLAN_SCHEMA,
   )
 }
 
-// ---- Backend: read the opening hours the availability search will offer, from its signposts only ------
+// ---- Route --------------------------------------------------------------------------
 
-export interface HoursOut {
-  weekdays: string
-  saturday: string
-  source: string
-  summary: string
+export interface RouteInput {
+  message: string
+  farmers: { id: FarmerId; label: string }[]
+  tasks: { id: string; name: string; farmer: FarmerId }[]
 }
 
-export function readHours(client: ClaudeClient, input: { goal: string; task: string; answers: string; signposts: string[] }) {
-  const docs = expandSignposts(input.signposts).filter((d) => DOCS[d]).map(doc).join('\n\n')
-  return callJSON<HoursOut>(
+export interface RouteOut {
+  to: FarmerId
+  task?: string
+  reply: string
+}
+
+export function routeSchema(input: RouteInput) {
+  const ids = input.farmers.length ? input.farmers.map((f) => f.id) : FARMER_IDS
+  const taskIds = input.tasks.map((t) => t.id)
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['to', 'task', 'reply'],
+    properties: {
+      to: { type: 'string', enum: ids },
+      task: taskIds.length
+        ? { anyOf: [{ type: 'string', enum: taskIds }, { type: 'null' }], description: 'The task this is about, or null' }
+        : { type: 'null' },
+      reply: { type: 'string', description: 'One short sentence saying who it went to and why' },
+    },
+  }
+}
+
+export async function routeMessage(client: ClaudeClient, input: RouteInput): Promise<AgentResult<RouteOut>> {
+  const farmers = input.farmers.map((f) => `- ${f.id} (${f.label}): ${CREW[f.id]?.role ?? ''}`).join('\n')
+  const tasks = input.tasks.map((t) => `- ${t.id}: ${t.name} (${t.farmer})`).join('\n')
+  const out = await callJSON<{ to: FarmerId; task: string | null; reply: string }>(
     client,
-    'You are the Backend agent on a crew of coding agents. You only know what is in the files and skills you are given. Say where each fact comes from.',
-    `The crew's goal: ${input.goal}
-Your task: ${input.task}
-What the owner told the head farmer:
-${input.answers || '(nothing)'}
+    `You are the Planner for a crew of AI coding agents. The person sends a message while the crew works. Hand it to the one farmer best placed to act on it. Questions about the plan, cost or priorities stay with the Planner when it is on the crew. ${STYLE}`,
+    `The crew:
+${farmers || '(none listed)'}
 
-Use only these files:
+The tasks:
+${tasks || '(none yet)'}
 
-${docs || '(none)'}
+The person's message:
+<message>
+${input.message}
+</message>
 
-The availability search offers appointments only when the clinic is open. Work out the opening hours it should use. Return the weekday hours, the Saturday hours (or "closed"), the file that told you, and a one-sentence summary.`,
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['weekdays', 'saturday', 'source', 'summary'],
-      properties: {
-        weekdays: { type: 'string', description: 'For example "8:00 to 19:00"' },
-        saturday: { type: 'string', description: 'For example "9:00 to 13:00" or "closed"' },
-        source: { type: 'string' },
-        summary: { type: 'string' },
-      },
-    },
+Pick the farmer, the task it is about (or null), and write one short sentence to the person saying who you handed it to and why, for example "Handed to the Designer, since it is about the button colour."`,
+    routeSchema(input),
   )
+  const { task, ...rest } = out.data
+  return { ...out, data: task ? { ...rest, task } : rest }
 }
 
-// ---- Reviewer: review the whole diff against the team's skills ---------------------------
+// ---- Entry point used by /api/agent ---------------------------------------------------
 
-export interface ReviewOut {
-  blocking: { file: string; line: number; problem: string; code: string; rule: string }[]
-  notes: { title: string; where: string }[]
-}
+export type AgentTask = 'plan' | 'route'
 
-export const PR_DIFF = `diff --git a/src/api/availability.ts b/src/api/availability.ts
-+export async function availability(vetId: string, from: Date, to: Date) {
-+  const hours = await schedule.hours(from, to)                // the staff schedule, from your answer
-+  const taken = await db.bookings.between(vetId, from, to)
-+  return slots(hours, 15).filter((s) => !taken.has(s.start))
-+}
-
-diff --git a/src/api/bookings.ts b/src/api/bookings.ts
-+export async function book(req: Request) {
-+  const { slotId, petId, reason } = await req.json()      // line 12, no rate limit
-+  const slot = await db.slots.find(slotId)
-+  if (slot.taken) return conflict()
-+  await db.bookings.insert({ slotId, petId, reason, owner: req.owner.id })
-+  await db.slots.update(slotId, { taken: true })
-+  return created()
-+}
-
-diff --git a/src/messaging/reminder.ts b/src/messaging/reminder.ts
-+const text = \`Hi \${owner.first}, \${pet.name} sees \${vet.name} tomorrow at \${time}. Reply C to cancel.\`   // line 9
-+await twilio.send({ to: owner.phone, from: "WillowVets", text })`
-
-export function reviewDiff(client: ClaudeClient, input: { diff: string }) {
-  return callJSON<ReviewOut>(
-    client,
-    'You are the Reviewer on a crew of coding agents. You wrote none of this code. You flag only real problems: a blocking issue breaks one of the team\'s skills or would hurt users; everything else is a note.',
-    `Review this pull request diff.
-
-<diff>
-${input.diff}
-</diff>
-
-The team's skills:
-${doc('owner-data.md')}
-
-${doc('brand-style.md')}
-
-Return the blocking issues (file, line, the problem in one sentence, the offending code, and the rule it breaks) and the notes (a short title and where).`,
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['blocking', 'notes'],
-      properties: {
-        blocking: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['file', 'line', 'problem', 'code', 'rule'],
-            properties: { file: { type: 'string' }, line: { type: 'integer' }, problem: { type: 'string' }, code: { type: 'string' }, rule: { type: 'string' } },
-          },
-        },
-        notes: {
-          type: 'array',
-          items: { type: 'object', additionalProperties: false, required: ['title', 'where'], properties: { title: { type: 'string' }, where: { type: 'string' } } },
-        },
-      },
-    },
-  )
-}
-
-// ---- Head farmer: check what a failing call depends on across teams -------------------------
-
-export interface ConflictOut {
-  conflict: boolean
-  claims: { claim: string; farm: string; source: string; quote: string }[]
-  recommended: string
-  why: string
-  confidence: 'High' | 'Medium' | 'Low'
-}
-
-export function conflictDocs(ours: string[]) {
-  const mine = expandSignposts(ours).filter((d) => DOCS[d] && !NEIGHBOUR_DOCS.includes(d))
-  return { mine, theirs: NEIGHBOUR_DOCS }
-}
-
-export function findConflict(client: ClaudeClient, input: { claim: string; source: string; failure: string; ourDocs: string[] }) {
-  const { mine, theirs } = conflictDocs(input.ourDocs)
-  return callJSON<ConflictOut>(
-    client,
-    'You are the head farmer coordinating crews across projects. When a check fails on staging, you check whether another team\'s project explains it. Only report a conflict the documents actually show; the team that owns the facts outranks an older copy of them.',
-    `Our crew (farm "Vet booking", at Willow Lane Vets) takes its opening hours from ${input.source}: ${input.claim}. On staging: ${input.failure}
-
-Files from our farm:
-${mine.map(doc).join('\n\n')}
-
-Everything the neighbouring farm "Staff schedule" (the Practice team's crew) shares with other farms:
-${theirs.map(doc).join('\n\n')}
-
-Do these sources disagree about when the clinic is open? If they do, list each claim with its farm, source document and the exact quote, recommend which source to use ("the staff schedule" or "the hours sheet"), and say why in one sentence. If they agree, return conflict false and list the claim once.`,
-    {
-      type: 'object',
-      additionalProperties: false,
-      required: ['conflict', 'claims', 'recommended', 'why', 'confidence'],
-      properties: {
-        conflict: { type: 'boolean' },
-        claims: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['claim', 'farm', 'source', 'quote'],
-            properties: { claim: { type: 'string' }, farm: { type: 'string' }, source: { type: 'string' }, quote: { type: 'string' } },
-          },
-        },
-        recommended: { type: 'string' },
-        why: { type: 'string' },
-        confidence: { type: 'string', enum: ['High', 'Medium', 'Low'] },
-      },
-    },
-  )
-}
-
-export type AgentTask = 'clarify' | 'plan' | 'hours' | 'review' | 'conflict'
-
-export async function runAgent(client: ClaudeClient, task: AgentTask, input: Record<string, unknown>) {
+export async function runAgent(client: ClaudeClient, task: AgentTask, input: Record<string, unknown>): Promise<AgentResult<unknown>> {
   switch (task) {
-    case 'clarify':
-      return clarify(client, input as { goal: string; attached: string[] })
-    case 'plan':
-      return plan(client, input as { goal: string; answers: Record<string, string>; attached: string[]; budget: number })
-    case 'hours':
-      return readHours(client, input as { goal: string; task: string; answers: string; signposts: string[] })
-    case 'review':
-      return reviewDiff(client, input as { diff: string })
-    case 'conflict':
-      return findConflict(client, input as { claim: string; source: string; failure: string; ourDocs: string[] })
+    case 'plan': {
+      const goal = typeof input.goal === 'string' ? input.goal.trim() : ''
+      if (!goal) throw new Error('A goal is needed to make a plan.')
+      const crewSize = typeof input.crewSize === 'number' ? input.crewSize : undefined
+      return planGoal(client, { goal, crewSize })
+    }
+    case 'route': {
+      const message = typeof input.message === 'string' ? input.message.trim() : ''
+      if (!message) throw new Error('A message is needed to route.')
+      return routeMessage(client, {
+        message,
+        farmers: Array.isArray(input.farmers) ? (input.farmers as RouteInput['farmers']) : [],
+        tasks: Array.isArray(input.tasks) ? (input.tasks as RouteInput['tasks']) : [],
+      })
+    }
     default:
-      throw new Error(`Unknown task: ${task}`)
+      throw new Error(`Unknown task: ${String(task)}`)
   }
 }
