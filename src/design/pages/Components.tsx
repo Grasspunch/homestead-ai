@@ -109,7 +109,7 @@ export function ComponentsPage(_: { arg?: string }) {
           <div className="cmp-ask">
             <AskCard
               reason="anomaly"
-              who="Backend, task 2 of 4"
+              who="Backend, session handler"
               question="Use the /v2 session endpoint instead of /v1?"
               why={
                 <p>
@@ -202,7 +202,7 @@ export function ComponentsPage(_: { arg?: string }) {
           <div style={{ maxWidth: 440 }}>
             <Rows label="Crew">
               <CrewRow role="Tests" body="#e8b5ac" shade="#d99a9a" state="needs" detail="Looks wrong: /v1 or /v2?" onClick={() => {}} />
-              <CrewRow role="Frontend" body="#9bd4c3" shade="#82a884" state="working" detail="Sign-in button, 2 of 3" onClick={() => {}} />
+              <CrewRow role="Frontend" body="#9bd4c3" shade="#82a884" state="working" detail="Sign-in button" onClick={() => {}} />
               <CrewRow role="Backend" body="#a09dd4" shade="#867fb8" state="working" detail="Session handler" onClick={() => {}} />
               <CrewRow role="Docs" body="#f2cf8c" shade="#d79e61" state="done" detail="Setup guide written" onClick={() => {}} />
             </Rows>

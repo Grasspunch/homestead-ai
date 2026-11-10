@@ -45,8 +45,8 @@ export function GlyphsPage(_: { arg?: string }) {
         <Stage ground={ground} pad={40}>
           <div className="gl-hands">
             <Farmhand glyph={{ kind: 'ask', reason: 'failure' }} role="Tests" state="needs you" />
-            <Farmhand glyph={{ kind: 'working' }} role="Frontend" state="2 of 3" frame="char_walk_down_1" />
-            <Farmhand glyph={{ kind: 'working' }} role="Backend" state="1 of 2" frame="char_water_right_1" />
+            <Farmhand glyph={{ kind: 'working' }} role="Frontend" state="Sign-in button" frame="char_walk_down_1" />
+            <Farmhand glyph={{ kind: 'working' }} role="Backend" state="Session handler" frame="char_water_right_1" />
             <Farmhand glyph={{ kind: 'done' }} role="Docs" state="done" dim />
           </div>
         </Stage>
@@ -75,7 +75,7 @@ export function GlyphsPage(_: { arg?: string }) {
         <Stage ground={ground}>
           <div className="gl-row">
             <FieldLine role="Tests" state="needs you" />
-            <FieldLine role="Frontend" state="2 of 3" />
+            <FieldLine role="Frontend" state="Sign-in button" />
             <FieldLine role="Docs" state="done" />
           </div>
         </Stage>

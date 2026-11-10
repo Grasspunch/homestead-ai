@@ -235,13 +235,22 @@
   line-height: 1;
 }
 
+/* Arrow glyphs' ink sits about 1.5px below the mono font's centre: lift them with padding below. */
+.hs-kbd.low {
+  padding-bottom: calc(var(--px) + 2px);
+}
+
+.hs-btn .hs-kbd.low {
+  padding-bottom: 2px;
+}
+
 /* ---------- Checkbox ----------
    A sunk white box with the pixel line. Checked, it fills with the sprout face and a pixel tick. */
 
 .hs-check {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--s-3);
   min-height: var(--hit);
   padding: var(--s-2) 0;
@@ -263,7 +272,7 @@
   place-items: center;
   width: 24px;
   height: 24px;
-  margin: -2px var(--px) 0;
+  margin: 0 var(--px);
   background: var(--face);
   box-shadow: inset 0 var(--px) 0 var(--face-lip), var(--pl);
   color: var(--sprout-deep);

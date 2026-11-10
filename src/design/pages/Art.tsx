@@ -225,7 +225,7 @@ function PackView({ pack }: { pack: PackId }) {
       />
       {search && (
         <p className="art-count" aria-live="polite">
-          {shown ? `${shown} of ${info.count} files match.` : 'No files match.'}
+          {shown ? `${shown} ${shown === 1 ? 'file matches' : 'files match'}.` : 'No files match.'}
         </p>
       )}
       {folders.map(([dir, files]) => (

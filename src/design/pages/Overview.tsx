@@ -23,7 +23,7 @@ export function OverviewPage(_: { arg?: string }) {
         <Stage ground="grass" pad={0} className="ov-farm">
           <div className="ov-farm-row">
             <Farmhand glyph={{ kind: 'ask', reason: 'anomaly' }} role="Tests" state="needs you" />
-            <Farmhand glyph={{ kind: 'working' }} role="Frontend" state="2 of 3" frame="char_walk_down_1" />
+            <Farmhand glyph={{ kind: 'working' }} role="Frontend" state="Sign-in button" frame="char_walk_down_1" />
             <Farmhand glyph={{ kind: 'done' }} role="Docs" state="done" dim />
           </div>
         </Stage>

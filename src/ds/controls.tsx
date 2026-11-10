@@ -37,8 +37,12 @@ export function Seed() {
   )
 }
 
+// Arrow glyphs sit low in the mono font, so they get lifted to the keycap's centre.
+const LOW_GLYPHS = new Set(['↵', '←', '→', '↑', '↓', '⇥'])
+
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="hs-kbd">{children}</kbd>
+  const low = typeof children === 'string' && LOW_GLYPHS.has(children)
+  return <kbd className={`hs-kbd ${low ? 'low' : ''}`}>{children}</kbd>
 }
 
 /* ---------- Press and hold ----------
