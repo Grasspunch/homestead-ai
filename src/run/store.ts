@@ -67,6 +67,7 @@ class Store {
   settingsOpen = false
   notifications = false
   toast: { id: number; text: string } | null = null
+  seen = new Set<string>() // moments you've already read, such as a rollback
   applied = new Set<string>() // usage fixes applied, by key
   kit: Record<string, Partial<Record<FarmerId, KitEdit>>> = {} // your changes to each farmer, per project
   kitAt: Record<string, Partial<Record<FarmerId, number>>> = {} // when you first changed each farmer mid-run

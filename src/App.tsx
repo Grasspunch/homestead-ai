@@ -7,6 +7,7 @@ import { FarmView, cropOf } from './farm/FarmView'
 import { Home } from './hud/Home'
 import { Ico, LimitField, Portrait, Sign, Swatch, mins, usd, type IconName } from './hud/bits'
 import { FarmerPage } from './hud/FarmerPage'
+import { Rollout } from './hud/Proof'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, setMoment } from './hud/Side'
 import { getLiveMode, route, setLiveMode } from './run/agent'
 import { planInto } from './run/planning'
@@ -58,6 +59,9 @@ function Farm() {
   // Finished work waiting for you. While any waits, the ship ask can't be answered.
   const toReview = p.approved ? s.tasks.filter((t) => t.status === 'ripe' && !t.gate) : []
   const review = toReview[0]
+  // A rollback is a moment of its own until the next release goes out, or until you carry on.
+  const lastDeploy = s.deploy[s.deploy.length - 1]
+  const rolled = lastDeploy?.stage === 'rollback' && !st.seen.has(`${p.id}:${lastDeploy.t}`) ? lastDeploy : null
   const d = st.drawer
   const sel = d?.kind === 'task' ? { kind: 'task' as const, id: d.id } : d?.kind === 'farmer' ? { kind: 'farmer' as const, id: d.id } : null
   const side = !!d && d.kind !== 'chat' && d.kind !== 'farmer' && d.kind !== 'ask' && d.kind !== 'summary' ? true : d?.kind === 'summary'
@@ -86,6 +90,8 @@ function Farm() {
         <PlanDialogue p={p} s={s} side={side} />
       ) : ask && !(review && isShipAsk(ask)) ? (
         <AskDialogue key={ask.id} s={s} ask={ask} side={side} />
+      ) : rolled ? (
+        <RollbackDialogue key={rolled.t} s={s} side={side} t={rolled.t} />
       ) : st.trustOffer === p.id ? (
         <TrustDialogue s={s} side={side} />
       ) : review ? (
@@ -330,6 +336,59 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
 }
 
 // Offered once, after five accepts with nothing sent back.
+// The release went bad and rolled itself back: what happened, who saw it, and what's being done.
+function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: number }) {
+  const p = store.project()!
+  const i = s.deploy.findIndex((d) => d.t === t)
+  const before = s.deploy[i - 1]
+  const everyone = before?.stage === '100%'
+  const live = before ? Math.max(1, Math.round((t - before.t) / 60_000)) : 0
+  const peak = Math.max(0, ...s.monitor.filter((m) => m.t <= t && (!before || m.t >= before.t)).map((m) => m.metrics.errorRate ?? 0))
+  const cause = s.activity.find((a) => a.t > t && a.kind !== 'ask' && /error|time out|timeout/i.test(a.text))
+  const shipper = (s.tasks.find((x) => x.gate)?.farmer ?? 'deployer') as FarmerId
+  const done = () => {
+    store.seen.add(`${p.id}:${t}`)
+    store.play()
+  }
+  useEffect(() => {
+    store.pause()
+  }, [])
+  return (
+    <Dialogue farmer={shipper} side={side}>
+      <div className="who">
+        <b>{s.farmers[shipper]?.label ?? 'Deployer'}</b>
+        <span className="urgency red">
+          <Ico name="alert" tone="light" />
+          Rolled back
+        </span>
+      </div>
+      <p>
+        Errors reached <b>{(peak * 100).toFixed(1)}%</b>, so I rolled back by myself.{' '}
+        {everyone ? <>Every user saw it for {live} min.</> : <>1 in 10 users saw it for {live} min. Nobody else did.</>}
+      </p>
+      {cause && <p className="impact">{cause.text}</p>}
+      <div className="rb-chart">
+        <Rollout state={s} compact />
+      </div>
+      <div className="row">
+        <button className="btn" onClick={done} autoFocus>
+          <Ico name="play" />
+          Carry on
+        </button>
+        <button
+          className="btn tan"
+          onClick={() => {
+            store.seen.add(`${p.id}:${t}`)
+            store.setDrawer({ kind: 'summary' })
+          }}
+        >
+          Open the pull request
+        </button>
+      </div>
+    </Dialogue>
+  )
+}
+
 function TrustDialogue({ s, side }: { s: RunState; side: boolean }) {
   const checker = s.farmers.tester ? 'Tester' : 'Planner'
   return (

@@ -325,3 +325,7 @@ button.crew-x:hover { opacity: 1; }
 .vs-grid > b { color: var(--bark); }
 .vs-caught { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--t-meta); color: var(--bark-2); }
 .vs-caught li { display: flex; gap: 8px; align-items: center; }
+
+/* The rollback moment: the chart under what happened, no wider than the dialogue's text. */
+.rb-chart { max-width: 560px; }
+.rb-chart .nums { font-size: var(--t-meta); }
