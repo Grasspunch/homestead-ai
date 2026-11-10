@@ -11,6 +11,7 @@
 import type { Autonomy, Estimate, FarmerId, FarmerSetup, PlanTask, Proof, RunEvent, Screen, TestResult } from './types'
 import { AUTONOMY_PRESETS } from './types'
 import { scenario } from './simPlan'
+import { MODELS } from './kit'
 
 const MIN = 60_000
 export const ERROR_LIMIT = 0.02
@@ -94,6 +95,8 @@ export interface SimInput {
   choices?: Record<string, string>
   // Rules that need you: with "May deploy" off, the Deployer asks before every ship.
   deployAsks?: boolean
+  // The models the plan was priced on, by farmer, when you've since changed one. A pricier model costs more per step.
+  plannedModels?: Partial<Record<FarmerId, string>>
 }
 
 export function simulateRun(input: SimInput): RunEvent[] {
@@ -130,7 +133,12 @@ export function simulateRun(input: SimInput): RunEvent[] {
   // The task where the Builder wants a refactor that reaches the others' code.
   const sweeping = builderTasks.find((t) => t !== pricey && t !== failing) ?? (builderTasks.length > 1 ? builderTasks[builderTasks.length - 1] : undefined)
   const perTask = Math.max(5, (input.estimate.minutes * 0.6) / Math.max(1, plan.length))
-  const usdPer = (input.estimate.usd * 0.7) / Math.max(1, plan.length)
+  // Each step costs its farmer's model rate. The plan's estimate fixes the unit; a model you changed since moves its share.
+  const rateOf = (model?: string) => MODELS.find((m) => m.model === model)?.rate ?? 1
+  const modelOf = (f: FarmerId) => farmers.find((x) => x.id === f)?.model
+  const planned = (f: FarmerId) => rateOf(input.plannedModels?.[f] ?? modelOf(f))
+  const usdUnit = (input.estimate.usd * 0.7) / Math.max(0.05, plan.reduce((n, t) => n + planned(t.farmer), 0))
+  const usdPer = (f: FarmerId) => usdUnit * rateOf(modelOf(f))
   const free: Partial<Record<FarmerId, number>> = {}
   let lastBuilt = 0
   let askN = 0
@@ -168,7 +176,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const tt = start + (len * (i + 1)) / (lines.length + 1) + extra
       at(tt, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: line })
       // The pricey task burns through its share twice as fast as planned.
-      const cost = (usdPer / lines.length) * (task === pricey && i < 2 ? 2.4 : 1)
+      const cost = (usdPer(f) / lines.length) * (task === pricey && i < 2 ? 2.4 : 1)
       spent += cost
       usage(tt + 0.01, f, task.id, cost, i === 0 ? 'read' : 'write')
       at(tt + 0.02, { type: 'progress', task: task.id, value: ((i + 1) / lines.length) * 0.85 })
@@ -194,12 +202,12 @@ export function simulateRun(input: SimInput): RunEvent[] {
         }
         if (go) {
           at(tt + 1.5, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `${sc.refactor.line} (${files} files)` })
-          usage(tt + 1.51, f, task.id, usdPer * 0.5, 'write')
+          usage(tt + 1.51, f, task.id, usdPer(f) * 0.5, 'write')
           at(tt + 2.2, { type: 'check', task: task.id, by: checkerOf(f), pass: true, notes: 'Every test still passes after the change', evidence: ['tests/report.json'], proof: integration(plan) })
           extra += 2.4
         } else {
           at(tt + 1.5, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: 'Kept the change inside this task' })
-          usage(tt + 1.51, f, task.id, usdPer * 0.1, 'write')
+          usage(tt + 1.51, f, task.id, usdPer(f) * 0.1, 'write')
           extra += 0.6
         }
       }
@@ -208,7 +216,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         // Too expensive: about half done, most of its money gone. The Planner asks what to do.
         const budget = Math.ceil(spent * 1.15 * 20) / 20
         const projected = spent * 3.4
-        const rest$ = usdPer * 0.9
+        const rest$ = usdPer(f) * 0.9
         const suggested = 'Split it in two'
         const raise = `Raise its limit to ${money(projected)}`
         let c = suggested
@@ -239,7 +247,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         } else if (c === raise) {
           // Kept whole: it finishes, at the price it was heading for.
           at(at$ + 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `Kept going under a ${money(projected)} limit` })
-          usage(at$ + 0.2, f, task.id, Math.max(0, projected - spent - usdPer * 0.5), 'write')
+          usage(at$ + 0.2, f, task.id, Math.max(0, projected - spent - usdPer(f) * 0.5), 'write')
           extra += 5
         } else {
           // Stopped at about half: what is built ships, the hard cases are left out.
@@ -272,7 +280,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         continue
       }
       at(end + 0.9, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: 'Handled empty input and added a test for it' })
-      usage(end + 0.91, f, task.id, usdPer * 0.3, 'retry')
+      usage(end + 0.91, f, task.id, usdPer(f) * 0.3, 'retry')
       end += 2.4
       if (!asks('failed')) at(end, { type: 'auto_fix', task: task.id, what: `${task.name}: 2 tests failed on empty input. ${label(f)} fixed it and all 10 pass.` })
       at(end + 0.3, { type: 'check', task: task.id, by: checkerOf(f), pass: true, notes: task.doneWhen, evidence: ['tests/report.json: 10 passed'], proof: unit(task) })
@@ -301,7 +309,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         at(end + 0.8, { type: 'auto_fix', task: task.id, what: `The Designer and Builder disagreed on ${d.topic}. The ${label(lead)} picked the Designer's way, since it fits the done-when.` })
       }
       at(end + 2.5, { type: 'tool', farmer: 'builder', task: task.id, tool: 'edit', summary: side.tool })
-      usage(end + 2.51, 'builder', task.id, usdPer * 0.2, 'write')
+      usage(end + 2.51, 'builder', task.id, usdPer('builder') * 0.2, 'write')
       end += 4
       at(end, { type: 'check', task: task.id, by, pass: true, notes: side.check, evidence: ['evidence/screen.png'], proof: shot(sc.screen, side.shot) })
       finish(task, end, side.check, ['evidence/screen.png'])
@@ -343,7 +351,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     }
     for (const line of steps(task, f)) {
       at(t, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: line })
-      usage(t + 0.01, f, task.id, usdPer * 0.15, 'write')
+      usage(t + 0.01, f, task.id, usdPer(f) * 0.15, 'write')
       t += 0.5
     }
     if (!isShip) {
@@ -364,10 +372,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
     at(t + 0.05, { type: 'auto_fix', task: task.id, what: everyone ? `Rolled back by itself when errors reached ${peak}. Every user saw the errors for about 3 minutes.` : `Rolled back by itself when errors reached ${peak}. Nobody else was affected.` })
     at(t + 0.1, { type: 'progress', task: task.id, value: 0.1 })
     at(t + 0.6, { type: 'tool', farmer: f, task: task.id, tool: 'read', summary: `Read the errors: ${rb.cause}` })
-    usage(t + 0.61, f, task.id, usdPer * 0.1, 'read')
+    usage(t + 0.61, f, task.id, usdPer(f) * 0.1, 'read')
     const fixer: FarmerId = has('builder') ? 'builder' : f
     at(t + 1.4, { type: 'tool', farmer: fixer, task: task.id, tool: 'edit', summary: rb.fix })
-    usage(t + 1.41, fixer, task.id, usdPer * 0.3, 'retry')
+    usage(t + 1.41, fixer, task.id, usdPer(fixer) * 0.3, 'retry')
     at(t + 2.2, { type: 'check', task: task.id, by: checkerOf(fixer), pass: true, notes: rb.check, evidence: [`${rb.file}: ${rb.tests.length} passed`], proof: { kind: 'unit', tests: rb.tests.map((name, i) => ({ name, pass: true, ms: 900 + i * 300 })) } })
     t += 2.6
     if (asks('reship')) {
@@ -391,11 +399,11 @@ export function simulateRun(input: SimInput): RunEvent[] {
   }
 
   // Checking, planning and asking cost something too: the checker reads the work, the lead re-plans.
-  usage(0.04, lead, plan[0]?.id ?? '', usdPer * 0.15, 'read')
+  usage(0.04, lead, plan[0]?.id ?? '', usdPer(lead) * 0.15, 'read')
   for (const e of [...ev]) {
-    if (e.type === 'check') usage(e.t / MIN - 0.02, e.by, e.task, usdPer * (e.proof?.kind === 'screens' ? 0.12 : 0.07), 'read')
-    if (e.type === 'replan') usage(e.t / MIN - 0.02, lead, plan[0]?.id ?? '', usdPer * 0.1, 'read')
-    if (e.type === 'ask') usage(e.t / MIN - 0.02, e.farmer, e.task ?? '', usdPer * 0.03, 'read')
+    if (e.type === 'check') usage(e.t / MIN - 0.02, e.by, e.task, usdPer(e.by) * (e.proof?.kind === 'screens' ? 0.12 : 0.07), 'read')
+    if (e.type === 'replan') usage(e.t / MIN - 0.02, lead, plan[0]?.id ?? '', usdPer(lead) * 0.1, 'read')
+    if (e.type === 'ask') usage(e.t / MIN - 0.02, e.farmer, e.task ?? '', usdPer(e.farmer) * 0.03, 'read')
   }
   ev.sort((a, b) => a.t - b.t)
   const usd = ev.reduce((s, e) => s + (e.type === 'usage' ? e.usd : 0), 0)

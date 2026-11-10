@@ -230,11 +230,11 @@ class Store {
     const plan = p.events.find((e) => e.type === 'plan')
     if (!plan || plan.type !== 'plan') return
     const kit = this.kit[p.id] ?? {}
-    const farmers = p.events
-      .filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer')
-      .map(({ t: _t, type: _ty, ...f }) => applyEdit(f, kit[f.id]))
+    const planned = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => f)
+    const farmers = planned.map((f) => applyEdit(f, kit[f.id]))
+    const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
-    let events = simulateRun({ goal: p.goal, farmers, tasks: plan.tasks, estimate: plan.estimate, singleAgentEstimate: plan.singleAgentEstimate, autonomy: p.autonomy, choices: this.viewerAnswers, deployAsks })
+    let events = simulateRun({ goal: p.goal, farmers, tasks: plan.tasks, estimate: plan.estimate, singleAgentEstimate: plan.singleAgentEstimate, autonomy: p.autonomy, choices: this.viewerAnswers, deployAsks, plannedModels })
     for (const sb of p.sentBack ?? []) events = redo(events, farmers, sb, p.autonomy.review !== 'ask')
     p.events = events
     this.setSpeed(events)

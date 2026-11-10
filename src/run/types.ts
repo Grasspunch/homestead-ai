@@ -15,7 +15,7 @@ export interface Limits {
 export interface FarmerSetup {
   id: FarmerId
   label: string
-  agent: string // 'codex' | 'claude-code' | ...
+  agent: string // 'claude-code'
   model: string
   context: string[]
   constraints: string[]

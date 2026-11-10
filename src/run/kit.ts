@@ -23,7 +23,7 @@ export const SKILLS: Record<FarmerId, KitItem[]> = {
     { id: 'shell', name: 'Run commands', kind: 'tool', about: 'Runs the build and the tests in a sandbox', tokens: 500 },
     { id: 'search', name: 'Search the code', kind: 'skill', about: 'Finds where something is defined and used', tokens: 800 },
     { id: 'tests', name: 'Write tests first', kind: 'skill', about: 'Writes a failing test before each change', tokens: 1100 },
-    { id: 'github', name: 'GitHub', kind: 'connector', about: 'Opens a pull request for each task', tokens: 1200 },
+    { id: 'github', name: 'GitHub', kind: 'connector', about: 'Opens one pull request for the project, one commit per task', tokens: 1200 },
   ],
   designer: [
     { id: 'style', name: 'House style', kind: 'skill', about: 'Your colours, type and voice, from docs/brand.md', tokens: 2400 },
@@ -53,10 +53,10 @@ export interface ModelChoice {
 }
 
 export const MODELS: ModelChoice[] = [
+// Rates follow Anthropic's list prices per million tokens: Opus $4 in, $20 out; Sonnet $2, $10; Haiku $0.10, $0.50.
   { model: 'Claude Opus 5.5', agent: 'claude-code', label: 'Claude Opus 5.5', about: 'Best at plans, design and judgment', rate: 1 },
-  { model: 'Claude Sonnet 5.5', agent: 'claude-code', label: 'Claude Sonnet 5.5', about: 'Fast and capable, cheaper', rate: 0.6 },
-  { model: 'Astra', agent: 'astra', label: 'Astra', about: 'Quick checks and routing', rate: 0.2 },
-  { model: 'Codex Sol 6.1', agent: 'codex', label: 'Codex Sol 6.1', about: 'Strong builder and tester', rate: 0.75 },
+  { model: 'Claude Sonnet 5.5', agent: 'claude-code', label: 'Claude Sonnet 5.5', about: 'Everyday coding at half the price', rate: 0.5 },
+  { model: 'Claude Haiku 5.5', agent: 'claude-code', label: 'Claude Haiku 5.5', about: 'Checks, routing and shipping, for very little', rate: 0.025 },
 ]
 
 export const RULES: { id: string; label: string }[] = [

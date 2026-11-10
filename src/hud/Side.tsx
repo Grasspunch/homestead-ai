@@ -219,7 +219,7 @@ export function FarmerPanel({ s, id, p }: { s: RunState; id: FarmerId; p: Projec
   if (!f) return null
   const mine = s.tasks.filter((t) => t.farmer === id)
   const pct = Math.min(1, f.usd / Math.max(0.01, f.limits.usd))
-  const agent = f.agent === 'codex' ? 'Codex' : f.agent === 'claude-code' ? 'Claude Code' : f.agent
+  const agent = f.agent === 'claude-code' ? 'Claude Code' : f.agent
   const words = { idle: 'Waiting for its next task', working: f.lastTool ?? 'Working', stuck: 'Fixing a failed check', needs: 'Waiting for you', done: 'Finished' }[f.state]
   return (
     <Panel label={`Farmer: ${f.label}`}>
@@ -415,7 +415,7 @@ function fixes(s: RunState): Fix[] {
   if (retry / total > 0.04) out.push({ key: 'retry', farmer: 'builder', title: 'Cap fix rounds at 2 per task', why: `Fixes after failed checks cost ${usd(retry)} this run.`, saves: retry * 0.4 })
   if (read / total > 0.2) out.push({ key: 'read', farmer: 'builder', title: 'Narrow the Builder to the folders it touched', why: `Reading files was ${Math.round((read / total) * 100)}% of the spend.`, saves: read * 0.35 })
   const designer = s.farmers.designer
-  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', farmer: 'designer', title: 'Check screenshots with Codex Sol 6.1', why: 'The Designer’s screenshot checks don’t need the bigger model.', saves: designer.usd * 0.3 })
+  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', farmer: 'designer', title: 'Check screenshots with Claude Sonnet 5.5', why: 'The Designer’s screenshot checks don’t need the bigger model.', saves: designer.usd * 0.3 })
   for (const r of s.replans) {
     const t = s.tasks.find((x) => r.added.includes(x.id))
     if (t) out.push({ key: `split-${t.id}`, farmer: 'planner', title: `Plan "${t.name.split(': ')[1] ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.', saves: 0.25 })
@@ -479,7 +479,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
         </ul>
       )}
       <p className="fine">
-        The crew works in parallel, builds on Codex Sol at three quarters of Opus’s price, and each farmer reads only its own files. One agent runs every task on Opus in one growing context, and nobody else checks it.
+        The crew works in parallel and each farmer reads only its own files. The Builder runs on Sonnet at half of Opus’s price, and the Tester and Deployer on Haiku for very little. One agent runs every task on Opus in one growing context.
       </p>
     </div>
   )

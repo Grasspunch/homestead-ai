@@ -102,9 +102,10 @@ export function Kit() {
         <div className="kp-row" style={{ alignItems: 'flex-start' }}>
           <div className="kp-col" style={{ width: 200 }}>
             <span className="field-label">Model</span>
-            <select className="field-box" defaultValue="sol">
-              <option value="sol">Codex Sol 6.1</option>
+            <select className="field-box" defaultValue="sonnet">
               <option value="opus">Claude Opus 5.5</option>
+              <option value="sonnet">Claude Sonnet 5.5</option>
+              <option value="haiku">Claude Haiku 5.5</option>
             </select>
           </div>
           <div className="kp-col" style={{ width: 100 }}>

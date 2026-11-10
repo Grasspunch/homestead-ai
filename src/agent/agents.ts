@@ -6,6 +6,8 @@
 import type { Estimate, FarmerId, FarmerSetup, PlanTask } from '../run/types'
 
 export const MODEL = 'claude-opus-5-5'
+// Routing a message is a quick pick from a short list, so it runs on the cheap model.
+export const ROUTE_MODEL = 'claude-haiku-5-5'
 
 // Minimal shape of the SDK client we use, so this file works on any runtime.
 export interface ClaudeClient {
@@ -26,12 +28,12 @@ export interface AgentResult<T> {
   model: string
 }
 
-async function callJSON<T>(client: ClaudeClient, system: string, user: string, schema: Record<string, unknown>): Promise<AgentResult<T>> {
+async function callJSON<T>(client: ClaudeClient, system: string, user: string, schema: Record<string, unknown>, model = MODEL): Promise<AgentResult<T>> {
   const res = await client.beta.messages.create({
-    model: MODEL,
+    model,
     max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    // Opus falls back on the server when it declines; Haiku has no server-side fallback.
+    ...(model === MODEL ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
     output_config: { effort: 'low', format: { type: 'json_schema', schema } },
     system,
     messages: [{ role: 'user', content: user }],
@@ -40,7 +42,7 @@ async function callJSON<T>(client: ClaudeClient, system: string, user: string, s
   if (res.stop_reason === 'max_tokens') throw new Error('The answer was cut off before it finished.')
   const text = res.content.find((b) => b.type === 'text')?.text
   if (!text) throw new Error('No text in the response.')
-  return { data: JSON.parse(text) as T, tokens: res.usage.input_tokens + res.usage.output_tokens, model: MODEL }
+  return { data: JSON.parse(text) as T, tokens: res.usage.input_tokens + res.usage.output_tokens, model }
 }
 
 // ---- The crew ------------------------------------------------------------------------
@@ -50,10 +52,10 @@ export const FARMER_IDS: FarmerId[] = ['planner', 'builder', 'designer', 'tester
 // Which agent and model each farmer runs on in the product.
 export const CREW: Record<FarmerId, { label: string; role: string; agent: string; model: string }> = {
   planner: { label: 'Planner', role: 'splits the goal into tasks, keeps the plan current, answers the person', agent: 'claude-code', model: 'Claude Opus 5.5' },
-  builder: { label: 'Builder', role: 'writes and changes the code', agent: 'codex', model: 'Codex Sol 6.1' },
+  builder: { label: 'Builder', role: 'writes and changes the code', agent: 'claude-code', model: 'Claude Sonnet 5.5' },
   designer: { label: 'Designer', role: 'designs the screens, copy and flows people see', agent: 'claude-code', model: 'Claude Opus 5.5' },
-  tester: { label: 'Tester', role: 'checks each task against its done-when and runs the tests', agent: 'codex', model: 'Codex Sol 6.1' },
-  deployer: { label: 'Deployer', role: 'ships to staging and production, watches the rollout', agent: 'codex or claude-code', model: 'Codex Sol 6.1 or Claude Opus 5.5' },
+  tester: { label: 'Tester', role: 'checks each task against its done-when and runs the tests', agent: 'claude-code', model: 'Claude Haiku 5.5' },
+  deployer: { label: 'Deployer', role: 'ships to staging and production, watches the rollout', agent: 'claude-code', model: 'Claude Haiku 5.5' },
 }
 
 const STYLE = 'Write every string as one short plain line. No jargon, no em dashes, no "·" separators, no lists packed into one string.'
@@ -99,8 +101,8 @@ export const PLAN_SCHEMA = {
         properties: {
           id: { type: 'string', enum: FARMER_IDS },
           label: { type: 'string', description: 'For example "Builder"' },
-          agent: { type: 'string', enum: ['codex', 'claude-code'] },
-          model: { type: 'string', enum: ['Codex Sol 6.1', 'Claude Opus 5.5'] },
+          agent: { type: 'string', enum: ['claude-code'] },
+          model: { type: 'string', enum: ['Claude Opus 5.5', 'Claude Sonnet 5.5', 'Claude Haiku 5.5'] },
           context: { type: 'array', items: { type: 'string' }, description: 'The only paths and docs this farmer may read, 2 to 5 entries, for example "docs/pricing.md" or "src/checkout/"' },
           constraints: { type: 'array', items: { type: 'string' }, description: 'What it may and may not do, 2 to 4 entries, for example "May not deploy" or "Read only: src/"' },
           limits: limitsSchema,
@@ -153,7 +155,7 @@ ${input.goal}
 The farmers you can use:
 ${crew}
 
-Model rules: Builder and Tester use agent "codex" with model "Codex Sol 6.1". Planner and Designer use agent "claude-code" with model "Claude Opus 5.5". The Deployer may use either pair. A single general agent uses "claude-code" with "Claude Opus 5.5".
+Model rules: every farmer uses agent "claude-code". Planner and Designer use "Claude Opus 5.5". The Builder uses "Claude Sonnet 5.5". The Tester and Deployer use "Claude Haiku 5.5". A single general agent uses "Claude Opus 5.5".
 
 Team size: ${crewInstruction(input.crewSize)}
 
@@ -167,7 +169,7 @@ Tasks: 3 to 8, in run order, kebab-case ids. Each has one farmer from the crew, 
 
 Estimates, for real agent runs: reason from the number of tasks, how long each takes an agent (often 5 to 20 minutes), what each costs in tokens (often $0.50 to $4 per task), and which tasks can run at the same time.
 - estimate: this crew. Minutes follow the longest chain of tasks that must wait on each other, since farmers work in parallel. Dollars add up, plus a little for handoffs and checks.
-- singleAgentEstimate: one general agent doing all tasks alone, one after another, on Claude Opus 5.5. Slower, since nothing runs in parallel and it rereads one growing context. It also has nobody independent checking its work, so some problems surface late and get redone. Builders and testers on Codex Sol 6.1 cost about three quarters of Opus, which usually pays for the crew's handoffs.
+- singleAgentEstimate: one general agent doing all tasks alone, one after another, on Claude Opus 5.5. Slower, since nothing runs in parallel and it rereads one growing context. It also has nobody independent checking its work, so some problems surface late and get redone. Per token, Claude Sonnet 5.5 costs half of Opus and Claude Haiku 5.5 a fortieth, which usually pays for the crew's handoffs.
 The farmers' limits should add up to roughly the crew estimate, with some headroom.`,
     PLAN_SCHEMA,
   )
@@ -223,6 +225,7 @@ ${input.message}
 
 Pick the farmer, the task it is about (or null), and write one short sentence to the person saying who you handed it to and why, for example "Handed to the Designer, since it is about the button colour."`,
     routeSchema(input),
+    ROUTE_MODEL,
   )
   const { task, ...rest } = out.data
   return { ...out, data: task ? { ...rest, task } : rest }

@@ -20,8 +20,8 @@ function fakeClient(out: unknown) {
 const PLAN = {
   name: 'Docs support bot',
   farmers: [
-    { id: 'builder', label: 'Builder', agent: 'codex', model: 'Codex Sol 6.1', context: ['docs/'], constraints: ['May not deploy'], limits: { usd: 3, minutes: 30 } },
-    { id: 'tester', label: 'Tester', agent: 'codex', model: 'Codex Sol 6.1', context: ['tests/'], constraints: ['Read only: src/'], limits: { usd: 1, minutes: 15 } },
+    { id: 'builder', label: 'Builder', agent: 'claude-code', model: 'Claude Sonnet 5.5', context: ['docs/'], constraints: ['May not deploy'], limits: { usd: 3, minutes: 30 } },
+    { id: 'tester', label: 'Tester', agent: 'claude-code', model: 'Claude Haiku 5.5', context: ['tests/'], constraints: ['Read only: src/'], limits: { usd: 1, minutes: 15 } },
   ],
   tasks: [{ id: 'docs-index', name: 'Index the docs', farmer: 'builder', doneWhen: 'Search returns a doc', gate: false }],
   estimate: { usd: 4, minutes: 30 },

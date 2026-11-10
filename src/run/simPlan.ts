@@ -2,6 +2,7 @@
 // Used when Live mode is off (the default). Live mode sends the same requests to the real Planner.
 
 import { CREW } from '../agent/agents'
+import { MODELS } from './kit'
 import type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
 import type { Estimate, FarmerId, FarmerSetup, PlanTask, Screen } from './types'
 
@@ -92,8 +93,9 @@ const MIN_SCALE = 3
 export const SOLO = { contextTime: 1.35, contextCost: 1.1, rework: 1.2 }
 // Each handoff between farmers costs a little: a summary written and read.
 const HANDOFF = 0.25
-// Cost relative to Claude Opus 5.5, as in the model picker.
-const RATE = { opus: 1, sol: 0.75 }
+// Which model each farmer runs on, and its price per token relative to Claude Opus 5.5 (the model picker's rates).
+const MODEL_OF: Record<FarmerId, string> = { planner: 'Claude Opus 5.5', designer: 'Claude Opus 5.5', builder: 'Claude Sonnet 5.5', tester: 'Claude Haiku 5.5', deployer: 'Claude Haiku 5.5' }
+const rateOf = (model: string) => MODELS.find((m) => m.model === model)?.rate ?? 1
 const SHIP = { id: 'ship', name: 'Ship to users', farmer: 'deployer' as FarmerId, doneWhen: 'Live for 10% with errors under 2%, then for everyone', gate: true, mins: 8, usd: 0.3 }
 
 function draft(goal: string): Draft {
@@ -113,7 +115,7 @@ function draft(goal: string): Draft {
       context: { builder: ['src/', 'docs/help/', 'eval/questions.jsonl'], designer: ['src/widget/', 'docs/brand.md'], tester: ['tests/', 'eval/questions.jsonl'] },
       why: {
         planner: "Keeps the answers and the widget in step, and passes your notes on. Opus, for judgment.",
-        builder: "Indexes the help docs, answers from them and hands off when unsure. Sol codes as well as Opus here for less.",
+        builder: "Indexes the help docs, answers from them and hands off when unsure. Sonnet, at half of Opus’s price.",
         designer: "The widget is what customers see, so it needs taste. Opus, and it keeps the reply box clear.",
         tester: "Runs the eval questions against every answer, so a wrong one never reaches a customer.",
         deployer: "Wrong answers reach real customers, so it ships to 10% first and rolls back on its own.",
@@ -134,7 +136,7 @@ function draft(goal: string): Draft {
       context: { builder: ['src/billing/', 'docs/pricing.md'], designer: ['src/checkout/', 'docs/brand.md'], tester: ['tests/billing/'] },
       why: {
         planner: "Keeps prices, payments and screens reading from one plan config. Opus, for judgment.",
-        builder: "Prices, the checkout API and webhooks are one chain of money code. Sol, as good as Opus here for less.",
+        builder: "Prices, the checkout API and webhooks are one chain of money code. Sonnet, at half of Opus’s price.",
         designer: "Buyers leave at confusing errors, so the checkout screens need taste. Opus.",
         tester: "Runs test-card purchases and refunds against every done-when, so nobody is charged wrong.",
         deployer: "Payments can't be half broken, so 10% of buyers first, rolled back at the first failed payment.",
@@ -154,7 +156,7 @@ function draft(goal: string): Draft {
       context: { builder: ['src/metrics/', 'db/schema.sql'], designer: ['src/dashboard/'], tester: ['tests/metrics/'] },
       why: {
         planner: "Keeps the queries and the charts agreeing on what each metric means. Opus, for judgment.",
-        builder: "Writes the metric queries and the API. Sol is as good as Opus at SQL here for less.",
+        builder: "Writes the metric queries and the API. Sonnet, at half of Opus’s price.",
         designer: "Charts only help if they read at a glance, so Opus designs them.",
         tester: "Checks every metric against a hand count, so the dashboard never shows a wrong number.",
         deployer: "Ships to 10% first and rolls back if the API slows down or errors.",
@@ -179,15 +181,15 @@ const PRIORITY: FarmerId[] = ['builder', 'tester', 'planner', 'designer', 'deplo
 
 const WHY: Record<FarmerId, string> = {
   planner: 'Splits the work, prices it and passes your messages on. Needs judgment, so Opus.',
-  builder: 'Writes most of the code. Sol is as good at code as Opus here and costs a quarter less.',
-  designer: 'Screens and copy need taste, so Opus. Checks its own screens before the Tester does.',
-  tester: 'Checks the others against each done-when. Kept apart so nobody grades its own work.',
-  deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own.',
+  builder: 'Writes most of the code. Sonnet, at half of Opus’s price.',
+  designer: 'Screens and copy need taste, so Opus.',
+  tester: 'Checks the others against each done-when, so nobody grades its own work. Haiku, for very little.',
+  deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own. Haiku, for very little.',
 }
 
 function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boolean): FarmerSetup {
   const label = CREW[id].label
-  const opus = solo || id === 'planner' || id === 'designer'
+  const model = solo ? 'Claude Opus 5.5' : MODEL_OF[id]
   const base: Record<FarmerId, { context: string[]; constraints: string[] }> = {
     planner: { context: ['docs/', 'README.md'], constraints: ['Read only', 'May not deploy'] },
     builder: { context: d.context.builder ?? ['src/'], constraints: solo ? ['Waits for you before shipping', 'No network calls to production'] : ['May not deploy', 'No network calls to production'] },
@@ -198,8 +200,8 @@ function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boole
   return {
     id,
     label: solo ? 'Builder' : label,
-    agent: opus ? 'claude-code' : 'codex',
-    model: opus ? 'Claude Opus 5.5' : 'Codex Sol 6.1',
+    agent: 'claude-code',
+    model,
     context: base[id].context,
     constraints: base[id].constraints,
     limits: { usd: Math.ceil(usd * 1.3), minutes: Math.ceil((minutes * 1.3) / 5) * 5 },
@@ -217,7 +219,7 @@ export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): Plan
   const solo = crew.length === 1
   const fallback = (f: FarmerId): FarmerId => (crew.includes(f) ? f : 'builder')
 
-  // Drafts price each task in Sonnet-hour units; a real crew on Opus and Sol spends about this much.
+  // Drafts price each task in small units; scaled, this is what the task costs on Opus.
   const tasks = d.tasks.map((t) => ({ ...t, mins: t.mins * MIN_SCALE, usd: t.usd * USD_SCALE, farmer: fallback(t.farmer), gate: !!t.gate }))
   // A Tester on the crew gets its own task: the end-to-end check before shipping.
   if (crew.includes('tester')) {
@@ -235,16 +237,16 @@ export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): Plan
     busy[t.farmer] = finish[t.id]
   }
   const sum = (k: 'mins' | 'usd') => tasks.reduce((s, t) => s + t[k], 0)
-  // Task prices are in Opus terms. A crew runs routine work on Sol, which costs less.
-  const onOpus = (f: FarmerId) => solo || f === 'planner' || f === 'designer'
-  const crewUsd = tasks.reduce((s, t) => s + t.usd * (onOpus(t.farmer) ? RATE.opus : RATE.sol), 0) + HANDOFF * USD_SCALE * (crew.length - 1)
+  // Task prices are in Opus terms; each farmer pays its own model's rate.
+  const rate = (f: FarmerId) => (solo ? 1 : rateOf(MODEL_OF[f]))
+  const crewUsd = tasks.reduce((s, t) => s + t.usd * rate(t.farmer), 0) + HANDOFF * USD_SCALE * (crew.length - 1)
   const alone: Estimate = { usd: +(sum('usd') * SOLO.contextCost * SOLO.rework).toFixed(2), minutes: Math.round(sum('mins') * SOLO.contextTime * SOLO.rework) }
   const estimate: Estimate = solo ? alone : { usd: +crewUsd.toFixed(2), minutes: Math.round(Math.max(...Object.values(finish)) + 4) }
   const singleAgentEstimate: Estimate = alone
 
   const farmers = crew.map((id) => {
     const mine = tasks.filter((t) => t.farmer === id)
-    return setup(id, d, Math.max(5, mine.reduce((s, t) => s + t.usd * (onOpus(t.farmer) ? RATE.opus : RATE.sol), 0) || 5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo)
+    return setup(id, d, Math.max(5, mine.reduce((s, t) => s + t.usd * rate(t.farmer), 0) || 5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo)
   })
   return {
     name: d.name,
