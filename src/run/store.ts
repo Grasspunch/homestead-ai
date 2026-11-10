@@ -56,18 +56,32 @@ export interface Forecast {
   solo: Estimate
 }
 
-// Which option a free-text answer means. Naming an option's own words wins; then yes or no.
+// Which option a free-text answer means.
+// - Any negation ("don't merge yet", "no, don't split it") never matches an option by its words: it means hold or
+//   stop, so it takes the ask's hold option, then its stop option, or nothing.
+// - Otherwise naming an option's own words wins, then a plain yes takes the suggestion.
+// Returns null when it can't tell; the ask stays open.
+const NEGATION = /\b(no|nope|not|never|don ?t|dont|do not|doesn ?t|won ?t|stop|wait|hold|later|cancel|halt|leave it)\b/
 export function readAnswer(text: string, suggested: string, options: string[]): string | null {
-  const t = ` ${text.toLowerCase().replace(/[^a-z0-9%$ ]+/g, ' ')} `
+  const t = ` ${text.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9%$ ]+/g, ' ')} `
+  if (NEGATION.test(t)) {
+    const hold = options.find((o) => /^(not yet|stay|leave|keep it small)/i.test(o))
+    return hold ?? options.find((o) => /^stop/i.test(o)) ?? null
+  }
   const words = (o: string) => o.toLowerCase().replace(/[^a-z0-9%$ ]+/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !['again', 'with', 'here', 'your', 'from', 'that', 'this'].includes(w))
-  const scored = options.map((o) => ({ o, n: words(o).filter((w) => t.includes(` ${w} `) || t.includes(` ${w}`)).length })).sort((a, b) => b.n - a.n)
+  const scored = options.map((o) => ({ o, n: words(o).filter((w) => t.includes(` ${w}`)).length })).sort((a, b) => b.n - a.n)
   if (scored[0]?.n && scored[0].n > (scored[1]?.n ?? 0)) return scored[0].o
-  const no = /\b(no|nope|don ?t|do not|stop|hold|wait|later|not yet|cancel|leave it)\b/.test(t)
-  const yes = /\b(yes|yep|yeah|sure|ok|okay|go|go ahead|do it|fine|sounds good|agreed|ship it)\b/.test(t)
-  if (yes && !no) return suggested
-  if (no && !yes) return options.find((o) => /^(not yet|stop|leave|keep it small|stay)/i.test(o)) ?? null
+  if (/\b(yes|yep|yeah|sure|ok|okay|go|go ahead|do it|fine|sounds good|agreed)\b/.test(t)) return suggested
   return null
 }
+
+// An option that's hard to undo: from free text, it's confirmed before it happens.
+export function needsConfirm(choice: string, reason?: string) {
+  if (/^(not yet|stay)/i.test(choice)) return false
+  return reason === 'irreversible' || /\b(ship|merge|deploy|release|everyone|stop)\b/i.test(choice)
+}
+
+export type InWords = { kind: 'answered' | 'hold' | 'confirm'; choice: string } | { kind: 'none' }
 
 export interface ChatLine {
   from: 'you' | 'planner'
@@ -290,24 +304,32 @@ class Store {
 
   // An answer in your own words. Yes-like words take the suggestion; no-like words, or words that name another
   // option, take that one. The Planner says how it read you. Returns the option, or null when it can't tell.
-  answerInWords(askId: string, text: string): string | null {
+  // Free text only ever picks one of the ask's options. Something hard to undo is confirmed first.
+  answerInWords(askId: string, text: string): InWords {
     const p = this.project()
     const ask = p?.events.find((e) => e.type === 'ask' && e.id === askId)
-    if (!p || !ask || ask.type !== 'ask') return null
+    if (!p || !ask || ask.type !== 'ask') return { kind: 'none' }
     // Sending work back needs a task and a note, so it goes through its own form.
     const options = [ask.suggested, ...(ask.alternatives ?? [])].filter((o) => !/^show me/i.test(o) && o !== SEND_BACK)
     const choice = readAnswer(text, ask.suggested, options)
-    if (!choice) return null
+    if (!choice) return { kind: 'none' }
     if (/^not yet/i.test(choice)) {
       this.chatTo(p.id, { from: 'you', text })
       this.chatTo(p.id, { from: 'planner', text: 'Holding. Nothing moves on this until you say so.' })
-      return choice
+      return { kind: 'hold', choice }
     }
+    if (needsConfirm(choice, ask.reason)) return { kind: 'confirm', choice }
+    this.confirmInWords(askId, text, choice)
+    return { kind: 'answered', choice }
+  }
+
+  confirmInWords(askId: string, text: string, choice: string) {
+    const p = this.project()
+    if (!p) return
     this.chatTo(p.id, { from: 'you', text })
     this.chatTo(p.id, { from: 'planner', text: `Got it. I read that as “${choice}”.` })
     p.notes = { ...p.notes, [askId]: text }
     this.answer(askId, choice)
-    return choice
   }
 
   // Run the plan again with everything you've decided so far: your answers, your changes to each farmer,

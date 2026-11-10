@@ -662,22 +662,37 @@ function Sureness({ ask }: { ask: Ask }) {
 function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
   const [text, setText] = useState('')
   const [miss, setMiss] = useState('')
+  const [confirm, setConfirm] = useState<{ text: string; choice: string } | null>(null)
   const send = (e: React.FormEvent) => {
     e.preventDefault()
     const msg = text.trim()
     if (!msg) return
     const r = store.answerInWords(ask.id, msg)
-    if (!r) return setMiss(msg)
+    setMiss(r.kind === 'none' ? msg : '')
+    if (r.kind === 'none') return
     setText('')
-    setMiss('')
-    if (/^not yet/i.test(r)) onHold()
+    if (r.kind === 'confirm') setConfirm({ text: msg, choice: r.choice })
+    if (r.kind === 'hold') onHold()
   }
+  if (confirm)
+    return (
+      <div className="row in-words confirm">
+        <p className="said grow">I read that as “{confirm.choice}”. Go ahead?</p>
+        <button className="btn long" onClick={() => store.confirmInWords(ask.id, confirm.text, confirm.choice)}>
+          <Ico name="check" />
+          Yes
+        </button>
+        <button className="btn tan long" onClick={() => setConfirm(null)}>
+          No
+        </button>
+      </div>
+    )
   return (
     <>
-      {miss && <p className="said">I can’t tell which way “{miss}” goes. Pick one, or say yes or no.</p>}
+      {miss && <p className="said">I can’t match “{miss}” to one of these options, so this stays open. Pick one, or tell me again.</p>}
       <form className="row grow-form in-words" onSubmit={send}>
         <span className="field">
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Or answer in your own words" aria-label="Answer in your own words" />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Answer in your words, and I’ll match it to an option" aria-label="Answer in your words, and I’ll match it to an option" />
         </span>
         <button className="btn tan" type="submit" disabled={!text.trim()}>
           <Ico name="chat" />

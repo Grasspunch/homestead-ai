@@ -4,7 +4,7 @@ import { simulateRun } from '../simulate'
 import { duration, reduce } from '../reduce'
 import { checkCost } from '../compare'
 import { BY_YOU } from '../rollback'
-import { readAnswer, store, type Project } from '../store'
+import { needsConfirm, readAnswer, store, type Project } from '../store'
 import { AUTONOMY_PRESETS, type RunEvent } from '../types'
 
 const GOAL = 'Build an AI support assistant that answers from our help docs'
@@ -154,10 +154,24 @@ describe('smaller honesty fixes', () => {
 
 describe('answering in your own words', () => {
   const opts = ['Split it in two', 'Raise its limit to $29', 'Stop it here']
+  const pr = ['Merge and ship to 10%', 'Ship to everyone', 'Not yet']
   it('reads yes as the suggestion, a named option as that option, and no as the stop', () => {
     expect(readAnswer('yes, go ahead', opts[0], opts)).toBe('Split it in two')
+    expect(readAnswer('yes, split it', opts[0], opts)).toBe('Split it in two')
     expect(readAnswer('just raise the limit', opts[0], opts)).toBe('Raise its limit to $29')
     expect(readAnswer('no, stop', opts[0], opts)).toBe('Stop it here')
+  })
+  it('never turns a negation into the option it names', () => {
+    expect(readAnswer("don't merge yet", pr[0], pr)).toBe('Not yet')
+    expect(readAnswer('don’t ship to everyone', pr[0], pr)).toBe('Not yet')
+    expect(readAnswer("no, don't split it", opts[0], opts)).not.toBe('Split it in two')
+    expect(readAnswer("don't merge yet", 'Ship to 10% again', ['Ship to 10% again'])).toBeNull()
+  })
+  it('confirms anything hard to undo before acting on free text', () => {
+    expect(needsConfirm('Ship to everyone', 'irreversible')).toBe(true)
+    expect(needsConfirm('Merge and ship to 10%')).toBe(true)
+    expect(needsConfirm('Not yet', 'irreversible')).toBe(false)
+    expect(needsConfirm('Split it in two', 'cost')).toBe(false)
   })
   it('says it cannot tell rather than guessing', () => {
     expect(readAnswer('hmm, what about the docs?', opts[0], opts)).toBeNull()
