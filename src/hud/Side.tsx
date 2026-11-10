@@ -513,7 +513,7 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
         <h2>{p.name}</h2>
         <div className="meta pr-meta">
           <span className={`tag ${merged ? (live === 'rollback' ? 'red' : 'green') : 'grey'}`}>{state}</span>
-          <span className="mono">homestead/{p.id}</span>
+          <span className="mono">homestead/{p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}</span>
         </div>
       </div>
       {s.done && est && (

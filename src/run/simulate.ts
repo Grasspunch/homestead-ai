@@ -320,6 +320,13 @@ export function simulateRun(input: SimInput): RunEvent[] {
     finish(task, t + 0.2, 'Live for everyone, errors 0.3%', ['deploy/metrics.json'])
   }
 
+  // Checking, planning and asking cost something too: the checker reads the work, the lead re-plans.
+  usage(0.04, lead, plan[0]?.id ?? '', usdPer * 0.15, 'read')
+  for (const e of [...ev]) {
+    if (e.type === 'check') usage(e.t / MIN - 0.02, e.by, e.task, usdPer * (e.proof?.kind === 'screens' ? 0.12 : 0.07), 'read')
+    if (e.type === 'replan') usage(e.t / MIN - 0.02, lead, plan[0]?.id ?? '', usdPer * 0.1, 'read')
+    if (e.type === 'ask') usage(e.t / MIN - 0.02, e.farmer, e.task ?? '', usdPer * 0.03, 'read')
+  }
   ev.sort((a, b) => a.t - b.t)
   const usd = ev.reduce((s, e) => s + (e.type === 'usage' ? e.usd : 0), 0)
   const actions = ev.filter((e) => e.type === 'tool').length
