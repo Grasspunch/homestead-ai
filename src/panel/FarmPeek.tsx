@@ -47,7 +47,7 @@ export function FarmPeek() {
           </>
         )}
       </dl>
-      <button className="btn primary" onClick={() => engine.setView('farm')} data-testid="peek-back" autoFocus>
+      <button className="btn" onClick={() => engine.setView('farm')} data-testid="peek-back" autoFocus>
         Back to {FARM.name}
       </button>
     </section>

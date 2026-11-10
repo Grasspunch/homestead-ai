@@ -141,7 +141,6 @@ export function Panel() {
   const e = useEngine()
   const top = e.nav[e.nav.length - 1]
   const view = top ? viewFor(top, e) : null
-  if (e.intro) return <aside className="panel off" aria-hidden />
   if (!e.panelOpen) return <aside className="panel rail-only">{<Rail />}</aside>
   // The Valleys page and a farm page have their own panel at the root; drill-down works the same on every page.
   const valleys = e.view === 'valley' && !e.peekName

@@ -1,7 +1,7 @@
 // Level 1: what needs you in the step you're on. Plant, Grow and Harvest sit in the step bar above.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Task } from '../sim/types'
-import { FARM } from '../sim/scenario'
+import { BRIEF_GOAL, FARM } from '../sim/scenario'
 import { stepOf } from '../sim/steps'
 import { CHECKS, GATE_ORDER, GATES, HARVEST_FAIL, OUTPUT } from '../sim/review'
 import { fmtK, Sprite, useEngine } from '../ui'
@@ -114,7 +114,22 @@ function BriefNow() {
       <label className="field-label" htmlFor="goal">
         Goal
       </label>
-      <textarea id="goal" className="goal" value={e.goal} readOnly={!e.liveAI} onChange={(ev) => e.setGoal(ev.target.value)} />
+      <textarea
+        id="goal"
+        className="goal"
+        value={e.goal}
+        placeholder={BRIEF_GOAL}
+        readOnly={!e.liveAI}
+        onChange={(ev) => e.setGoal(ev.target.value)}
+        onKeyDown={(ev) => {
+          // Enter plants the goal, or the prompt the box shows. Shift+Enter starts a new line.
+          if (ev.key === 'Enter' && !ev.shiftKey && !ev.nativeEvent.isComposing) {
+            ev.preventDefault()
+            e.submitBrief()
+          }
+        }}
+        data-testid="goal"
+      />
       <CrewRow />
       <div className="line">
         <span>

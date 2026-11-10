@@ -102,7 +102,7 @@ export function AgentTree() {
   const [sel, setSel] = useState(0)
   const list = useRef<HTMLDivElement>(null)
   const back = useRef<Element | null>(null)
-  const open = e.treeOpen && !e.intro
+  const open = e.treeOpen
   const slide = useSlide(crewOrder(Object.values(e.farmhands)).map((f) => f.id).join(','))
 
   useEffect(() => {

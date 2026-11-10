@@ -14,7 +14,6 @@ export async function until(e: Engine, done: () => boolean, label: string, max =
 
 // Brief, clarify and plan, up to the moment the crew starts work.
 export async function toGrow(e: Engine, beforeApprove?: (e: Engine) => void) {
-  e.skipIntro()
   e.submitBrief()
   await until(e, () => e.questions.length > 0 && e.headThinking === 0, 'clarify questions')
   e.finishClarify()

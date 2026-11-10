@@ -1,11 +1,11 @@
 import './fonts'
 import './styles.css'
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { MapView } from './map/MapView'
 import { Panel } from './panel/Panel'
 import { AgentTree } from './panel/AgentTree'
 import { FarmPeek } from './panel/FarmPeek'
-import { BEATS, engine } from './sim/engine'
+import { engine } from './sim/engine'
 import { FARM, MISSING } from './sim/scenario'
 import { crumbsOf, goPage, pageOf, parsePath, pathOf } from './sim/pages'
 import { Kbd, useEngine } from './ui'
@@ -13,7 +13,6 @@ import { Kbd, useEngine } from './ui'
 function Hud() {
   const e = useEngine()
   const growing = e.phase === 'grow'
-  if (e.intro) return null
   const crumbs = crumbsOf(e, pageOf(e))
   return (
     <div className="hud">
@@ -114,39 +113,8 @@ function Help() {
   )
 }
 
-// The opening: one line per camera beat. Enter moves on, Esc skips.
-function Caption() {
-  const e = useEngine()
-  if (!e.intro || !e.ready) return null
-  return (
-    <div className="caption" role="status" key={e.beat}>
-      <p>{BEATS[e.beat].caption}</p>
-      <div className="caption-foot">
-        <span className="dots" aria-hidden>
-          {BEATS.map((_, i) => (
-            <i key={i} className={i === e.beat ? 'on' : ''} />
-          ))}
-        </span>
-        <button className="linkish" onClick={() => e.nextBeat()} data-testid="next-beat">
-          Next <Kbd>⏎</Kbd>
-        </button>
-        <button className="linkish" onClick={() => e.skipIntro()} data-testid="skip-intro">
-          Skip <Kbd>Esc</Kbd>
-        </button>
-      </div>
-    </div>
-  )
-}
-
 function onKey(ev: KeyboardEvent) {
   const e = engine
-  if (e.intro) {
-    if (ev.key === 'Enter') {
-      ev.preventDefault()
-      e.nextBeat()
-    } else if (ev.key === 'Escape') e.skipIntro()
-    return
-  }
   // The agent tree handles its own keys while it is open.
   if (e.treeOpen) return
   const el = ev.target as HTMLElement
@@ -242,16 +210,16 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
   const e = useEngine()
-  // Each page has its own address. A deep link skips the opening; Back and Forward move between pages.
+  // Each page has its own address, and Back and Forward move between pages. A fresh visit to /
+  // opens straight on the project, ready for a goal; reloading / keeps you on Valleys.
   useEffect(() => {
     const deep = parsePath(location.pathname, engine)
-    if (location.pathname !== '/' && deep) {
-      engine.skipIntro()
-      goPage(engine, deep)
-    } else if (location.pathname !== '/') {
+    const nav = performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined
+    if (location.pathname === '/' && nav?.type !== 'reload') history.replaceState(null, '', pathOf(pageOf(engine)) + location.search)
+    else if (deep) goPage(engine, deep)
+    else {
       // An address that names no valley goes to Valleys, the same way an unknown agent goes to its valley.
       history.replaceState(null, '', '/' + location.search)
-      engine.skipIntro()
       goPage(engine, { kind: 'region' })
     }
     const onPop = () => {
@@ -262,7 +230,6 @@ export function App() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
   useEffect(() => {
-    if (e.intro) return
     const want = pathOf(pageOf(e))
     if (location.pathname === want) return
     // An address that names no page (or a different one) is replaced, so Back never lands on it again.
@@ -270,20 +237,18 @@ export function App() {
     if (!here || pathOf(here) !== location.pathname) history.replaceState(null, '', want + location.search)
     else history.pushState(null, '', want + location.search)
   })
-  // When the opening ends, the cursor waits in the brief.
-  const wasIntro = useRef(true)
+  // The cursor waits in the goal box, so typing is the first thing that works.
   useEffect(() => {
-    if (wasIntro.current && !e.intro) setTimeout(() => (document.getElementById('goal') as HTMLTextAreaElement | null)?.focus({ preventScroll: true }), 450)
-    wasIntro.current = e.intro
-  }, [e.intro])
+    const t = setTimeout(() => (document.getElementById('goal') as HTMLTextAreaElement | null)?.focus({ preventScroll: true }), 300)
+    return () => clearTimeout(t)
+  }, [])
   return (
-    <div className={`app ${e.intro ? 'wide' : !e.panelOpen ? 'railed' : ''}`}>
+    <div className={`app ${!e.panelOpen ? 'railed' : ''}`}>
       <main className="map-col">
         <MapView />
         <Hud />
         <Toasts />
         <FarmPeek />
-        <Caption />
         {e.paused && (
           <div className="paused-veil">
             <span>Paused</span>

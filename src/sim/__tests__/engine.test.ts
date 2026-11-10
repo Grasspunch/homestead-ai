@@ -191,10 +191,11 @@ describe('settings', () => {
 describe('story setup', () => {
   it('starts from one line, asks four questions, then plans three tasks for three agents, the Reviewer taking no task', async () => {
     const e = freshEngine()
-    expect(e.goal).toBe('Build a vet clinic website for Willow Lane Vets.')
+    expect(e.goal).toBe('')
     expect(e.crew).toBe('feature')
-    e.skipIntro()
     e.submitBrief()
+    // The empty box plants the prompt it shows.
+    expect(e.goal).toBe('Build a vet clinic website for Willow Lane Vets.')
     await until(e, () => e.questions.length > 0 && e.headThinking === 0, 'clarify questions')
     expect(e.questions.map((q) => q.id)).toEqual(['scope', 'visits', 'ahead', 'reminders'])
     expect(e.questions.map((q) => q.options[0])).toEqual(['Show the clinic and let owners book online', 'Checkups and vaccinations', 'Up to 8 weeks ahead', 'Text, the day before'])

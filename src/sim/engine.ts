@@ -3,7 +3,7 @@
 // read of the opening hours and the Reviewer's review). They are simulated unless Live AI is on in Settings.
 // Every number on screen is computed from the ledger: agent actions, energy, and how many times a human was needed.
 
-import { ATTACHMENTS, BEATS, BRIEF_GOAL, BUILDERS, CHICKEN_PEN, CHORES, CLARIFY, CLASH, CREW, CROW_SPOT, FARM, FARMSTEAD, OTHER_FARMS, WORLD, LESSON_HOLD, LESSON_TRACE, MISSING, NEIGHBOUR, REPLAN_SUBTASKS, ROLE_ORDER, START_SEEDS, SUGGESTED_BUDGET, TASKS, layoutFields, type Attachment, type ClarifyQ, type FieldSlot } from './scenario'
+import { ATTACHMENTS, BRIEF_GOAL, BUILDERS, CHICKEN_PEN, CHORES, CLARIFY, CLASH, CREW, CROW_SPOT, FARM, FARMSTEAD, OTHER_FARMS, WORLD, LESSON_HOLD, LESSON_TRACE, MISSING, NEIGHBOUR, REPLAN_SUBTASKS, ROLE_ORDER, START_SEEDS, SUGGESTED_BUDGET, TASKS, layoutFields, type Attachment, type ClarifyQ, type FieldSlot } from './scenario'
 import { callAgent, probeLive, setLiveAI, RECORDED, type ClarifyOut, type ConflictOut, type HoursOut, type Outcome, type PlanOut, type ReviewOut } from './live'
 import { conflictDocs, PR_DIFF, SLOTS } from '../agent/agents'
 import { LIBRARY, libItem, type Access } from './library'
@@ -34,7 +34,6 @@ export type Nav =
 export type OutId = 'pr' | GateId | 'decisions' | 'lessons'
 export type LogTab = 'all' | 'asks' | 'auto'
 
-export type Hint = 'plot' | 'ask' | 'auto'
 
 export interface GateResult {
   state: GateState
@@ -56,7 +55,6 @@ export interface HeadFarmer extends Walker {
   till: number[] // 0..1 per plot while the plan comes in
 }
 
-export { BEATS }
 
 export interface Chicken {
   x: number
@@ -102,10 +100,7 @@ export class Engine {
   clock = 0 // real seconds since load, for animation
   speed = 1
   paused = false
-  view: View = 'valley'
-  intro = true // the opening beats over the valley
-  beat = 0
-  beatT = 0
+  view: View = 'farm'
   ready = false // sprites and fonts are loaded
   bootT = 0 // clock when the valley started drawing in
   // harvest: first on the map, then the review in the panel
@@ -150,7 +145,7 @@ export class Engine {
   liveAI = readLiveAI() // real model calls; off by default so testing spends no tokens
 
   // brief
-  goal = BRIEF_GOAL
+  goal = '' // what you typed; empty plants the prompt shown in the box
   attachments: Attachment[] = ATTACHMENTS.map((a) => ({ ...a }))
   budget = SUGGESTED_BUDGET
   crew = DEFAULT_TEAM // the team template the plan staffs from
@@ -175,7 +170,6 @@ export class Engine {
   fishAt = -1
   chickens: Chicken[] = [0, 1, 2].map((i) => ({ x: CHICKEN_PEN.x + 0.4 + i * 1.4, y: CHICKEN_PEN.y + (i % 2) * 0.6, tx: CHICKEN_PEN.x + 0.4 + i * 1.4, ty: CHICKEN_PEN.y + (i % 2) * 0.6, wait: i + 0.5, clicks: 0, lastClick: -9, flee: 0 }))
   nudge: { x: number; y: number; t: number } | null = null // the camera leans toward a new ask
-  hints = new Set<Hint>() // hints already acted on
   callStart = 0 // clock when the head farmer's current call went out
 
   // farm
@@ -305,7 +299,7 @@ export class Engine {
   }
 
   get demoScenario() {
-    return /willow lane/i.test(this.goal)
+    return /willow lane/i.test(this.goal || BRIEF_GOAL)
   }
 
   task(id: string) {
@@ -374,23 +368,13 @@ export class Engine {
   }
 
   cameraTarget(): Rect {
-    if (this.intro) {
-      if (this.beat === 0) return { x: 0, y: 0, w: WORLD.w, h: WORLD.h }
-      if (this.beat === 1) {
-        // Pan from your farm's sign to the neighbour's.
-        const k = Math.min(1, Math.max(0, (this.clock - this.beatT - 0.6) / 2.6))
-        const e = k * k * (3 - 2 * k)
-        return { x: 22 + e * 9, y: 3, w: 24, h: 13 }
-      }
-      return this.valleyFrame()
-    }
     if (this.view === 'valley') return { x: 0, y: 0, w: WORLD.w, h: WORLD.h }
     if (this.peekName) {
       const r = [NEIGHBOUR, ...OTHER_FARMS].find((f) => f.name === this.peekName)?.rect
       if (r) return { x: r.x - 0.5, y: r.y - 0.5, w: r.w + 1, h: r.h + 1 }
     }
     // A field page frames only that agent's field.
-    if (this.fieldPage && !this.intro) {
+    if (this.fieldPage) {
       const f = this.fieldOf(this.fieldPage)
       // The fence, the name plate above it and the name lines under the farmhand.
       if (f) return { x: f.rect.x - 0.4, y: f.rect.y - 1.5, w: f.rect.w + 0.8, h: f.rect.h + 2.2 }
@@ -429,7 +413,7 @@ export class Engine {
   }
 
   askingField(): FieldSlot | null {
-    if (this.view !== 'farm' || this.intro) return null
+    if (this.view !== 'farm') return null
     const a = this.activeAsk
     if (a && a.from !== 'head' && this.phase === 'grow') return this.fieldOf(a.from)
     if (this.crow.state === 'flying') return this.fieldOf(this.task(MISSING.taskId).assignee)
@@ -485,7 +469,7 @@ export class Engine {
 
   // Close-up framings use a whole-number zoom, so a farmhand is 48 to 64 px tall and pixels stay crisp.
   get cameraInteger() {
-    return this.view === 'farm' && !this.intro && this.phase !== 'brief' && this.phase !== 'clarify'
+    return this.view === 'farm' && this.phase !== 'brief' && this.phase !== 'clarify'
   }
 
   private act(who: string, tokens: number, taskId?: string, n = 1) {
@@ -570,7 +554,9 @@ export class Engine {
   }
 
   submitBrief() {
-    if (this.phase !== 'brief' || !this.goal.trim()) return
+    if (this.phase !== 'brief') return
+    // An empty box plants the prompt it shows.
+    this.goal = this.goal.trim() || BRIEF_GOAL
     this.phase = 'clarify'
     this.nav = []
     this.callStart = this.clock
@@ -794,7 +780,6 @@ export class Engine {
     }
     const opt = ask.options.find((o) => o.value === value)
     this.nav = this.nav.filter((n) => !(n.kind === 'why' && n.id === askId))
-    if (ask.id === this.asks[0]?.id) this.hints.add('ask')
     ask.status = 'resolved'
     ask.answer = value
     ask.answerLabel = opt?.label ?? (value === 'approve' ? 'Approved' : value)
@@ -909,44 +894,14 @@ export class Engine {
 
   // ---- UI state --------------------------------------------------------------------------
 
-  // Sprites and fonts are in: the valley draws in, then the opening beats run.
+  // Sprites and fonts are in: the valley draws in.
   markReady() {
     if (this.ready) return
     this.ready = true
     this.bootT = this.clock
-    this.beatT = this.clock + 0.9
     this.notify()
   }
 
-  nextBeat() {
-    if (!this.intro) return
-    if (this.beat >= BEATS.length - 1) return this.skipIntro()
-    this.beat++
-    this.beatT = this.clock
-    if (this.beat === 2) this.headOutOfHouse()
-    this.notify()
-  }
-
-  skipIntro() {
-    if (!this.intro) return
-    if (this.beat < 2) this.headOutOfHouse()
-    this.intro = false
-    this.view = 'farm'
-    this.notify()
-  }
-
-  // Kept for the e2e script and the old start button.
-  startDemo() {
-    this.skipIntro()
-  }
-
-  private headOutOfHouse() {
-    const h = this.head
-    h.x = FARM.door.x
-    h.y = FARM.door.y
-    h.path = [{ x: FARM.door.x, y: FARM.headFarmer.y }, { ...FARM.headFarmer }]
-    h.speed = 2.2
-  }
 
   // Dragging the map hands the camera to you and folds the panel away.
   dragCam(cam: { x: number; y: number; scale: number }) {
@@ -1025,8 +980,6 @@ export class Engine {
     this.peekName = null
     const tracing = nav.some((n) => n.kind === 'trace')
     if (!tracing) this.trace = null
-    if (nav.some((n) => n.kind === 'task')) this.hints.add('plot')
-    if (nav.some((n) => n.kind === 'log' && n.tab === 'auto')) this.hints.add('auto')
     this.notify()
   }
 
@@ -1081,12 +1034,6 @@ export class Engine {
     return id ? this.task(id).assignee : null
   }
 
-  showHint(h: Hint) {
-    if (this.intro || this.hints.has(h)) return false
-    if (h === 'plot') return (this.phase === 'plan' && this.planShown > 0) || this.phase === 'grow'
-    if (h === 'ask') return this.asks.length > 0 && this.activeAsk?.id === this.asks[0].id
-    return this.autoDecided.length > 0 && this.phase === 'grow'
-  }
 
   // ---- status lines ---------------------------------------------------------------------
 
@@ -1885,7 +1832,7 @@ export class Engine {
   // A soft two-note chime, only when an agent asks. Settings can turn it off.
   private audio: AudioContext | null = null
   chime() {
-    if (!this.settings.notify.chime || this.intro || typeof window === 'undefined' || typeof AudioContext === 'undefined') return
+    if (!this.settings.notify.chime || typeof window === 'undefined' || typeof AudioContext === 'undefined') return
     try {
       this.audio ??= new AudioContext()
       const ctx = this.audio
@@ -1989,7 +1936,6 @@ export class Engine {
     this.toasts = this.toasts.filter((t) => this.clock - t.t < 4.5)
     if (this.toasts.length !== before) this.dirty = true
 
-    if (this.intro && this.ready && this.clock - this.beatT > BEATS[this.beat].secs) this.nextBeat()
     this.updateHead(dt)
     this.updateChickens(dt)
 
@@ -2021,7 +1967,7 @@ export class Engine {
     const h = this.head
     const moving = this.walkOnly(h, dt, h.speed)
     h.anim = moving ? 'walk' : 'idle'
-    if (moving || this.intro) return
+    if (moving) return
     h.speed = WALK_SPEED
     // Reading the brief: lift one scroll per attached file out of the chest.
     if (this.phase === 'clarify' && !this.out.clarify) {

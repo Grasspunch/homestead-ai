@@ -217,15 +217,9 @@ export const VALLEY_STATS: Record<string, { agents: number; energyWeek: number; 
   'Lab results': { agents: 3, energyWeek: 168_000, pests: 0, waiting: 1, harvests: 4, state: 'needs', reason: 'Risk', doing: 'Waiting for a vet to approve how results are worded for owners.' },
 }
 
-// ---- Opening -------------------------------------------------------------------
-// Three camera beats with one caption each. The middle beat signs both farms.
-
-export const BEATS = [
-  { secs: 4.2, caption: 'Every project at Willow Lane Vets is a valley with its own crew of agents.' },
-  { secs: 4.8, caption: 'The front desk’s hours sheet says the clinic opens on Saturdays. Next door, the staff schedule changed last week.' },
-  { secs: 4.2, caption: 'Your agents only read what you give them.' },
-]
-export const INTRO_SIGNS = { ours: 'Hours sheet: open Saturdays', theirs: 'No Saturday vets from December' }
+// ---- Signposts ------------------------------------------------------------------
+// The story's setup stays on the map: each valley's sign says what it believes about Saturdays.
+export const SIGNS = { ours: 'Hours sheet: open Saturdays', oursFixed: 'Hours from the staff schedule', theirs: 'No Saturday vets from December' }
 
 // ---- Brief ----------------------------------------------------------------
 

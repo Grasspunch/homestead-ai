@@ -46,11 +46,11 @@ export function MapView() {
           const free = engine.freeCam
           if (free) cam.current = free
           else {
-            const target = fitCamera(engine.cameraTarget(), W, H, engine.view === 'valley' || engine.intro ? 0 : 44, engine.cameraInteger)
+            const target = fitCamera(engine.cameraTarget(), W, H, engine.view === 'valley' ? 0 : 44, engine.cameraInteger)
             if (!cam.current) cam.current = target
             else {
               // The opening pans slowly; everything else, a page change included, settles in about 0.4s.
-              const k = 1 - Math.exp(-dt * (engine.intro ? 1.6 : 6))
+              const k = 1 - Math.exp(-dt * 6)
               cam.current = {
                 scale: cam.current.scale + (target.scale - cam.current.scale) * k,
                 x: cam.current.x + (target.x - cam.current.x) * k,
@@ -86,7 +86,6 @@ export function MapView() {
   }
 
   const click = (h: Hit) => {
-    if (engine.intro) return
     if (engine.phase === 'harvest' && engine.harvestStage === 'map') return engine.skipHarvestMap()
     // On the valley page a field, its big character, its plots and its farmhand all open that farm's page.
     const valleyPage = engine.view === 'farm' && !engine.fieldPage
@@ -144,7 +143,7 @@ export function MapView() {
       ref={wrap}
       className={`map-wrap ${e.trace ? 'past' : ''} ${dragging ? 'dragging' : clickable(hover?.hit ?? null) ? 'can-click' : ''}`}
       onPointerDown={(ev) => {
-        if (ev.button !== 0 || !cam.current || engine.intro) return
+        if (ev.button !== 0 || !cam.current) return
         drag.current = { x: ev.clientX, y: ev.clientY, cam: { ...cam.current }, moved: false, id: ev.pointerId }
       }}
       onPointerMove={(ev) => {
@@ -181,7 +180,7 @@ export function MapView() {
         if (h) click(h)
         else if (engine.phase === 'harvest' && engine.harvestStage === 'map') engine.skipHarvestMap()
         // A farm page: a click outside its field goes back to the valley.
-        else if (engine.view === 'farm' && engine.fieldPage && !engine.intro) engine.closeField()
+        else if (engine.view === 'farm' && engine.fieldPage) engine.closeField()
       }}
       onPointerCancel={() => {
         drag.current = null
@@ -194,7 +193,7 @@ export function MapView() {
       onWheel={(ev) => {
         const w = wrap.current
         const c = cam.current
-        if (!w || !c || engine.intro) return
+        if (!w || !c) return
         const r = w.getBoundingClientRect()
         const mx = ev.clientX - r.left
         const my = ev.clientY - r.top

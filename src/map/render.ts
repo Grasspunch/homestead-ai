@@ -1,7 +1,7 @@
 // Draws the valley. The map shows state at a glance; every decision lives in the quest log.
 import { draw, frame as frameSize, hasFrame, animCounts, pixelSprite } from './atlas'
 import { cropTiles, type Engine } from '../sim/engine'
-import { CLASH, CROW_SPOT, FARM, ROADS, type ValleyState, INTRO_SIGNS, MISSING, NEIGHBOUR, NEIGHBOUR_PLOTS, OTHER_FARMS, PROPS, TILE, VALLEY_STATS, WORLD, type Prop } from '../sim/scenario'
+import { CLASH, CROW_SPOT, FARM, ROADS, type ValleyState, MISSING, SIGNS, NEIGHBOUR, NEIGHBOUR_PLOTS, OTHER_FARMS, PROPS, TILE, VALLEY_STATS, WORLD, type Prop } from '../sim/scenario'
 import type { Dir, Farmhand, ReasonLabel, Rect, RoleId, Task } from '../sim/types'
 import { usd } from '../sim/settings'
 import type { FieldSlot } from '../sim/scenario'
@@ -571,7 +571,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
   // Two pages share this map. The valley page shows each field as its agent, one big character standing on it.
   // A farm page is one agent's field, filling the view with its plots, its farmhand and its helpers.
   const farmPage = e.view === 'farm' && e.fieldPage ? e.fieldOf(e.fieldPage) : null
-  const big = e.view === 'farm' && !farmPage && !(e.intro && e.beat < 2)
+  const big = e.view === 'farm' && !farmPage
   // During an ask (or the re-plan it leads to), only the asking agent's field stays lit, with the crow.
   const focusField = farmPage ? null : focusOf(e)
   const focusRoles: RoleId[] = focusField?.roles ?? []
@@ -679,7 +679,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
   }
 
   // Dependencies between agents are paths between fields: dotted while waiting, solid once the upstream draft is ready.
-  if ((planning || planned) && !e.intro) drawDeps(ctx, e)
+  if (planning || planned) drawDeps(ctx, e)
 
   // The fields: one per agent, fenced in its colours, with its plots and the files, skills and tools on its top rail.
   const drawField = (f: FieldSlot, again = false) => {
@@ -740,7 +740,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     ctx.restore()
     if (!again) hits.push({ kind: 'field', id: f.id, rect: px(r), title: f.name, body: fieldTasks(f).length ? fieldTasks(f).map((t) => t.name).join(', ') : 'No task in this plan' })
   }
-  if (!e.intro || e.beat >= 2) for (const f of e.fields) drawField(f)
+  for (const f of e.fields) drawField(f)
   // A task whose agent has no field of its own still gets its plot.
   e.tasks.forEach((t, i) => {
     if (!e.fieldOf(t.assignee)) drawPlot(t, i)
@@ -778,13 +778,13 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     y: hf.y,
     fn: () => {
       const dir: Dir = waveK >= 0 ? (Math.floor(waveK * 6) % 2 ? 'left' : 'right') : hf.dir
-      drawChar(ctx, hf.x, hf.y, hf.anim, dir, clock, undefined, e.intro && e.beat < 2 ? 0 : 1)
+      drawChar(ctx, hf.x, hf.y, hf.anim, dir, clock, undefined, 1)
     },
   })
   hits.push({ kind: 'head', id: 'head', rect: { x: hf.x * TILE - 8, y: hf.y * TILE - 18, w: 16, h: 20 }, title: 'Head farmer', body: headStatus(e) })
 
   for (const fh of Object.values(e.farmhands)) {
-    if (fh.inside || (e.intro && e.beat < 2) || (big && e.fieldOf(fh.id) && !e.carrying[fh.id])) continue
+    if (fh.inside || (big && e.fieldOf(fh.id) && !e.carrying[fh.id])) continue
     list.push({ y: fh.y, fn: () => drawFarmhand(ctx, e, fh, clock) })
     // The hit box is the body; collision elsewhere uses only the feet.
     hits.push({ kind: 'farmhand', id: fh.id, rect: { x: fh.x * TILE - 8, y: fh.y * TILE - 18, w: 16, h: 20 }, title: fh.role, body: e.fhStatus(fh) })
@@ -813,7 +813,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
 
   // The neighbouring valleys' crews: one farmhand per field, working along it in a loop.
   // In the region view their head farmers stand big in the middle instead (drawn later, on screen).
-  const region = e.view === 'valley' && !e.intro
+  const region = e.view === 'valley'
   const lead = { x: NEIGHBOUR.house.x - 1.5 + Math.sin(clock * 0.3) * 0.4, y: NEIGHBOUR.house.y + 5.6 }
   if (!region) {
     list.push({ y: lead.y, fn: () => drawChar(ctx, lead.x, lead.y, 'idle', 'down', clock, { body: '#d7c6f0', shade: '#a596c9' }) })
@@ -980,19 +980,18 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     ctx.restore()
   }
 
-  if (e.view === 'farm' && !(e.intro && e.beat < 2)) {
+  if (e.view === 'farm') {
     const placed: Box[] = []
     const dimOf = (id: RoleId | 'head') => (focusField && !(id !== 'head' && focusRoles.includes(id)) ? 0.45 : 1)
     // Each field's name on a plate over its top rail at the left, with a bar in the field's colour.
-    if (!e.intro || e.beat >= 2)
-      for (const f of e.fields) {
-        if (farmPage && f !== farmPage) continue
-        const p = toScreen(f.rect.x + 0.1, f.rect.y + 0.25)
-        if (p.x > W || p.y > H || p.x < -200 || p.y < -40) continue
-        p.y -= 11
-        const a = (focusField && focusField !== f ? 0.45 : 1) * (fieldDone(f) && !farmPage ? 0.75 : 1)
-        nameLine(ctx, p.x, p.y, f.name, '', a, placed, false, 'left', f.style.fence)
-      }
+    for (const f of e.fields) {
+      if (farmPage && f !== farmPage) continue
+      const p = toScreen(f.rect.x + 0.1, f.rect.y + 0.25)
+      if (p.x > W || p.y > H || p.x < -200 || p.y < -40) continue
+      p.y -= 11
+      const a = (focusField && focusField !== f ? 0.45 : 1) * (fieldDone(f) && !farmPage ? 0.75 : 1)
+      nameLine(ctx, p.x, p.y, f.name, '', a, placed, false, 'left', f.style.fence)
+    }
     // Zoomed out: one big character per field is the field's status.
     if (big)
       for (const f of e.fields) {
@@ -1014,7 +1013,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     // The head farmer: its line, and the ask glyph when the ask is its own.
     const hfeet = toScreen(hf.x, hf.y)
     const inView = (p: { x: number; y: number }) => p.x > 0 && p.x < W && p.y > 0 && p.y < H + 24
-    if (!e.intro && !farmPage && inView(hfeet)) {
+    if (!farmPage && inView(hfeet)) {
       const asking = headWaiting(e)
       const g: Glyph | null = asking ? { kind: 'ask', reason: e.activeAsk?.from === 'head' ? e.activeAsk.label : 'Anomaly' } : e.headThinking > 0 ? { kind: 'work' } : null
       const a = dimOf('head')
@@ -1078,26 +1077,20 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     const p = toScreen(f.rect.x + f.rect.w / 2, f.rect.y + 0.1)
     ctx.save()
     ctx.globalAlpha = nameAlpha
-    if (e.view === 'valley' && !e.intro) regionValley(ctx, e, f.name, f.rect, cam, toScreen, clock)
-    else if (e.intro || f.name === FARM.name || f.name === NEIGHBOUR.name || f.name === e.peekName) banner(ctx, p.x, p.y, f.name)
+    if (e.view === 'valley') regionValley(ctx, e, f.name, f.rect, cam, toScreen, clock)
+    else if (f.name === FARM.name || f.name === NEIGHBOUR.name || f.name === e.peekName) banner(ctx, p.x, p.y, f.name)
     ctx.restore()
     hits.push({ kind: 'farm', id: f.name, rect: px(f.rect), title: f.name, body: f.team })
   }
   // Over the valleys' veils: the dependency between our project and the Staff schedule.
-  if (e.view === 'valley' && !e.intro) dependencyPath(ctx, e, toScreen, clock)
-
-  // Opening beat 2: what each farm has promised.
-  if (e.intro && e.beat === 1) {
-    const k = reduced ? 1 : Math.min(1, Math.max(0, (clock - e.beatT - 0.3) / 0.5))
-    const ours = toScreen(FARM.rect.x + FARM.rect.w - 2.5, FARM.rect.y + 7)
-    const theirs = toScreen(NEIGHBOUR.rect.x + 6, NEIGHBOUR.rect.y + 6.5)
-    ctx.save()
-    ctx.globalAlpha = k
-    banner(ctx, ours.x, ours.y, INTRO_SIGNS.ours, 18)
-    ctx.globalAlpha = Math.min(1, Math.max(0, (clock - e.beatT - 2.2) / 0.5))
-    if (reduced) ctx.globalAlpha = 1
-    banner(ctx, theirs.x, theirs.y, INTRO_SIGNS.theirs, 18)
-    ctx.restore()
+  if (e.view === 'valley') dependencyPath(ctx, e, toScreen, clock)
+  // Each valley's signpost: what it believes about Saturdays. On Valleys, and on the neighbour's page.
+  if (e.view === 'valley' || e.peekName === NEIGHBOUR.name) {
+    const ours = toScreen(FARM.rect.x + FARM.rect.w / 2, FARM.rect.y + FARM.rect.h - 2.6)
+    // On the neighbour's own page its card covers the right side, so the sign moves left.
+    const theirs = toScreen(NEIGHBOUR.rect.x + (e.view === 'valley' ? NEIGHBOUR.rect.w / 2 : 9), NEIGHBOUR.rect.y + NEIGHBOUR.rect.h - 2.6)
+    if (e.view === 'valley') banner(ctx, ours.x, ours.y, e.flags.has('hoursSettled') ? SIGNS.oursFixed : SIGNS.ours, 14)
+    banner(ctx, theirs.x, theirs.y, SIGNS.theirs, 14)
   }
 
   if (farmPage) {
@@ -1365,7 +1358,7 @@ export function drawBigChar(
   ctx.translate(x, y)
   ctx.scale(1, squash)
   if (state === 'failed') ctx.rotate(0.06)
-  draw(ctx, charFrame(anim, dir, reduced ? 0 : clock, anim === 'idle' ? 5 : 8), -24 * S, -33 * S + dy, { tint, scale: S })
+  draw(ctx, charFrame(anim, dir, reduced ? 0 : clock, anim === 'idle' ? (state === 'done' ? 2.5 : 5) : 8), -24 * S, -33 * S + dy, { tint, scale: S })
   ctx.restore()
   const head = Math.round(y - HEAD * S * squash + dy)
   if (state === 'done') glyph(ctx, x, head - 4, { kind: 'check' }, -1, clock, 1)
@@ -1376,11 +1369,11 @@ export function drawBigChar(
     // Whistling: ink pixel notes drifting up and away from the head.
     const u = Math.max(2, Math.round(S / 2))
     for (let i = 0; i < 3; i++) {
-      const k = reduced ? 0.3 + i * 0.25 : (clock * 0.45 + i / 3) % 1
+      const k = reduced ? 0.3 + i * 0.25 : (clock * 0.3 + i / 3) % 1
       const nx = Math.round(x + 20 + S + Math.sin(k * 6 + i) * 2 * S + i * S)
       const ny = Math.round(head - k * 10 * S)
       ctx.save()
-      ctx.globalAlpha *= 1 - k * 0.9
+      ctx.globalAlpha *= 0.55 * (1 - k * 0.9)
       ctx.fillStyle = INK
       const rows = i % 2 ? BITS.notes : NOTE
       rows.forEach((row, j) => {
@@ -1394,7 +1387,7 @@ export function drawBigChar(
 
 // How a big character idles, so each state reads at a glance.
 // Needs you: it hops once when the ask arrives, then looks left and right for you.
-// Done: little happy hops in place, facing you.
+// Done: stands still and breathes slowly, so it never pulls your eye.
 function bigIdle(state: ValleyState, clock: number, age: number, S: number): { dir: Dir; dy: number } {
   if (reduced) return { dir: 'down', dy: 0 }
   if (state === 'needs') {
@@ -1402,7 +1395,7 @@ function bigIdle(state: ValleyState, clock: number, age: number, S: number): { d
     const dy = age < 0.6 ? -Math.round(Math.sin((age / 0.6) * Math.PI) * S * 3) : 0
     return { dir: look[Math.floor(clock * 0.9) % look.length], dy }
   }
-  if (state === 'done') return { dir: 'down', dy: -Math.round(Math.abs(Math.sin(clock * 3)) * S * 1.5) }
+  if (state === 'done') return { dir: 'down', dy: 0 }
   return { dir: 'down', dy: 0 }
 }
 
@@ -1801,7 +1794,8 @@ function valleyState(e: Engine, name: string): { state: ValleyState; reason?: Re
   return { state: 'idle' }
 }
 
-const STATE_WORDS: Record<ValleyState, string> = { working: 'Working', idle: 'Idle', needs: 'Needs attention', done: 'Done', failed: 'Failed' }
+// What a valley's label says about it, so the Valleys page reads without being explained.
+const STATE_WORDS: Record<ValleyState, string> = { working: 'Working', idle: 'Not started', needs: 'Needs you', done: 'Done', failed: 'Failed' }
 const since = new Map<string, { key: string; t: number }>()
 
 // The region view of one valley: a light veil over its detail, its head farmer drawn big in the
@@ -1847,7 +1841,7 @@ function bigChar(ctx: CanvasRenderingContext2D, x: number, y: number, S: number,
   ctx.translate(x, y)
   ctx.scale(1, squash)
   if (state === 'failed') ctx.rotate(0.06)
-  draw(ctx, charFrame(anim, dir, reduced ? 0 : clock, anim === 'idle' ? 5 : 8), -24 * S, -33 * S + dy, { tint, scale: S })
+  draw(ctx, charFrame(anim, dir, reduced ? 0 : clock, anim === 'idle' ? (state === 'done' ? 2.5 : 5) : 8), -24 * S, -33 * S + dy, { tint, scale: S })
   ctx.restore()
   const head = y - Math.round(17 * S * squash) + dy
   if (state === 'done') glyph(ctx, x, head - 4, { kind: 'check' }, -1, clock, 1)
@@ -1857,9 +1851,9 @@ function bigChar(ctx: CanvasRenderingContext2D, x: number, y: number, S: number,
   if (state === 'done' && !reduced) {
     // Whistling: ink music notes drifting up and away.
     for (let i = 0; i < 3; i++) {
-      const k = (clock * 0.45 + i / 3) % 1
+      const k = (clock * 0.3 + i / 3) % 1
       ctx.save()
-      ctx.globalAlpha = 1 - k
+      ctx.globalAlpha = 0.55 * (1 - k)
       ctx.fillStyle = INK
       ctx.font = `700 ${15 + i * 2}px ${SANS}`
       ctx.textAlign = 'center'
@@ -1956,7 +1950,7 @@ function valleyCard(ctx: CanvasRenderingContext2D, x: number, top: number, name:
   ctx.font = `400 14px ${SANS}`
   const wLines = Math.max(...lines.map((l) => ctx.measureText(l).width))
   ctx.font = `700 16px ${SANS}`
-  const word = STATE_WORDS[state]
+  const word = state === 'working' ? `${s.agents} agents working` : STATE_WORDS[state]
   const wName = ctx.measureText(name).width
   ctx.font = `700 13px ${SANS}`
   const wWord = ctx.measureText(word).width + 14
