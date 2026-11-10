@@ -199,7 +199,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
     lines.forEach((line, i) => {
       if (cutAt >= 0 || haltedHere) return
       const tt = start + (len * (i + 1)) / (lines.length + 1) + extra
-      if (halted(f, tt)) {
+      // Stopped before this step's spend: the step that would have gone over never happens.
+      if (halted(f, tt + 0.01)) {
         haltedHere = true
         return
       }
@@ -224,7 +225,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
           const suggested = 'Go ahead, test everything'
           at(tt + 0.1, {
             type: 'ask', id, farmer: f, task: task.id, reason: 'big', touches, files,
-            confidence: 'medium', basis: `The ${touches.length + 1} tasks it reaches have their own tests to run before and after.`,
+            confidence: files > 15 ? 'low' : 'medium', basis: files > 15 ? `${files} files is a big change; the tests of all ${touches.length + 1} tasks would show if it breaks one.` : `The ${touches.length + 1} tasks it reaches have their own tests to run before and after.`,
             question: `To finish “${task.name}” cleanly, I want to ${sc.refactor.what}. That changes ${files} files across ${touches.length + 1} tasks.`,
             impact: 'The other tasks’ code moves with it. I’d run every test before and after.',
             suggested, alternatives: ['Keep it small, no refactor'],
@@ -260,7 +261,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
           const id = `ask-${++askN}`
           at(tt + 0.1, {
             type: 'ask', id, farmer: lead, task: task.id, reason: 'cost',
-            confidence: 'medium', basis: 'From its first 2 steps, which cost 2.4 times their plan.',
+            confidence: projected > budget * 2 ? 'high' : 'medium', basis: `From what it has spent at about half done: ${money(spent)}, on course for ${(projected / budget).toFixed(1)} times its budget.`,
             question: `${task.name} is costing more than planned. It has used ${money(spent)} of its ${money(budget)} and is about half done.`,
             impact: `At this rate it ends near ${money(projected)}. Splitting it keeps this part on budget and gives the hard cases their own ${money(rest$)}, about ${money(projected - budget - rest$)} less.`,
             suggested,
@@ -394,8 +395,14 @@ export function simulateRun(input: SimInput): RunEvent[] {
         const suggested = isShip ? 'Merge and ship to 10%' : 'Go ahead'
         at(reviewAt + 0.3, {
           type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible',
-          confidence: isShip && !stopped.size ? 'high' : 'medium',
-          basis: isShip ? (stopped.size ? 'Every check passed, but stopped work is missing.' : `Every check passed, and 10% rolls back by itself past ${ERROR_LIMIT * 100}% errors.`) : 'It reaches real people and is hard to undo.',
+          confidence: isShip && !stopped.size && input.bugFixed ? 'high' : 'medium',
+          basis: isShip
+            ? stopped.size
+              ? 'Every check passed, but stopped work is missing.'
+              : input.bugFixed
+                ? `Every check passed, and the last release of this farm ran clean.`
+                : `Every check passed, but real users haven't seen this release yet, so 10% goes first.`
+            : 'It reaches real people and is hard to undo.',
           question: isShip
             ? stopped.size
               ? `The pull request has ${shipped()} of ${built()} tasks, ${commits()} commits, and every check passed. ${stopped.size} stopped task${stopped.size === 1 ? '' : 's'} stay${stopped.size === 1 ? 's' : ''} out. Ship it without ${stopped.size === 1 ? 'it' : 'them'}?`
@@ -520,62 +527,68 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (e.type === 'ask') usage(e.t / MIN - 0.02, e.farmer, e.task ?? '', usdPer(e.farmer) * 0.03, 'read')
   }
   ev.sort((a, b) => a.t - b.t)
-  // Spend limits: the Planner pauses a farmer the moment it reaches its limit, at every level, and asks you:
-  // raise the limit, or stop the farmer there (its unfinished tasks stay out of the pull request).
+  // Spend limits, the same rule for every farmer at every level: the Planner pauses a farmer before the step that
+  // would take it over its limit, and asks you to raise the limit or stop it there. A stop runs the whole
+  // simulation again with that farmer halted, so nothing after involves it.
   {
     const total: Partial<Record<FarmerId, number>> = {}
     for (const e of ev) if (e.type === 'usage') total[e.farmer] = (total[e.farmer] ?? 0) + e.usd
     const spent: Partial<Record<FarmerId, number>> = {}
     const paused = new Set<FarmerId>()
-    for (const e of [...ev]) {
-      if (e.type !== 'usage' || !ev.includes(e)) continue
-      const f = farmers.find((x) => x.id === e.farmer)
-      spent[e.farmer] = (spent[e.farmer] ?? 0) + e.usd
-      if (!f || paused.has(f.id) || spent[f.id]! <= f.limits.usd) continue
-      paused.add(f.id)
-      const wasHalted = input.halts?.[f.id] !== undefined
-      // What all its work costs: from the run without the stop, when you stopped it.
-      const whole = (wasHalted ? haltTotals[f.id] : undefined) ?? total[f.id]!
-      const left = whole - spent[f.id]!
-      // Reached at its very last step: nothing left to pause. It shows as over its limit instead.
-      if (left < 0.5 && !wasHalted) continue
+    const stopIt = 'Stop it here'
+    const limitAsk = (f: FarmerSetup, tm: number, spentNow: number, whole: number, task?: string) => {
       const to = Math.ceil((whole * 1.1) / 5) * 5
       // Whole dollars once it's over $10, so the parts always add up to the total.
       const big = whole >= 10
       const fmt = (n: number) => (big ? `$${Math.round(n)}` : `$${n.toFixed(2)}`)
-      const spentS = big ? Math.round(spent[f.id]!) : +spent[f.id]!.toFixed(2)
+      const spentS = big ? Math.round(spentNow) : +spentNow.toFixed(2)
       const wholeS = big ? Math.round(whole) : +whole.toFixed(2)
-      const tm = e.t / MIN
       const id = `ask-limit-${f.id}`
       const suggested = `Raise its limit to ${money(to)}`
-      const stopIt = 'Stop it here'
       at(tm + 0.01, {
-        type: 'ask', id, farmer: lead, task: e.task, reason: 'cost', limitFor: f.id, limitTo: to,
+        type: 'ask', id, farmer: lead, task, reason: 'cost', limitFor: f.id, limitTo: to,
         confidence: 'high', basis: 'From what it has spent and the steps it has left.',
-        question: `The ${f.label} has spent ${fmt(spentS)} against its ${fmt(f.limits.usd)} limit, so I paused it.`,
+        question: `The ${f.label} is about to pass its ${fmt(f.limits.usd)} limit, with ${fmt(spentS)} spent, so I paused it.`,
         impact: `Finishing its work needs about ${fmt(wholeS - spentS)} more, ${fmt(wholeS)} in all. Stopping it leaves its unfinished tasks out of the pull request.`,
         suggested, alternatives: [stopIt],
       })
       const c = choose(id, suggested)
       at(tm + 0.02, { type: 'answer', id, choice: c, by: 'human' })
-      if (c === stopIt && !wasHalted) {
-        // Run it again with this farmer stopped here, so nothing after this involves it.
-        return simulateRun({ ...input, halts: { ...input.halts, [f.id]: e.t / MIN }, haltTotals: { ...input.haltTotals, [f.id]: total[f.id]! } })
-      }
-      if (c === stopIt) {
-        const cut = e.t + 0.02 * MIN
-        const done = new Set(ev.filter((x) => x.type === 'accept' && x.t <= cut).map((x) => (x.type === 'accept' ? x.task : '')))
-        const mine = new Set(ev.filter((x) => x.type === 'task_start' && x.farmer === f.id && !done.has(x.task)).map((x) => (x.type === 'task_start' ? x.task : '')))
-        const keep = ev.filter((x) => {
-          if (x.t <= cut || x.type === 'goal' || x.type === 'plan' || x.type === 'farmer') return true
-          if ('farmer' in x && x.farmer === f.id && x.type !== 'ask') return false
-          if ('task' in x && x.task && mine.has(x.task)) return false
-          return true
-        })
-        ev.length = 0
-        ev.push(...keep)
-        for (const k of mine) at(tm + 0.05, { type: 'stop', task: k, reason: `You stopped the ${f.label} at its ${money(f.limits.usd)} limit. This task stays out of the pull request.` })
-      }
+      return c
+    }
+    // Farmers you stopped: the ask where you stopped each one, and nothing of theirs after it.
+    for (const [id, tm] of Object.entries(input.halts ?? {}) as [FarmerId, number][]) {
+      const f = farmers.find((x) => x.id === id)
+      if (!f) continue
+      paused.add(f.id)
+      const cut = tm * MIN
+      const spentNow = ev.reduce((n, e) => n + (e.type === 'usage' && e.farmer === f.id && e.t <= cut ? e.usd : 0), 0)
+      const last = [...ev].reverse().find((e) => e.type === 'task_start' && e.farmer === f.id && e.t <= cut)
+      limitAsk(f, tm, spentNow, haltTotals[f.id] ?? total[f.id] ?? spentNow, last && last.type === 'task_start' ? last.task : undefined)
+      const accepted = new Set(ev.filter((x) => x.type === 'accept' && x.t <= cut).map((x) => (x.type === 'accept' ? x.task : '')))
+      const mine = new Set(ev.filter((x) => x.type === 'task_start' && x.farmer === f.id && !accepted.has(x.task)).map((x) => (x.type === 'task_start' ? x.task : '')))
+      const keep = ev.filter((x) => {
+        if (x.t <= cut || x.type === 'goal' || x.type === 'plan' || x.type === 'farmer' || x.type === 'stop') return true
+        if ('farmer' in x && x.farmer === f.id && x.type !== 'ask') return false
+        if ('task' in x && x.task && mine.has(x.task)) return false
+        return true
+      })
+      ev.length = 0
+      ev.push(...keep)
+      const said = new Set(ev.filter((x) => x.type === 'stop').map((x) => (x.type === 'stop' ? x.task : '')))
+      for (const k of mine) if (!said.has(k)) at(tm + 0.05, { type: 'stop', task: k, reason: `You stopped the ${f.label} at its spend limit. This task stays out of the pull request.` })
+    }
+    ev.sort((a, b) => a.t - b.t)
+    for (const e of [...ev]) {
+      if (e.type !== 'usage') continue
+      const f = farmers.find((x) => x.id === e.farmer)
+      const before = spent[e.farmer] ?? 0
+      spent[e.farmer] = before + e.usd
+      if (!f || paused.has(f.id) || before + e.usd <= f.limits.usd + 0.005) continue
+      paused.add(f.id)
+      const tm = e.t / MIN - 0.015
+      const c = limitAsk(f, tm, before, total[f.id]!, e.task)
+      if (c === stopIt) return simulateRun({ ...input, halts: { ...input.halts, [f.id]: tm }, haltTotals: { ...input.haltTotals, [f.id]: total[f.id]! } })
     }
     ev.sort((a, b) => a.t - b.t)
   }

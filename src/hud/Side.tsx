@@ -1,6 +1,6 @@
 // The wood panel on the right: one page at a time (a task, a farmer, the inbox, spend, the harvest, control).
 import { CREW } from '../agent/agents'
-import { store, type Project } from '../run/store'
+import { clip, store, type Project } from '../run/store'
 import type { Autonomy, AutonomyLevel, FarmerId, Moment, RunState, TaskState } from '../run/types'
 import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
 import { Ico, Mark, Portrait, Swatch, mins, usd } from './bits'
@@ -291,7 +291,7 @@ export function InboxPanel({ s }: { s: RunState }) {
               <Swatch farmer={a.farmer} />
               <span className="grow">
                 {a.answer!.choice}
-                <span className="sub">{store.project()?.notes?.[a.id] ? `In your words: “${store.project()!.notes![a.id]}”. ` : ''}{a.question}</span>
+                <span className="sub">{store.project()?.notes?.[a.id] ? `In your words: “${clip(store.project()!.notes![a.id])}”. ` : ''}{a.question}</span>
               </span>
             </button>
           ))}
@@ -539,6 +539,8 @@ export function UsagePanel({ s }: { s: RunState }) {
 // The chest is the pull request: a commit per checked task, then the merge and the release.
 export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
   const inPr = s.tasks.filter((t) => t.status === 'accepted' && !t.gate)
+  const work = s.tasks.filter((t) => !t.gate)
+  const out = work.filter((t) => t.stopped && t.status !== 'accepted')
   const commits = inPr.reduce((n, t) => n + 1 + (t.changes?.length ?? 0), 0)
   const decided = s.asks.filter((a) => a.answer)
   const merged = s.deploy.length > 0
@@ -579,6 +581,11 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
       <div>
         <h3>
           <span className="num">{commits}</span> commit{commits === 1 ? '' : 's'}
+          {out.length > 0 && (
+            <>
+              , <span className="num">{inPr.length}</span> of <span className="num">{work.length}</span> tasks
+            </>
+          )}
         </h3>
         <div className="list">
           {inPr.flatMap((t) => {
@@ -609,6 +616,15 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
               )),
             ]
           })}
+          {out.map((t) => (
+            <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
+              <Mark pass={false} />
+              <span className="grow">
+                {t.name}
+                <span className="sub">Stopped, left out of this pull request</span>
+              </span>
+            </button>
+          ))}
         </div>
       </div>
       {merged && (

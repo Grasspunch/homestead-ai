@@ -61,13 +61,27 @@ export interface Forecast {
 //   stop, so it takes the ask's hold option, then its stop option, or nothing.
 // - Otherwise naming an option's own words wins, then a plain yes takes the suggestion.
 // Returns null when it can't tell; the ask stays open.
-const NEGATION = /\b(no|nope|not|never|don ?t|dont|do not|doesn ?t|won ?t|stop|wait|hold|later|cancel|halt|leave it)\b/
+const NEGATION = /\b(no|nope|not|never|dont|do not|doesnt|wont|stop|wait|hold|later|cancel|halt|leave it)\b/
+// A no: a negation word, but not a question ("what if we don't…?") and not "not sure".
+export function saysNo(text: string) {
+  const t = ` ${text.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9%$? ]+/g, ' ')} `
+  if (/\?|\b(what|how|why|can you|could you|explain|not sure|not certain)\b/.test(t)) return false
+  return NEGATION.test(t)
+}
+
 export function readAnswer(text: string, suggested: string, options: string[]): string | null {
+  // A question is not an answer.
+  if (/\?|\b(what|how|why|can you|could you|explain)\b/i.test(text)) return null
   const t = ` ${text.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9%$ ]+/g, ' ')} `
-  if (NEGATION.test(t)) {
-    const hold = options.find((o) => /^(not yet|stay|leave|keep it small)/i.test(o))
-    return hold ?? options.find((o) => /^stop/i.test(o)) ?? null
+  if (saysNo(text)) {
+    // "Stop" picks the stop option only when you say stop, and not "don't stop".
+    const stop = options.find((o) => /^stop/i.test(o))
+    if (stop && /\bstop\b/.test(t) && !/\b(dont|do not|not|never) stop\b/.test(t)) return stop
+    // Otherwise a no holds, when the ask can hold. If it can't, you're asked again.
+    return options.find((o) => /^(not yet|stay)/i.test(o)) ?? null
   }
+  // Any negation left ("not sure, don't split") never matches an option by its words.
+  if (NEGATION.test(t)) return null
   const words = (o: string) => o.toLowerCase().replace(/[^a-z0-9%$ ]+/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !['again', 'with', 'here', 'your', 'from', 'that', 'this'].includes(w))
   const scored = options.map((o) => ({ o, n: words(o).filter((w) => t.includes(` ${w}`)).length })).sort((a, b) => b.n - a.n)
   if (scored[0]?.n && scored[0].n > (scored[1]?.n ?? 0)) return scored[0].o
@@ -78,10 +92,13 @@ export function readAnswer(text: string, suggested: string, options: string[]): 
 // An option that's hard to undo: from free text, it's confirmed before it happens.
 export function needsConfirm(choice: string, reason?: string) {
   if (/^(not yet|stay)/i.test(choice)) return false
-  return reason === 'irreversible' || /\b(ship|merge|deploy|release|everyone|stop)\b/i.test(choice)
+  return reason === 'irreversible' || /\b(ship|merge|deploy|release|everyone|stop|leave|keep it small)\b/i.test(choice)
 }
 
-export type InWords = { kind: 'answered' | 'hold' | 'confirm'; choice: string } | { kind: 'none' }
+export type InWords = { kind: 'answered' | 'hold' | 'confirm'; choice: string } | { kind: 'none'; negated: boolean }
+
+// Long answers are quoted short.
+export const clip = (text: string, n = 80) => (text.length > n ? `${text.slice(0, n - 1).trimEnd()}…` : text)
 
 export interface ChatLine {
   from: 'you' | 'planner'
@@ -261,7 +278,7 @@ class Store {
         const end = duration(p.events)
         // And the clock never passes an ask you haven't answered: it stops on it.
         const next = p.events.find((e) => e.type === 'ask' && e.t > this.clock && !this.viewerAnswers[e.id])
-        this.clock = Math.min(end, next ? next.t : end, this.clock + dt * this.speed)
+        this.clock = Math.min(end, next ? next.t : end, this.clock + dt * this.paceTo(p, next ? next.t : end))
         if (this.clock >= end) {
           this.playing = false
           this.finishRun(p)
@@ -276,6 +293,27 @@ class Store {
       this.raf = requestAnimationFrame(step)
     }
     this.raf = requestAnimationFrame(step)
+  }
+
+  // Between the moments that matter, the run moves faster: no stretch takes more than about 15 seconds,
+  // and a release going out (or coming back) is its own moment.
+  private stretch: { from: number; to: number; speed: number } | null = null
+  private paceTo(p: Project, nextAsk: number) {
+    const deploy = p.events.find((e) => e.type === 'deploy' && e.t > this.clock)
+    const to = Math.min(nextAsk, deploy ? deploy.t : nextAsk)
+    if (!this.stretch || this.stretch.to !== to || this.clock < this.stretch.from) this.stretch = { from: this.clock, to, speed: Math.max(this.speed, (to - this.clock) / 15_000) }
+    return this.stretch.speed
+  }
+
+  // Jump to the next thing that needs you: the next ask, or the end.
+  skipToNext() {
+    const p = this.project()
+    if (!p?.approved || this.isDone(p)) return
+    const next = p.events.find((e) => e.type === 'ask' && e.t > this.clock && !this.viewerAnswers[e.id])
+    this.clock = next ? next.t : duration(p.events)
+    this.drawer = null
+    if (!this.playing) this.play()
+    this.notify()
   }
 
   pause() {
@@ -308,13 +346,13 @@ class Store {
   answerInWords(askId: string, text: string): InWords {
     const p = this.project()
     const ask = p?.events.find((e) => e.type === 'ask' && e.id === askId)
-    if (!p || !ask || ask.type !== 'ask') return { kind: 'none' }
+    if (!p || !ask || ask.type !== 'ask') return { kind: 'none', negated: false }
     // Sending work back needs a task and a note, so it goes through its own form.
     const options = [ask.suggested, ...(ask.alternatives ?? [])].filter((o) => !/^show me/i.test(o) && o !== SEND_BACK)
     const choice = readAnswer(text, ask.suggested, options)
-    if (!choice) return { kind: 'none' }
+    if (!choice) return { kind: 'none', negated: saysNo(text) }
     if (/^not yet/i.test(choice)) {
-      this.chatTo(p.id, { from: 'you', text })
+      this.chatTo(p.id, { from: 'you', text: clip(text) })
       this.chatTo(p.id, { from: 'planner', text: 'Holding. Nothing moves on this until you say so.' })
       return { kind: 'hold', choice }
     }
@@ -326,7 +364,7 @@ class Store {
   confirmInWords(askId: string, text: string, choice: string) {
     const p = this.project()
     if (!p) return
-    this.chatTo(p.id, { from: 'you', text })
+    this.chatTo(p.id, { from: 'you', text: clip(text) })
     this.chatTo(p.id, { from: 'planner', text: `Got it. I read that as “${choice}”.` })
     p.notes = { ...p.notes, [askId]: text }
     this.answer(askId, choice)
@@ -378,6 +416,12 @@ class Store {
     if (!built) return
     const { planned, farmers } = built
     let events = simulateRun(built.input)
+    // An ask you've answered keeps the words you answered: a later change (a model, say) never rewrites it.
+    const said = new Map(p.events.filter((e): e is Extract<RunEvent, { type: 'ask' }> => e.type === 'ask' && !!answers[e.id]).map((e) => [e.id, e]))
+    events = events.map((e) => {
+      const was = e.type === 'ask' ? said.get(e.id) : undefined
+      return was && e.type === 'ask' ? { ...e, question: was.question, impact: was.impact, suggested: was.suggested, alternatives: was.alternatives, confidence: was.confidence, basis: was.basis } : e
+    })
     // The plan shows the forecast made when the run started.
     if (run.forecast) {
       const fc = run.forecast

@@ -229,6 +229,8 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
       case 'stop': {
         const k = task(e.task)
         if (k) k.stopped = e.reason
+        // Its farmer stops working on it.
+        for (const f of Object.values(s.farmers)) if (f && f.task === e.task && f.state === 'working') f.state = 'idle'
         log({ task: e.task, text: e.reason, kind: 'info' }, e.t)
         break
       }

@@ -12,7 +12,7 @@ One agent on a whole feature works in a row and grades its own work. Several age
 
 ## Three interaction choices
 
-**The crew stops for you, at a level you pick.** "Often", "When it matters" or "Only what's hard to undo". Everything else is handled and listed under "Fixed without you". Each ask has a suggested answer, and your answer changes the run from there on. A farmer that reaches its spend limit is paused, at every level: raise the limit, or stop it there and leave its unfinished tasks out.
+**The crew stops for you, at a level you pick.** "Often", "When it matters" or "Only what's hard to undo". Everything else is handled and listed under "Fixed without you". Each ask has a suggested answer and says how sure the farmer is and why, and your answer changes the run from there on. You can also answer in your own words: the Planner matches them to one of the options, holds on a no, asks you to confirm anything hard to undo, and says so when it can't match them. A farmer that reaches its spend limit is paused, at every level: raise the limit, or stop it there and leave its unfinished tasks out.
 
 **One review, at the pull request.** A task commits when a different farmer's check passes. You review once: every commit with the check that let it in. Merge, or send one task back with a note; it is reworked at a retry cost, checked again, and comes back as one more commit. After three clean runs in a row (no rollback, nothing sent back or stopped) the Planner offers once to merge by itself; a rollback takes that back. While a release is live you can roll it back yourself.
 

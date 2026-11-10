@@ -115,7 +115,7 @@ describe('stopping a farmer at its limit', () => {
 
   it('asks with numbers that add up', () => {
     if (!limit || limit.type !== 'ask') throw new Error('no limit ask')
-    const spent = Number(/spent \$([\d.]+)/.exec(limit.question)![1])
+    const spent = Number(/with \$([\d.]+) spent/.exec(limit.question)![1])
     const more = Number(/about \$([\d.]+) more/.exec(limit.impact!)![1])
     const all = Number(/\$([\d.]+) in all/.exec(limit.impact!)![1])
     expect(spent + more).toBeCloseTo(all, 2)
@@ -161,10 +161,17 @@ describe('answering in your own words', () => {
     expect(readAnswer('just raise the limit', opts[0], opts)).toBe('Raise its limit to $29')
     expect(readAnswer('no, stop', opts[0], opts)).toBe('Stop it here')
   })
-  it('never turns a negation into the option it names', () => {
+  it('never turns a negation into the option it names, and a bare no never stops work', () => {
+    expect(readAnswer('Do not raise its limit', opts[0], opts)).toBeNull()
+    expect(readAnswer('no', opts[0], opts)).toBeNull()
+    expect(readAnswer('no', pr[0], pr)).toBe('Not yet')
+    expect(readAnswer("don't stop it", opts[0], opts)).toBeNull()
+    expect(needsConfirm('Stop it here', 'cost')).toBe(true)
+    expect(readAnswer("I'm not sure, don't split it", opts[0], opts)).toBeNull()
+    expect(readAnswer('can you explain how the split works?', opts[0], opts)).toBeNull()
     expect(readAnswer("don't merge yet", pr[0], pr)).toBe('Not yet')
     expect(readAnswer('don’t ship to everyone', pr[0], pr)).toBe('Not yet')
-    expect(readAnswer("no, don't split it", opts[0], opts)).not.toBe('Split it in two')
+    expect(readAnswer("no, don't split it", opts[0], opts)).toBeNull()
     expect(readAnswer("don't merge yet", 'Ship to 10% again', ['Ship to 10% again'])).toBeNull()
   })
   it('confirms anything hard to undo before acting on free text', () => {
@@ -181,5 +188,63 @@ describe('answering in your own words', () => {
     const asks = ev.filter((e) => e.type === 'ask')
     expect(asks.length).toBeGreaterThan(3)
     for (const a of asks) if (a.type === 'ask') expect(a.confidence && a.basis).toBeTruthy()
+  })
+})
+
+describe('checkpoint 15 fixes', () => {
+  it('an answered ask keeps its words after a model change mid-run', () => {
+    const p = store.newProject(GOAL)
+    const plan = simulatePlan(GOAL)
+    store.setPlan(p.id, plan.name, plan.farmers, plan.tasks, plan.estimate, plan.singleAgentEstimate)
+    store.approve(p.id)
+    const ask = p.events.find((e) => e.type === 'ask')
+    if (!ask || ask.type !== 'ask') throw new Error('no ask')
+    store.answer(ask.id, ask.suggested)
+    p.clock = ask.t + 60_000
+    store.editKit(p.id, 'builder', (e) => {
+      e.model = 'Claude Opus 5.5'
+    })
+    const again = p.events.find((e) => e.type === 'ask' && e.id === ask.id)
+    expect(again && again.type === 'ask' && again.question).toBe(ask.question)
+  })
+
+  it('no farmer passes its limit without an ask first', () => {
+    for (const goal of [GOAL, 'Stripe checkout for our pricing page', 'A dashboard of weekly signups']) {
+      const plan = simulatePlan(goal)
+      const farmers = plan.farmers.map((f) => ({ ...f, limits: { ...f.limits, usd: Math.max(1, f.limits.usd * 0.5) } }))
+      const ev = simulateRun({ goal, ...plan, farmers, autonomy: AUTONOMY_PRESETS.matters })
+      const s = reduce(ev, Number.MAX_SAFE_INTEGER, {}, true)
+      for (const f of Object.values(s.farmers)) if (f) expect(f.usd).toBeLessThanOrEqual(f.limits.usd + 0.01)
+    }
+  })
+
+  it('the first release is only fairly sure; a later run’s is sure', () => {
+    const plan = simulatePlan(GOAL)
+    const ship = (bugFixed: boolean) => simulateRun({ goal: GOAL, ...plan, bugFixed }).find((e) => e.type === 'ask' && e.reason === 'irreversible')
+    const a = ship(false)
+    const b = ship(true)
+    expect(a && a.type === 'ask' && a.confidence).toBe('medium')
+    expect(b && b.type === 'ask' && b.confidence).toBe('high')
+  })
+
+  it('the cost ask’s basis comes from its own numbers', () => {
+    const ev = simulateRun({ goal: GOAL, ...simulatePlan(GOAL) })
+    const a = ev.find((e) => e.type === 'ask' && e.reason === 'cost' && !e.limitFor)
+    if (!a || a.type !== 'ask') throw new Error('no cost ask')
+    const spent = /used \$([\d.]+) of its \$([\d.]+)/.exec(a.question)!
+    const ends = Number(/ends near \$([\d.]+)/.exec(a.impact!)![1])
+    const times = Number(/for ([\d.]+) times/.exec(a.basis!)![1])
+    expect(Math.abs(times - ends / Number(spent[2]))).toBeLessThan(0.2)
+  })
+
+  it('a stopped farmer is not left working', () => {
+    const goal = 'Stripe checkout for our pricing page'
+    const plan = simulatePlan(goal)
+    const farmers = plan.farmers.map((f) => (f.id === 'builder' ? { ...f, limits: { ...f.limits, usd: 4 } } : f))
+    const base = { goal, ...plan, farmers, autonomy: AUTONOMY_PRESETS.matters }
+    const limit = simulateRun(base).find((e) => e.type === 'ask' && e.limitFor === 'builder')!
+    const ev = simulateRun({ ...base, choices: { [limit.type === 'ask' ? limit.id : '']: 'Stop it here' } })
+    const s = reduce(ev, limit.t + 5 * 60_000, {}, true)
+    expect(s.farmers.builder?.state).not.toBe('working')
   })
 })

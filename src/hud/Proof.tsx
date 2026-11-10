@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Proof, RunState, Screen, Shot, TaskState, TestResult } from '../run/types'
 import { Mark, Swatch } from './bits'
 import { ERROR_LIMIT } from '../run/simulate'
+import { scenario } from '../run/simPlan'
 
 export function Tests({ tests, kind }: { tests: TestResult[]; kind: 'unit' | 'integration' }) {
   const failed = tests.filter((t) => !t.pass)
@@ -138,9 +139,12 @@ export function Rollout({ state, compact = false }: { state: RunState; compact?:
           <span>
             <b>{((latest.p95ms ?? 0) / 1000).toFixed(1)} s</b> slowest 5%
           </span>
-          <span>
-            <b>{Math.round((latest.answerScore ?? 0) * 100)}%</b> good answers
-          </span>
+          {scenario(state.goal).name === 'Support assistant' && (
+            // Answer quality is a support assistant's measure; other apps show errors and speed only.
+            <span>
+              <b>{Math.round((latest.answerScore ?? 0) * 100)}%</b> good answers
+            </span>
+          )}
           <span className="who-sees">{now.stage === 'rollback' ? 'Nobody sees it now' : now.stage === '100%' ? 'Everyone sees it' : '1 in 10 users see it'}</span>
         </div>
       )}

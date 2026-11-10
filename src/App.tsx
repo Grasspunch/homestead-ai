@@ -13,7 +13,7 @@ import { getLiveMode, route, setLiveMode } from './run/agent'
 import { planInto } from './run/planning'
 import { scenario } from './run/simPlan'
 import { pendingAsk } from './run/reduce'
-import { store, useStore, type Project } from './run/store'
+import { clip, store, useStore, type Project } from './run/store'
 import { SEND_BACK } from './run/simulate'
 import { BY_YOU } from './run/rollback'
 import type { Ask, FarmerId, RunState } from './run/types'
@@ -108,11 +108,12 @@ function Farm() {
 function Top({ p, s }: { p: Project; s: RunState }) {
   const st = useStore()
   const open = s.asks.filter((a) => !a.answer).length
-  const done = s.tasks.filter((t) => t.status === 'ripe' || t.status === 'accepted').length
+  // The same count as the pull request: the work tasks, not the release.
   const work = s.tasks.filter((t) => !t.gate)
+  const workDone = work.filter((t) => t.status === 'ripe' || t.status === 'accepted').length
   const left = work.filter((t) => t.status !== 'accepted').length
-  const where = ({ '100%': 'Done and live', '10%': 'Done, live for 10%', rollback: 'Done, rolled back' } as Record<string, string>)[s.deploy[s.deploy.length - 1]?.stage ?? ''] ?? 'Done, not shipped'
-  const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? (left ? `${where}, ${work.length - left} of ${work.length} tasks` : where) : `${done} of ${s.tasks.length} tasks done`
+  const where = ({ '100%': 'Live', '10%': 'Live for 10%', rollback: 'Rolled back' } as Record<string, string>)[s.deploy[s.deploy.length - 1]?.stage ?? ''] ?? 'Not shipped'
+  const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? (left ? `${where}, ${work.length - left} of ${work.length} tasks` : `Done, ${where.toLowerCase()}`) : `${workDone} of ${work.length} tasks done`
   return (
     <header className="top">
       <button className="btn white top-ico" onClick={() => store.home()} aria-label="Your farms">
@@ -148,9 +149,16 @@ function Top({ p, s }: { p: Project; s: RunState }) {
               Run again
             </button>
           ) : (
-            <button className="btn white top-ico" onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
-              <Ico name={st.playing ? 'pause' : 'play'} size={32} />
-            </button>
+            <>
+              <button className="btn white top-ico" onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
+                <Ico name={st.playing ? 'pause' : 'play'} size={32} />
+              </button>
+              {!pendingAsk(p.events, st.clock, st.viewerAnswers) && (
+                <button className="btn white top-ico" onClick={() => store.skipToNext()} aria-label="Skip to the next thing that needs you" title="Skip to the next thing that needs you">
+                  <Ico name="skip" size={32} />
+                </button>
+              )}
+            </>
           )}
         </>
       )}
@@ -366,6 +374,8 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
   const cause = s.activity.find((a) => a.t > t && a.kind !== 'ask' && /error|time out|timeout/i.test(a.text))
   const shipper = (s.tasks.find((x) => x.gate)?.farmer ?? 'deployer') as FarmerId
   const mine = s.deploy[i]?.reason === BY_YOU
+  // Your rollback: the reading when you rolled it back, the same one the chart's numbers show.
+  const atRollback = [...s.monitor].reverse().find((m) => m.t <= t && (!before || m.t >= before.t))?.metrics.errorRate ?? before?.metrics?.errorRate ?? 0
   const done = () => {
     store.seen.add(`${p.id}:${t}`)
     store.play()
@@ -383,7 +393,7 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
         </span>
       </div>
       <p>
-        {mine ? <>Rolled back as you asked, with errors at <b>{(peak * 100).toFixed(1)}%</b>.</> : <>Errors reached <b>{(peak * 100).toFixed(1)}%</b>, so I rolled back by myself.</>}{' '}
+        {mine ? <>Rolled back as you asked, with errors at <b>{(atRollback * 100).toFixed(1)}%</b>.</> : <>Errors reached <b>{(peak * 100).toFixed(1)}%</b>, so I rolled back by myself.</>}{' '}
         {mine ? <>It was live for {everyone ? 'every user' : '1 in 10 users'} for {live} min.</> : everyone ? <>Every user saw it for {live} min.</> : <>1 in 10 users saw it for {live} min. Nobody else did.</>}
       </p>
       {cause && !mine && <p className="impact">{cause.text}</p>}
@@ -668,7 +678,7 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
     const msg = text.trim()
     if (!msg) return
     const r = store.answerInWords(ask.id, msg)
-    setMiss(r.kind === 'none' ? msg : '')
+    setMiss(r.kind === 'none' ? (r.negated ? 'Got it, not that. Which of these instead?' : `I can’t match “${clip(msg)}” to one of these options, so this stays open. Pick one, or tell me again.`) : '')
     if (r.kind === 'none') return
     setText('')
     if (r.kind === 'confirm') setConfirm({ text: msg, choice: r.choice })
@@ -689,7 +699,7 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
     )
   return (
     <>
-      {miss && <p className="said">I can’t match “{miss}” to one of these options, so this stays open. Pick one, or tell me again.</p>}
+      {miss && <p className="said">{miss}</p>}
       <form className="row grow-form in-words" onSubmit={send}>
         <span className="field">
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Answer in your words, and I’ll match it to an option" aria-label="Answer in your words, and I’ll match it to an option" />

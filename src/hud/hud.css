@@ -244,3 +244,5 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .dlg p.sureness.high b { color: var(--leaf); }
 .dlg .in-words { margin-top: 2px; }
 .dlg .in-words > .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
+/* One font for every button in a dialogue: the reading font. The pixel font stays on the top bar and titles. */
+.dlg .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }

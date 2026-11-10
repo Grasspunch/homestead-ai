@@ -63,3 +63,9 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - The PR review lists stopped tasks under the commits with a red cross and "Stopped, left out of this pull request".
 - When a run is done, the top bar's Play becomes a labelled "Run again" button, like "Pull request".
 - Plot labels size to their text (width: max-content) and wrap only at the plot's width.
+
+## Checkpoint 16
+- Every button inside a dialogue uses the reading font. The pixel font stays on the top bar, titles and tags.
+- The top bar status is short: "3 of 6 tasks done" (work tasks, the same count as the pull request), then "Done, live", "Live, 2 of 5 tasks", "Rolled back" or "Not shipped".
+- While the run plays and nothing is open, the top bar shows a skip button: "Skip to the next thing that needs you".
+- Free-text echoes are clipped to 80 characters.

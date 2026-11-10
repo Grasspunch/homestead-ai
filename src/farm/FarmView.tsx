@@ -157,6 +157,15 @@ export function FarmView(p: FarmViewProps) {
   const scale = narrow ? 2 : docked ? ([3, 2.5, 2].find(fits) ?? 2) : size.h < 760 ? 2.5 : 3
   if (cam.s !== scale) setCam({ s: scale, ox: 0, oy: 0 })
   const focusId = p.openAsk?.task ?? (p.selected?.kind === 'task' ? p.selected.id : undefined)
+  const activeIds = p.state.tasks.filter((t) => t.status === 'growing' || t.status === 'checking' || t.status === 'wilted').map((t) => t.id)
+  // The space the HUD leaves for the farm: below the top bar, above the dialogue, beside any open panel.
+  const freeSize = () => {
+    const top = narrow ? 60 : 80
+    const dlg = document.querySelector('.dlg') as HTMLElement | null
+    const r = wrap.current?.getBoundingClientRect()
+    const bottom = dlg && r ? Math.max(0, r.bottom - dlg.getBoundingClientRect().top) + 8 : narrow ? 250 : 230
+    return { w: size.w - (p.side && !narrow ? 470 : 0) - 32, h: Math.max(0, size.h - top - bottom) }
+  }
   useEffect(() => {
     const c = camRef.current
     const pl = layout.plots.find((x) => x.id === focusId)
@@ -165,7 +174,20 @@ export function FarmView(p: FarmViewProps) {
     // An ask centres its plot exactly in the free space above the dialogue; an opened plot only leans toward it.
     const asking = !!p.openAsk?.task && pl?.id === p.openAsk.task
     const plots = box && docked ? { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 } : null
-    const tgt = !pl ? plots ?? home : asking ? { x: pl.x + pl.w / 2, y: pl.y + pl.h / 2 } : { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) }
+    // With nothing open: the whole farm when it fits between the top bar and the dialogue, otherwise the plots
+    // being worked on now, so the active work is never under the top bar or the dialogue.
+    const idle = (() => {
+      if (docked || !box) return null
+      const free = freeSize()
+      const S = scale * PX
+      if ((box.x1 - box.x0) * S <= free.w && (box.y1 - box.y0) * S <= free.h) return { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 }
+      const ps = layout.plots.filter((q) => activeIds.includes(q.id))
+      if (!ps.length) return null
+      const x0 = Math.min(...ps.map((q) => q.x)), x1 = Math.max(...ps.map((q) => q.x + q.w))
+      const y0 = Math.min(...ps.map((q) => q.y - 1)), y1 = Math.max(...ps.map((q) => q.y + q.h + 2))
+      return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }
+    })()
+    const tgt = !pl ? plots ?? idle ?? home : asking ? { x: pl.x + pl.w / 2, y: pl.y + pl.h / 2 } : { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) }
     c.tx = tgt.x
     c.ty = tgt.y
     c.manual = false
@@ -173,7 +195,7 @@ export function FarmView(p: FarmViewProps) {
       c.cx = tgt.x
       c.cy = tgt.y
     }
-  }, [focusId, layout, !!p.openAsk, docked])
+  }, [focusId, layout, !!p.openAsk, docked, activeIds.join(), size.w, size.h, scale])
   const freeRect = () => {
     if (docked) {
       const w = size.w - DOCK - (p.side ? 470 : 0)
