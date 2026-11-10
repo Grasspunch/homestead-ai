@@ -6,6 +6,7 @@ import { GlyphsPage } from './pages/Glyphs'
 import { LogoPage } from './pages/Logo'
 import { MotionPage } from './pages/Motion'
 import { OverviewPage } from './pages/Overview'
+import { PlantPage } from './pages/Plant'
 import { ShapePage } from './pages/Shape'
 import { TypePage } from './pages/Type'
 import { WorkflowPage } from './pages/Workflow'
@@ -22,6 +23,7 @@ export const ROUTES: Route[] = [
   { path: 'motion', title: 'Motion', group: 'Foundations', Page: MotionPage },
   { path: 'components', title: 'Controls', group: 'Components', Page: ComponentsPage },
   { path: 'glyphs', title: 'Field glyphs', group: 'Components', Page: GlyphsPage },
+  { path: 'plant', title: 'Plant questions', group: 'Flows', Page: PlantPage },
   { path: 'art/sprites-premium', title: 'Sprites, premium', group: 'Art', Page: ArtPage },
   { path: 'art/sprites-basic', title: 'Sprites, basic', group: 'Art', Page: ArtPage },
   { path: 'art/ui-premium', title: 'UI, premium', group: 'Art', Page: ArtPage },

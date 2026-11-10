@@ -1,0 +1,198 @@
+/* The Plant questions demo: the field on the left, the panel on the right, as in the app. */
+
+.pl-tools {
+  display: flex;
+  gap: var(--s-2);
+  margin-bottom: var(--s-4);
+}
+
+.pl-demo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-3);
+  overflow: hidden;
+  background: var(--sheet);
+}
+
+.pl-demo .pl-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-12);
+  min-height: 600px;
+  border: 0;
+  border-radius: 0;
+}
+
+.pl-beds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+
+.pl-head {
+  align-self: center;
+}
+
+.pl-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  padding: var(--s-5);
+  border-left: 1px solid var(--rule);
+  background: var(--sheet);
+}
+
+.pl-status {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.pl-status .hs-portrait {
+  flex: none;
+  background: var(--sky);
+  border-radius: var(--r-1);
+}
+
+.pl-status div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pl-status b {
+  font: var(--title);
+  color: var(--ink);
+}
+
+.pl-status small {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font: var(--caption);
+  color: var(--ink-2);
+}
+
+/* The seed row: one bed tile per question, sprouted once answered. */
+.pl-seeds {
+  display: flex;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0 0 var(--s-2);
+  list-style: none;
+}
+
+.pl-seeds li {
+  position: relative;
+}
+
+.pl-seeds button {
+  position: relative;
+  display: block;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.pl-seeds button:disabled {
+  cursor: default;
+}
+
+.pl-seeds button > span {
+  position: absolute;
+  inset: 0;
+}
+
+.pl-seeds button:focus-visible {
+  outline: var(--px) solid var(--out);
+  outline-offset: var(--px);
+}
+
+.pl-seeds li.now::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--s-2) * -1);
+  height: var(--px);
+  background: var(--ink);
+}
+
+.pl-q h3 {
+  margin: 0;
+  font: var(--heading);
+  color: var(--ink);
+}
+
+.pl-why {
+  margin: var(--s-1) 0 var(--s-4);
+  font: var(--body);
+  color: var(--ink-2);
+}
+
+.pl-opts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.pl-own {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: var(--px);
+}
+
+.pl-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.pl-change {
+  font: var(--caption);
+  color: var(--ink-3);
+}
+
+.pl-panel .hs-rows:empty {
+  display: none;
+}
+
+.pl-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: auto;
+}
+
+.pl-hint {
+  font: var(--caption);
+  color: var(--ink-3);
+}
+
+.pl-go {
+  width: calc(100% - 2 * var(--px));
+  justify-content: center;
+}
+
+@media (max-width: 960px) {
+  .pl-demo {
+    grid-template-columns: 1fr;
+  }
+  .pl-demo .pl-field {
+    min-height: 0;
+    padding: var(--s-6) !important;
+    flex-wrap: wrap;
+  }
+  .pl-panel {
+    border-left: 0;
+    border-top: 1px solid var(--rule);
+  }
+}
