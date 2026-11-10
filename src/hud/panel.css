@@ -312,7 +312,8 @@ button.crew-x:hover { opacity: 1; }
 .vs { display: flex; flex-direction: column; gap: 8px; }
 .vs h3 { display: flex; align-items: center; gap: 8px; }
 .vs-gap { margin: 0; display: flex; align-items: baseline; gap: 8px; font-size: var(--t-lead); color: var(--bark-2); }
-.vs-gap .big { color: var(--leaf); font-size: 40px; }
+.vs-gap { flex-wrap: wrap; }
+.vs-gap .big { color: var(--leaf); font-size: 40px; white-space: nowrap; }
 .vs-gap b { color: var(--bark); }
 .vs-gap .tag { margin-left: auto; align-self: center; }
 .vs-grid { display: grid; grid-template-columns: auto 1fr 1fr; column-gap: 14px; font-size: var(--t-body); }
