@@ -56,3 +56,10 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - Digits never sit in px4: a count in a section head is in the body font.
 - "Not yet" holds without taking the other answers away. A long commit list shows three and "+N more".
 - The top bar has a labelled Pull request button. Roll back sits under the pull request's title whenever anything is live.
+
+## Checkpoint 15
+- Asks show how sure the farmer is: one line under the impact, "Sure" (leaf) / "Fairly sure" / "Unsure" (ink) in bold, then the basis in meta size. No tag, no icon.
+- Every ask dialogue ends with the same talk bar as the Planner's: a field "Or answer in your own words" and a Send button in the reading font. A reply the Planner can't place keeps the ask open and says so in one line.
+- The PR review lists stopped tasks under the commits with a red cross and "Stopped, left out of this pull request".
+- When a run is done, the top bar's Play becomes a labelled "Run again" button, like "Pull request".
+- Plot labels size to their text (width: max-content) and wrap only at the plot's width.

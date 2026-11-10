@@ -34,13 +34,14 @@ export function soloFromRun(events: RunEvent[]): Estimate {
   return { usd: +(usd * SOLO.contextCost).toFixed(2), minutes: Math.round((ms / MIN) * SOLO.contextTime) }
 }
 
-// What the checking cost in this run: every read of someone else's task (a check), and the end-to-end check.
+// What the checking cost in this run: every read of someone else's task by a checker, and the end-to-end check.
+// The Planner reading a task to split or re-plan it is planning, not checking.
 export function checkCost(events: RunEvent[]): number {
   const owner = new Map<string, FarmerId>()
   let usd = 0
   for (const e of events) {
     if (e.type === 'task_start' && !owner.has(e.task)) owner.set(e.task, e.farmer)
-    if (e.type === 'usage' && e.task && (e.task === 'e2e-check' || (e.kind === 'read' && owner.has(e.task) && owner.get(e.task) !== e.farmer))) usd += e.usd
+    if (e.type === 'usage' && e.task && (e.task === 'e2e-check' || (e.kind === 'read' && e.farmer !== 'planner' && owner.has(e.task) && owner.get(e.task) !== e.farmer))) usd += e.usd
   }
   return +usd.toFixed(2)
 }

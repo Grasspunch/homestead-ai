@@ -63,6 +63,7 @@ export function rollBack(events: RunEvent[], t0: number, askId: string, choice?:
     { t: at(0.05), type: 'progress', task: gate, value: 0.1 },
     {
       t: at(0.3), type: 'ask', id: askId, farmer: shipper.farmer, task: gate, reason: 'risk',
+      confidence: 'medium', basis: 'The release was healthy when you rolled it back.',
       question: 'Rolled back as you asked. Nothing is live now. Ship to 10% again?',
       impact: 'Same rule as before: if errors pass 2%, I roll back by myself.',
       suggested: SHIP_AGAIN, alternatives: [LEAVE_IT],

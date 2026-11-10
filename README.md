@@ -20,7 +20,7 @@ One agent on a whole feature works in a row and grades its own work. Several age
 
 ## Crew against one agent
 
-The comparison is one Claude Sonnet 5.5 agent doing the same work in a row, with no checker and no check cost. Before the run both columns are estimates; after it both come from the run. One assumption carries the time gap: one agent holds every file's context, so each step runs 1.35 times slower. In the support sample the crew costs about $56 and finishes in under 2 hours; the same work alone costs about $54 and takes 2 h 17 min. So the crew costs about the same, is about half an hour sooner, and about $3.50 of checks caught two problems before merge.
+The comparison is one Claude Sonnet 5.5 agent doing the same work in a row, with no checker and no check cost. The plan's numbers come from simulating the run on its default path, so the plan and the run agree until you answer differently. Two assumptions carry the gap, and both are named in the app: one agent holds every file's context, so each step runs 1.35 times slower and costs 1.1 times more. In the support sample the crew costs about $56 and takes 1 h 52 min; the same work alone costs about $54 and takes 2 h 17 min. Without those two assumptions, one agent would cost about $50 and take about 1 h 41 min. So the crew costs about the same, is 25 minutes sooner, and $1.63 of checks caught two problems before merge.
 
 ## What is simulated
 

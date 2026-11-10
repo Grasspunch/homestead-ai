@@ -90,6 +90,8 @@ export interface SimInput {
   tasks: PlanTask[]
   estimate: Estimate
   singleAgentEstimate?: Estimate
+  // The Planner's own estimate, which sizes each step. The estimate shown can be the simulated forecast instead.
+  basis?: Estimate
   autonomy?: Autonomy
   // Your answers so far, by ask id. A different answer from the suggested one changes what happens next.
   choices?: Record<string, string>
@@ -101,6 +103,10 @@ export interface SimInput {
   sendBacks?: Record<string, { task: string; note: string }>
   // A later run of the same farm: last run's release bug is already fixed, so this release goes out clean.
   bugFixed?: boolean
+  // Farmers you stopped at their spend limit, and the run minute they reached it. Set by the run itself:
+  // a stop re-runs the simulation so nothing after it involves that farmer.
+  halts?: Partial<Record<FarmerId, number>>
+  haltTotals?: Partial<Record<FarmerId, number>> // what each stopped farmer would have spent without the stop
 }
 
 export const SEND_BACK = 'Send back'
@@ -126,10 +132,14 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const stopped = new Set<string>()
   const finished = new Set<string>()
   let changes = 0 // commits from work you sent back
+  // A farmer you stopped at its limit does nothing after that minute.
+  const haltTotals = input.haltTotals ?? {}
+  const halted = (id: FarmerId, min: number) => input.halts?.[id] !== undefined && min > input.halts[id]!
 
   at(0, { type: 'goal', text: goal })
   for (const f of farmers) at(0.02, { type: 'farmer', ...f })
-  at(0.05, { type: 'plan', tasks: plan, estimate: input.estimate, singleAgentEstimate: input.singleAgentEstimate })
+  const basis = input.basis ?? input.estimate
+  at(0.05, { type: 'plan', tasks: plan, estimate: input.estimate, singleAgentEstimate: input.singleAgentEstimate, basis })
 
   const build = plan.filter((t) => !t.gate)
   const builderTasks = build.filter((t) => t.farmer === 'builder')
@@ -140,12 +150,12 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const failing = builderTasks.find((t) => t !== pricey) ?? build.find((t) => t !== pricey && t !== disputed)
   // The task where the Builder wants a refactor that reaches the others' code.
   const sweeping = builderTasks.find((t) => t !== pricey && t !== failing) ?? (builderTasks.length > 1 ? builderTasks[builderTasks.length - 1] : undefined)
-  const perTask = Math.max(5, (input.estimate.minutes * 0.6) / Math.max(1, plan.length))
+  const perTask = Math.max(5, (basis.minutes * 0.6) / Math.max(1, plan.length))
   // Each step costs its farmer's model rate. The plan's estimate fixes the unit; a model you changed since moves its share.
   const rateOf = (model?: string) => MODELS.find((m) => m.model === model)?.rate ?? 1
   const modelOf = (f: FarmerId) => farmers.find((x) => x.id === f)?.model
   const planned = (f: FarmerId) => rateOf(input.plannedModels?.[f] ?? modelOf(f))
-  const usdUnit = (input.estimate.usd * 0.7) / Math.max(0.05, plan.reduce((n, t) => n + planned(t.farmer), 0))
+  const usdUnit = (basis.usd * 0.7) / Math.max(0.05, plan.reduce((n, t) => n + planned(t.farmer), 0))
   const usdPer = (f: FarmerId) => usdUnit * rateOf(modelOf(f))
   const free: Partial<Record<FarmerId, number>> = {}
   let lastBuilt = 0
@@ -173,21 +183,37 @@ export function simulateRun(input: SimInput): RunEvent[] {
     const deps = task.id === 'e2e-check' ? lastBuilt : 0
     const start = Math.max(free[f] ?? 0.3, deps)
     const len = perTask * (0.85 + r() * 0.4)
+    if (halted(f, start)) {
+      // Its farmer was stopped before this task began: it stays out of the pull request.
+      stopped.add(task.id)
+      at(input.halts![f]! + 0.05, { type: 'stop', task: task.id, reason: `You stopped the ${label(f)} at its spend limit. This task stays out of the pull request.` })
+      continue
+    }
     at(start, { type: 'task_start', task: task.id, farmer: f })
     const lines = steps(task, f)
     let spent = 0
     let extra = 0 // minutes this task runs past its plan
     let cutAt = -1 // the line where you stopped it, if you did
     let note = task.doneWhen
+    let haltedHere = false
     lines.forEach((line, i) => {
-      if (cutAt >= 0) return
+      if (cutAt >= 0 || haltedHere) return
       const tt = start + (len * (i + 1)) / (lines.length + 1) + extra
+      if (halted(f, tt)) {
+        haltedHere = true
+        return
+      }
       at(tt, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: line })
       // The pricey task burns through its share twice as fast as planned.
       const cost = (usdPer(f) / lines.length) * (task === pricey && i < 2 ? 2.4 : 1)
       spent += cost
       usage(tt + 0.01, f, task.id, cost, i === 0 ? 'read' : 'write')
       at(tt + 0.02, { type: 'progress', task: task.id, value: ((i + 1) / lines.length) * 0.85 })
+      // The step that took it past its limit is its last.
+      if (halted(f, tt + 0.03)) {
+        haltedHere = true
+        return
+      }
 
       if (task === sweeping && i === 1) {
         const touches = plan.filter((x) => x !== task && !x.gate && x.id !== 'e2e-check' && (x.farmer === 'builder' || x.farmer === 'designer')).map((x) => x.id)
@@ -198,6 +224,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
           const suggested = 'Go ahead, test everything'
           at(tt + 0.1, {
             type: 'ask', id, farmer: f, task: task.id, reason: 'big', touches, files,
+            confidence: 'medium', basis: `The ${touches.length + 1} tasks it reaches have their own tests to run before and after.`,
             question: `To finish “${task.name}” cleanly, I want to ${sc.refactor.what}. That changes ${files} files across ${touches.length + 1} tasks.`,
             impact: 'The other tasks’ code moves with it. I’d run every test before and after.',
             suggested, alternatives: ['Keep it small, no refactor'],
@@ -233,6 +260,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
           const id = `ask-${++askN}`
           at(tt + 0.1, {
             type: 'ask', id, farmer: lead, task: task.id, reason: 'cost',
+            confidence: 'medium', basis: 'From its first 2 steps, which cost 2.4 times their plan.',
             question: `${task.name} is costing more than planned. It has used ${money(spent)} of its ${money(budget)} and is about half done.`,
             impact: `At this rate it ends near ${money(projected)}. Splitting it keeps this part on budget and gives the hard cases their own ${money(rest$)}, about ${money(projected - budget - rest$)} less.`,
             suggested,
@@ -267,6 +295,12 @@ export function simulateRun(input: SimInput): RunEvent[] {
         }
       }
     })
+    if (haltedHere) {
+      stopped.add(task.id)
+      at(input.halts![f]! + 0.05, { type: 'stop', task: task.id, reason: `You stopped the ${label(f)} at its spend limit. This task stays out of the pull request.` })
+      free[f] = Number.MAX_SAFE_INTEGER
+      continue
+    }
     let end = start + len + extra
     at(end, { type: 'task_built', task: task.id })
 
@@ -276,7 +310,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       let c = 'Fix it'
       if (asks('failed')) {
         const id = `ask-${++askN}`
-        at(end + 0.5, { type: 'ask', id, farmer: f, task: task.id, reason: 'anomaly', question: `${task.name} failed its check: 2 of 10 tests crash on empty input.`, impact: 'I can fix the handler and add a test for it. About 2 minutes and $0.20.', suggested: 'Fix it', alternatives: ['Show me the failures', 'Stop this task'] })
+        at(end + 0.5, { type: 'ask', id, farmer: f, task: task.id, reason: 'anomaly', confidence: 'high', basis: 'Both failing tests crash on the same empty input.', question: `${task.name} failed its check: 2 of 10 tests crash on empty input.`, impact: 'I can fix the handler and add a test for it. About 2 minutes and $0.20.', suggested: 'Fix it', alternatives: ['Show me the failures', 'Stop this task'] })
         c = choose(id, 'Fix it')
         at(end + 1.4, { type: 'answer', id, choice: c, by: 'human' })
         end += 1
@@ -293,6 +327,16 @@ export function simulateRun(input: SimInput): RunEvent[] {
       if (!asks('failed')) at(end, { type: 'auto_fix', task: task.id, what: `${task.name}: 2 tests failed on empty input. ${label(f)} fixed it and all 10 pass.` })
       at(end + 0.3, { type: 'check', task: task.id, by: checkerOf(f), pass: true, notes: task.doneWhen, evidence: ['tests/report.json: 10 passed'], proof: unit(task) })
       finish(task, end + 0.3)
+    } else if (task === disputed && halted('builder', end + 0.6)) {
+      // The Builder was stopped, so there's nobody to disagree with: the Designer fixes its own overlap.
+      const d = sc.dispute
+      const by = checkerOf('designer')
+      at(end + 0.4, { type: 'check', task: task.id, by, pass: false, notes: d.failNote, evidence: ['evidence/screen.png'], proof: shot(sc.screen, 'overlap') })
+      at(end + 1, { type: 'tool', farmer: 'designer', task: task.id, tool: 'edit', summary: d.designer.tool })
+      usage(end + 1.01, 'designer', task.id, usdPer('designer') * 0.2, 'write')
+      end += 2.5
+      at(end, { type: 'check', task: task.id, by, pass: true, notes: d.designer.check, evidence: ['evidence/screen.png'], proof: shot(sc.screen, d.designer.shot) })
+      finish(task, end, d.designer.check, ['evidence/screen.png'])
     } else if (task === disputed) {
       const d = sc.dispute
       const by = checkerOf('designer')
@@ -306,6 +350,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         const id = `ask-${++askN}`
         at(end + 0.7, {
           type: 'ask', id, farmer: 'designer', task: task.id, reason: 'disagree',
+          confidence: 'medium', basis: 'My way meets the done-when as written.',
           question: `The Builder and I disagree on ${d.topic}.`,
           impact: d.impact,
           suggested: d.designer.option, alternatives: [d.builder.option],
@@ -337,7 +382,9 @@ export function simulateRun(input: SimInput): RunEvent[] {
     const start = lastBuilt + 0.5
     at(start, { type: 'task_start', task: task.id, farmer: f })
     const isShip = /ship|deploy|launch|release|live/i.test(task.name + task.id)
-    const commits = () => [...finished].filter((id) => !plan.find((t) => t.id === id)?.gate).length + changes
+    const shipped = () => [...finished].filter((id) => !plan.find((t) => t.id === id)?.gate).length
+    const built = () => plan.filter((t) => !t.gate).length
+    const commits = () => shipped() + changes
     // A failed check always asks; otherwise, with shipping set to "just do it", the Deployer merges by itself.
     let everyone = false
     let reviewAt = start
@@ -347,8 +394,12 @@ export function simulateRun(input: SimInput): RunEvent[] {
         const suggested = isShip ? 'Merge and ship to 10%' : 'Go ahead'
         at(reviewAt + 0.3, {
           type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible',
+          confidence: isShip && !stopped.size ? 'high' : 'medium',
+          basis: isShip ? (stopped.size ? 'Every check passed, but stopped work is missing.' : `Every check passed, and 10% rolls back by itself past ${ERROR_LIMIT * 100}% errors.`) : 'It reaches real people and is hard to undo.',
           question: isShip
-            ? `${round ? 'The pull request is ready again' : 'The pull request is ready'}: ${commits()} commits, and every check passed.`
+            ? stopped.size
+              ? `The pull request has ${shipped()} of ${built()} tasks, ${commits()} commits, and every check passed. ${stopped.size} stopped task${stopped.size === 1 ? '' : 's'} stay${stopped.size === 1 ? 's' : ''} out. Ship it without ${stopped.size === 1 ? 'it' : 'them'}?`
+              : `${round ? 'The pull request is ready again' : 'The pull request is ready'}: ${commits()} commits, and every check passed.`
             : `${task.name} reaches real people. Go ahead?`,
           impact: isShip ? `Merging puts it in front of 10% of users first. If errors pass ${ERROR_LIMIT * 100}%, I roll back by myself.` : 'This one is hard to undo.',
           suggested,
@@ -424,7 +475,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     t += 2.6
     if (asks('reship')) {
       const id = `ask-${++askN}`
-      at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'risk', question: 'Fixed what caused the rollback. Ship to 10% again?', impact: 'Same rule as before: if errors pass 2%, I roll back by myself.', suggested: 'Ship to 10% again', alternatives: ['Not yet'] })
+      at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'risk', confidence: 'high', basis: `${rb.tests.length} new tests reproduce the rollback and now pass.`, question: 'Fixed what caused the rollback. Ship to 10% again?', impact: 'Same rule as before: if errors pass 2%, I roll back by myself.', suggested: 'Ship to 10% again', alternatives: ['Not yet'] })
       at(t + 1, { type: 'answer', id, choice: choose(id, 'Ship to 10% again'), by: 'human' })
       t += 1.1
     } else {
@@ -440,7 +491,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (input.deployAsks) {
       const id = `ask-${++askN}`
       const go = 'Ship to everyone'
-      at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible', question: `10% has been clean for ${Math.round(good.length * 0.6)} min, with errors at 0.3%. Ship to everyone?`, impact: 'Every user gets it. If errors pass 2%, I roll back by myself.', suggested: go, alternatives: ['Stay at 10%'] })
+      at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible', confidence: 'high', basis: '4 readings in a row at 0.3% errors or less.', question: `10% has been clean for ${Math.round(good.length * 0.6)} min, with errors at 0.3%. Ship to everyone?`, impact: 'Every user gets it. If errors pass 2%, I roll back by myself.', suggested: go, alternatives: ['Stay at 10%'] })
       const c = choose(id, go)
       at(t + 1, { type: 'answer', id, choice: c, by: 'human' })
       t += 1.1
@@ -482,22 +533,35 @@ export function simulateRun(input: SimInput): RunEvent[] {
       spent[e.farmer] = (spent[e.farmer] ?? 0) + e.usd
       if (!f || paused.has(f.id) || spent[f.id]! <= f.limits.usd) continue
       paused.add(f.id)
-      const left = total[f.id]! - spent[f.id]!
+      const wasHalted = input.halts?.[f.id] !== undefined
+      // What all its work costs: from the run without the stop, when you stopped it.
+      const whole = (wasHalted ? haltTotals[f.id] : undefined) ?? total[f.id]!
+      const left = whole - spent[f.id]!
       // Reached at its very last step: nothing left to pause. It shows as over its limit instead.
-      if (left < 0.5) continue
-      const to = Math.ceil((total[f.id]! * 1.1) / 5) * 5
+      if (left < 0.5 && !wasHalted) continue
+      const to = Math.ceil((whole * 1.1) / 5) * 5
+      // Whole dollars once it's over $10, so the parts always add up to the total.
+      const big = whole >= 10
+      const fmt = (n: number) => (big ? `$${Math.round(n)}` : `$${n.toFixed(2)}`)
+      const spentS = big ? Math.round(spent[f.id]!) : +spent[f.id]!.toFixed(2)
+      const wholeS = big ? Math.round(whole) : +whole.toFixed(2)
       const tm = e.t / MIN
       const id = `ask-limit-${f.id}`
       const suggested = `Raise its limit to ${money(to)}`
       const stopIt = 'Stop it here'
       at(tm + 0.01, {
         type: 'ask', id, farmer: lead, task: e.task, reason: 'cost', limitFor: f.id, limitTo: to,
-        question: `The ${f.label} reached its ${money(f.limits.usd)} limit, so I paused it.`,
-        impact: `Its work left needs about ${money(left)} more, ${money(total[f.id]!)} in all. Stopping it leaves its unfinished tasks out of the pull request.`,
+        confidence: 'high', basis: 'From what it has spent and the steps it has left.',
+        question: `The ${f.label} has spent ${fmt(spentS)} against its ${fmt(f.limits.usd)} limit, so I paused it.`,
+        impact: `Finishing its work needs about ${fmt(wholeS - spentS)} more, ${fmt(wholeS)} in all. Stopping it leaves its unfinished tasks out of the pull request.`,
         suggested, alternatives: [stopIt],
       })
       const c = choose(id, suggested)
       at(tm + 0.02, { type: 'answer', id, choice: c, by: 'human' })
+      if (c === stopIt && !wasHalted) {
+        // Run it again with this farmer stopped here, so nothing after this involves it.
+        return simulateRun({ ...input, halts: { ...input.halts, [f.id]: e.t / MIN }, haltTotals: { ...input.haltTotals, [f.id]: total[f.id]! } })
+      }
       if (c === stopIt) {
         const cut = e.t + 0.02 * MIN
         const done = new Set(ev.filter((x) => x.type === 'accept' && x.t <= cut).map((x) => (x.type === 'accept' ? x.task : '')))

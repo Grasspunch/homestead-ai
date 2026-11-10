@@ -238,3 +238,9 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .dlg .pr-commits { max-height: none; }
 .dlg .pr-commits .picked { background: rgba(79, 143, 63, .14); }
 .dlg .pr-commits .more { color: var(--bark-2); font-weight: 700; }
+/* How sure a farmer is of its suggestion: a word, then what it rests on. Green only when sure. */
+.dlg p.sureness { font-size: var(--t-meta); color: var(--bark-2); }
+.dlg p.sureness b { color: var(--bark); margin-right: 4px; }
+.dlg p.sureness.high b { color: var(--leaf); }
+.dlg .in-words { margin-top: 2px; }
+.dlg .in-words > .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }

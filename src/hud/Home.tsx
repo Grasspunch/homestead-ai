@@ -4,8 +4,9 @@ import { planInto } from '../run/planning'
 import { draw, hasFrame } from '../map/atlas'
 import { TINT } from '../run/crew'
 import { pendingAsk, reduce } from '../run/reduce'
+import { liveStage } from '../run/rollback'
 import { store, useStore, type Project } from '../run/store'
-import type { FarmerId } from '../run/types'
+import type { FarmerId, RunState } from '../run/types'
 import { Ico, Portrait, atlasLoaded } from './bits'
 
 const PX = 16
@@ -25,9 +26,10 @@ function minis(projects: Project[]): Mini[] {
   return projects.map((p, i) => {
     const firstAsk = p.events.find((e) => e.type === 'ask')
     // A farm you haven't opened yet waits at its first question; the rest show where they are.
-    const t = !p.approved ? Number.MAX_SAFE_INTEGER : store.screen.kind === 'farm' || store.clock > 0 ? store.clock : firstAsk ? firstAsk.t : 0
-    const s = reduce(p.events, p.approved ? t : Number.MAX_SAFE_INTEGER, store.viewerAnswers)
-    const waiting = p.approved && pendingAsk(p.events, t, store.viewerAnswers)
+    const t = !p.approved ? Number.MAX_SAFE_INTEGER : p.clock ?? (firstAsk ? firstAsk.t : 0)
+    const answers = p.answers ?? {}
+    const s = reduce(p.events, t, answers)
+    const waiting = p.approved && pendingAsk(p.events, t, answers)
     const done = s.tasks.filter((k) => k.status === 'ripe' || k.status === 'accepted').length
     const prog = s.tasks.length ? done / s.tasks.length : 0
     const busy = Object.values(s.farmers).find((f) => f && f.state === 'working')
@@ -38,9 +40,15 @@ function minis(projects: Project[]): Mini[] {
       stage: !p.approved ? -1 : s.done ? 3 : Math.min(2, Math.floor(prog * 3)),
       emote: !p.approved ? 'read' : waiting ? 'alert' : s.done ? 'hearts' : 'notes',
       farmer: waiting ? (s.asks.find((a) => !a.answer)?.farmer ?? 'planner') : busy?.id ?? 'builder',
-      words: !p.approved ? 'Plan, not started' : waiting ? 'Needs you' : s.done ? 'Done and live' : `${done} of ${s.tasks.length} done`,
+      words: !p.approved ? 'Plan, not started' : waiting ? 'Needs you' : s.done ? doneWords(p, s, t) : `${done} of ${s.tasks.length} done`,
     }
   })
+}
+
+// A finished farm: is its release live, rolled back, or never shipped?
+function doneWords(p: Project, s: RunState, t: number) {
+  if (liveStage(p.events, t)) return s.tasks.some((k) => k.stopped) ? 'Partly shipped and live' : 'Done and live'
+  return s.deploy.some((d) => d.stage === 'rollback') ? 'Rolled back, nothing live' : 'Done, not shipped'
 }
 
 export function Home() {

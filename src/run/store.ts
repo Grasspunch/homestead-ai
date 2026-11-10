@@ -4,6 +4,7 @@ import { duration, pendingAsk, reduce } from './reduce'
 import { SEND_BACK, simulateRun } from './simulate'
 import { liveStage, rollBack } from './rollback'
 import { simulatePlan } from './simPlan'
+import { soloFromRun } from './compare'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
 import { MODELS, applyEdit, emptyEdit, type KitEdit } from './kit'
@@ -40,7 +41,32 @@ export interface Project {
   everSentBack?: boolean // a send back on this farm, ever: the trust offer never follows one
   trust?: 'offered' | 'yes' | 'no'
   runs?: number // runs watched to the end
-  cleanRuns?: number // runs in a row with no rollback, no send back and nothing stopped // after a clean merge, the Planner offers once to merge by itself
+  cleanRuns?: number // runs in a row with no rollback, no send back and nothing stopped; after three, the Planner offers once to merge by itself
+  // The run you're watching on this farm. Each farm keeps its own place, so leaving and coming back resumes it.
+  clock?: number // ms into the run; unset until the run starts
+  answers?: Record<string, string> // your answers in this run, by ask id
+  // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
+  notes?: Record<string, string> // answers you gave in your own words, by ask id
+  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean }
+}
+
+// The plan's numbers: the run simulated on its default path (every suggested answer), and the same work done by one agent.
+export interface Forecast {
+  crew: Estimate
+  solo: Estimate
+}
+
+// Which option a free-text answer means. Naming an option's own words wins; then yes or no.
+export function readAnswer(text: string, suggested: string, options: string[]): string | null {
+  const t = ` ${text.toLowerCase().replace(/[^a-z0-9%$ ]+/g, ' ')} `
+  const words = (o: string) => o.toLowerCase().replace(/[^a-z0-9%$ ]+/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !['again', 'with', 'here', 'your', 'from', 'that', 'this'].includes(w))
+  const scored = options.map((o) => ({ o, n: words(o).filter((w) => t.includes(` ${w} `) || t.includes(` ${w}`)).length })).sort((a, b) => b.n - a.n)
+  if (scored[0]?.n && scored[0].n > (scored[1]?.n ?? 0)) return scored[0].o
+  const no = /\b(no|nope|don ?t|do not|stop|hold|wait|later|not yet|cancel|leave it)\b/.test(t)
+  const yes = /\b(yes|yep|yeah|sure|ok|okay|go|go ahead|do it|fine|sounds good|agreed|ship it)\b/.test(t)
+  if (yes && !no) return suggested
+  if (no && !yes) return options.find((o) => /^(not yet|stop|leave|keep it small|stay)/i.test(o)) ?? null
+  return null
 }
 
 export interface ChatLine {
@@ -55,10 +81,8 @@ class Store {
   projects: Project[] = []
   sampleLoading = true
   // replay
-  clock = 0 // ms into the run
   playing = false
   speed = 1 // run-ms per wall-ms, set from the run's length
-  viewerAnswers: Record<string, string> = {}
   crewSize: Record<string, number> = {} // per own project: how many farmers the plan uses
   chat: Record<string, ChatLine[]> = {}
   settingsOpen = false
@@ -115,9 +139,30 @@ class Store {
     return this.projects.find((p) => p.id === pid)
   }
 
+  // The open farm's place in its run, and your answers in it.
+  get clock() {
+    return this.project()?.clock ?? 0
+  }
+  set clock(v: number) {
+    const p = this.project()
+    if (p) p.clock = v
+  }
+  get viewerAnswers(): Record<string, string> {
+    return this.project()?.answers ?? {}
+  }
+  set viewerAnswers(v: Record<string, string>) {
+    const p = this.project()
+    if (p) p.answers = v
+  }
+
   state(p = this.project()): RunState | null {
     if (!p) return null
-    return reduce(p.events, p.approved ? this.clock : Number.MAX_SAFE_INTEGER, this.viewerAnswers)
+    return reduce(p.events, p.approved ? (p.clock ?? 0) : Number.MAX_SAFE_INTEGER, p.answers ?? {})
+  }
+
+  // Has this farm's run reached its end?
+  isDone(p = this.project()) {
+    return !!p && p.approved && p.clock !== undefined && p.clock >= duration(p.events)
   }
 
   // The sample farm: a simulated crew run of a plan for SAMPLE_GOAL.
@@ -137,22 +182,41 @@ class Store {
     this.speed = Math.max(1, duration(events) / 180_000)
   }
 
+  // Open a farm where you left it. A farm whose run hasn't started yet starts it.
   open(project: string) {
+    this.pause()
     this.screen = { kind: 'farm', project }
     this.drawer = null
-    this.pause()
-    this.clock = 0
-    this.viewerAnswers = {}
+    this.lastAsk = null
     const p = this.project(project)
     if (p?.approved) {
-      // A fresh watch: the run as planned, before any of your answers. Your changes to farmers apply from the start.
-      p.sendBacks = {}
-      p.rollbacks = []
-      this.kitAt[p.id] = {}
-      this.rebuild(p)
-      this.play()
+      if (p.clock === undefined || !p.run) this.startRun(p)
+      else {
+        this.setSpeed(p.events)
+        if (!this.isDone(p)) this.play()
+      }
     }
     this.notify()
+  }
+
+  // A new run of the farm's plan, with your current farmers and rules. What it will meet is decided now,
+  // once: a new farm's first run hits the release bug and later runs don't. Nothing you do later changes that.
+  startRun(p: Project) {
+    this.pause()
+    p.clock = 0
+    p.answers = {}
+    p.sendBacks = {}
+    p.rollbacks = []
+    this.kitAt[p.id] = {}
+    p.run = { bugFixed: this.nextBugFixed(p), kit: structuredClone(this.kit[p.id] ?? {}), autonomy: { ...p.autonomy }, forecast: this.forecast(p) ?? undefined }
+    this.rebuild(p)
+    if (this.project()?.id === p.id) this.play()
+    this.notify()
+  }
+
+  runAgain() {
+    const p = this.project()
+    if (p?.approved) this.startRun(p)
   }
 
   home() {
@@ -224,17 +288,79 @@ class Store {
     this.notify()
   }
 
+  // An answer in your own words. Yes-like words take the suggestion; no-like words, or words that name another
+  // option, take that one. The Planner says how it read you. Returns the option, or null when it can't tell.
+  answerInWords(askId: string, text: string): string | null {
+    const p = this.project()
+    const ask = p?.events.find((e) => e.type === 'ask' && e.id === askId)
+    if (!p || !ask || ask.type !== 'ask') return null
+    // Sending work back needs a task and a note, so it goes through its own form.
+    const options = [ask.suggested, ...(ask.alternatives ?? [])].filter((o) => !/^show me/i.test(o) && o !== SEND_BACK)
+    const choice = readAnswer(text, ask.suggested, options)
+    if (!choice) return null
+    if (/^not yet/i.test(choice)) {
+      this.chatTo(p.id, { from: 'you', text })
+      this.chatTo(p.id, { from: 'planner', text: 'Holding. Nothing moves on this until you say so.' })
+      return choice
+    }
+    this.chatTo(p.id, { from: 'you', text })
+    this.chatTo(p.id, { from: 'planner', text: `Got it. I read that as “${choice}”.` })
+    p.notes = { ...p.notes, [askId]: text }
+    this.answer(askId, choice)
+    return choice
+  }
+
   // Run the plan again with everything you've decided so far: your answers, your changes to each farmer,
   // the rules you set, and the work you sent back. The simulation is deterministic, so what came before stays the same.
-  private rebuild(p: Project) {
+  private nextBugFixed(p: Project) {
+    return p.kind !== 'sample' && (p.runs ?? 0) > 0
+  }
+
+  // The simulation's input for this farm's plan, with the given farmers' changes, rules and answers.
+  private inputFor(p: Project, kit: Partial<Record<FarmerId, KitEdit>>, autonomy: Autonomy, answers: Record<string, string>, sendBacks: Project['sendBacks'], bugFixed: boolean) {
     const plan = p.events.find((e) => e.type === 'plan')
-    if (!plan || plan.type !== 'plan') return
-    const kit = this.kit[p.id] ?? {}
+    if (!plan || plan.type !== 'plan') return null
     const planned = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => f)
     const farmers = planned.map((f) => applyEdit(f, kit[f.id]))
     const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
-    let events = simulateRun({ goal: p.goal, farmers, tasks: plan.tasks, estimate: plan.estimate, singleAgentEstimate: plan.singleAgentEstimate, autonomy: p.autonomy, choices: this.viewerAnswers, deployAsks, plannedModels, sendBacks: p.sendBacks, bugFixed: p.kind !== 'sample' && (p.runs ?? 0) > 0 })
+    const basis = plan.basis ?? plan.estimate
+    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed } }
+  }
+
+  // What the plan will cost and take, by simulating it on its default path with your current farmers and rules,
+  // against one Sonnet agent doing the same work. The plan and the run it starts come from the same simulation.
+  private forecasts = new Map<string, Forecast>()
+  forecast(p: Project): Forecast | null {
+    const kit = this.kit[p.id] ?? {}
+    const bugFixed = this.nextBugFixed(p)
+    const built = this.inputFor(p, kit, p.autonomy, {}, {}, bugFixed)
+    if (!built) return null
+    const key = JSON.stringify([p.id, built.input.farmers, built.input.tasks, p.autonomy, bugFixed, built.input.basis])
+    const hit = this.forecasts.get(key)
+    if (hit) return hit
+    const events = simulateRun(built.input)
+    const done = events.find((e) => e.type === 'done')
+    if (!done || done.type !== 'done') return null
+    const f: Forecast = { crew: { usd: done.usd, minutes: done.minutes }, solo: soloFromRun(events) }
+    this.forecasts.set(key, f)
+    return f
+  }
+
+  private rebuild(p: Project) {
+    if (!p.run) p.run = { bugFixed: this.nextBugFixed(p), kit: structuredClone(this.kit[p.id] ?? {}), autonomy: { ...p.autonomy } }
+    const run = p.run
+    const kit = run.kit
+    const answers = p.answers ?? {}
+    const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed)
+    if (!built) return
+    const { planned, farmers } = built
+    let events = simulateRun(built.input)
+    // The plan shows the forecast made when the run started.
+    if (run.forecast) {
+      const fc = run.forecast
+      events = events.map((e) => (e.type === 'plan' ? { ...e, estimate: fc.crew, singleAgentEstimate: fc.solo } : e))
+    }
     // Steps a farmer took before you changed its model were paid at the old rate.
     const at = this.kitAt[p.id] ?? {}
     const rate = (m: string) => MODELS.find((x) => x.model === m)?.rate ?? 1
@@ -249,7 +375,7 @@ class Store {
     })
     ;(p.rollbacks ?? []).forEach((t0, i) => {
       const id = `ask-rb-${i + 1}`
-      events = rollBack(events, t0, id, this.viewerAnswers[id])
+      events = rollBack(events, t0, id, answers[id])
     })
     p.events = events
     this.setSpeed(events)
@@ -281,13 +407,12 @@ class Store {
 
   // A run reached its end: count it, and if it was clean, toward the offer to merge by itself.
   // A rollback resets the count, and takes back merging by itself if you'd allowed it.
-  private finished = new Set<string>()
   private finishRun(p: Project) {
-    const key = `${p.id}:${p.runs ?? 0}`
-    if (this.finished.has(key)) return
-    this.finished.add(key)
+    // Counted once per run, however often it reaches its end again (after a rollback you made, say).
+    if (!p.run || p.run.counted) return
     const s = this.state(p)
     if (!s?.done) return
+    p.run.counted = true
     p.runs = (p.runs ?? 0) + 1
     const rolled = s.deploy.some((d) => d.stage === 'rollback')
     const clean = !rolled && !s.asks.some((a) => a.answer?.choice === SEND_BACK) && !s.tasks.some((t) => t.stopped)
@@ -305,6 +430,13 @@ class Store {
     const p = this.project()
     if (!p || !liveStage(p.events, this.clock)) return
     p.rollbacks = [...(p.rollbacks ?? []), Math.round(this.clock) + 1]
+    // A rollback takes back merging by itself straight away, not at the end of the run.
+    if (p.trust === 'yes' && p.autonomy.ship === 'auto') {
+      p.autonomy = { ...p.autonomy, ship: 'ask' }
+      p.trust = undefined
+      this.say('Your rollback took back merging by itself. Pull requests ask you again.')
+    }
+    p.cleanRuns = 0
     this.rebuild(p)
     this.clock = Math.round(this.clock) + 1
     this.play()
@@ -359,13 +491,10 @@ class Store {
     if (!p) return
     p.level = level
     p.autonomy = autonomy
-    // On a farm that is already running, the new setting replays the run from the start.
-    if (p.approved) {
-      p.sendBacks = {}
-      p.rollbacks = []
-      this.viewerAnswers = {}
-      this.rebuild(p)
-      this.open(id)
+    // On a farm mid-run, the new setting replays the run from the start. A finished run stays as it was;
+    // the setting applies to the next run.
+    if (p.approved && !this.isDone(p)) {
+      this.startRun(p)
       return
     }
     this.notify()
@@ -377,12 +506,14 @@ class Store {
     fn(e)
     this.kit = { ...this.kit, [id]: { ...k } }
     // On a running farm the change applies from now: the run is simulated again with it, and what was already spent stays.
+    // A finished run is left alone: the change applies to the next run.
     const p = this.project(id)
-    if (p?.approved) {
+    if (p?.approved && p.run && !this.isDone(p)) {
       const at = (this.kitAt[id] ??= {})
-      at[farmer] ??= this.clock
+      at[farmer] ??= p.clock ?? 0
+      p.run.kit = structuredClone(this.kit[id])
       this.rebuild(p)
-    }
+    } else if (p?.approved && this.isDone(p)) this.say('Saved for the next run. This one is finished.')
     this.notify()
   }
 
@@ -397,12 +528,7 @@ class Store {
     const plan = p.events.find((e) => e.type === 'plan')
     if (!plan || plan.type !== 'plan') return
     p.approved = true
-    p.sendBacks = {}
-      p.rollbacks = []
-    this.clock = 0
-    this.viewerAnswers = {}
-    this.rebuild(p)
-    this.play()
+    this.startRun(p)
   }
 }
 

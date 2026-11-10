@@ -63,7 +63,7 @@ export interface Metrics {
 export type RunEvent =
   | { t: number; type: 'goal'; text: string }
   | ({ t: number; type: 'farmer' } & FarmerSetup)
-  | { t: number; type: 'plan'; tasks: PlanTask[]; estimate: Estimate; singleAgentEstimate?: Estimate }
+  | { t: number; type: 'plan'; tasks: PlanTask[]; estimate: Estimate; singleAgentEstimate?: Estimate; basis?: Estimate } // basis: the Planner's own estimate, which sizes the simulated work
   | { t: number; type: 'task_start'; task: string; farmer: FarmerId }
   | { t: number; type: 'tool'; farmer: FarmerId; task?: string; tool: string; summary: string }
   | { t: number; type: 'usage'; farmer: FarmerId; task?: string; tokensIn: number; tokensOut: number; usd: number; kind?: UsageKind }
@@ -88,6 +88,8 @@ export type RunEvent =
       files?: number
       limitFor?: FarmerId // a farmer paused at its spend limit
       limitTo?: number // the limit the suggested answer raises it to
+      confidence?: Confidence // how sure the farmer is of its suggested answer
+      basis?: string // what that rests on, in one short line
     }
   | { t: number; type: 'answer'; id: string; choice: string; by: 'human' | 'session' }
   | { t: number; type: 'task_ripe'; task: string; evidence?: string[]; summary?: string; change?: string }
@@ -98,6 +100,8 @@ export type RunEvent =
   // You stopped a task: it stays out of the pull request.
   | { t: number; type: 'stop'; task: string; reason: string }
   | { t: number; type: 'done'; usd: number; minutes: number; asks: number; autoFixes: number; actions: number }
+
+export type Confidence = 'high' | 'medium' | 'low'
 
 export type TaskStatus = 'waiting' | 'growing' | 'checking' | 'wilted' | 'ripe' | 'accepted'
 
@@ -138,6 +142,8 @@ export interface Ask {
   files?: number
   limitFor?: FarmerId
   limitTo?: number
+  confidence?: Confidence
+  basis?: string
   t: number
   answer?: { choice: string; by: 'human' | 'session' | 'viewer'; t: number }
 }

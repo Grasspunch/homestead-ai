@@ -100,7 +100,7 @@ const SHIP = { id: 'ship', name: 'Ship to users', farmer: 'deployer' as FarmerId
 
 function draft(goal: string): Draft {
   const g = goal.toLowerCase()
-  if (/(support|assistant|chat ?bot|chatbot|help ?desk|answer)/.test(g))
+  if (/\b(support|assistant|chat ?bots?|help ?desk|answers?)\b/.test(g))
     return {
       name: 'Support assistant',
       tasks: [
@@ -121,7 +121,7 @@ function draft(goal: string): Draft {
         deployer: "Wrong answers reach real customers, so it ships to 10% first and rolls back on its own.",
       },
     }
-  if (/(checkout|payment|stripe|billing|subscription|pricing)/.test(g))
+  if (/\b(checkout|payments?|stripe|billing|subscriptions?|pricing)\b/.test(g))
     return {
       name: 'Checkout',
       tasks: [
@@ -142,7 +142,8 @@ function draft(goal: string): Draft {
         deployer: "Payments can't be half broken, so 10% of buyers first, rolled back at the first failed payment.",
       },
     }
-  if (/(dashboard|analytics|metrics|report|chart)/.test(g))
+  // Whole words only, and not "report": an expense report tool is not a metrics dashboard.
+  if (/\b(dashboards?|analytics|metrics|charts?|kpis?)\b/.test(g))
     return {
       name: 'Metrics dashboard',
       tasks: [

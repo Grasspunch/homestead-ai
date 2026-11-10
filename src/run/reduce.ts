@@ -154,6 +154,8 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
           files: e.files,
           limitFor: e.limitFor,
           limitTo: e.limitTo,
+          confidence: e.confidence,
+          basis: e.basis,
           t: e.t,
         }
         s.asks.push(a)

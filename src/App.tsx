@@ -109,7 +109,10 @@ function Top({ p, s }: { p: Project; s: RunState }) {
   const st = useStore()
   const open = s.asks.filter((a) => !a.answer).length
   const done = s.tasks.filter((t) => t.status === 'ripe' || t.status === 'accepted').length
-  const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? (s.deploy[s.deploy.length - 1]?.stage === 'rollback' ? 'Done, rolled back' : 'Done and live') : `${done} of ${s.tasks.length} tasks done`
+  const work = s.tasks.filter((t) => !t.gate)
+  const left = work.filter((t) => t.status !== 'accepted').length
+  const where = ({ '100%': 'Done and live', '10%': 'Done, live for 10%', rollback: 'Done, rolled back' } as Record<string, string>)[s.deploy[s.deploy.length - 1]?.stage ?? ''] ?? 'Done, not shipped'
+  const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? (left ? `${where}, ${work.length - left} of ${work.length} tasks` : where) : `${done} of ${s.tasks.length} tasks done`
   return (
     <header className="top">
       <button className="btn white top-ico" onClick={() => store.home()} aria-label="Your farms">
@@ -118,15 +121,12 @@ function Top({ p, s }: { p: Project; s: RunState }) {
       <div className="title paper">
         <b>{p.name}</b>
         <span>{sub}</span>
-        {p.approved && (
-          <span className="tag grey" title="Every farmer, cost and check in this run is simulated">
-            Simulated run
+        {p.kind === 'sample' ? (
+          <span className="tag grey" title="Every farmer, cost and check is simulated, and the run replays the same way each time">
+            Sample, replays the same run
           </span>
-        )}
-        {!scenario(p.goal).matched && (
-          <span className="tag gold" title="Your goal matches none of the sample projects, so the farmers act out a generic app">
-            Demo scenario
-          </span>
+        ) : (
+          !p.plannedLive && <DemoTag goal={p.goal} />
         )}
       </div>
       <div className="spacer" />
@@ -143,9 +143,15 @@ function Top({ p, s }: { p: Project; s: RunState }) {
             <i className="coin" />
             <b>{usd(s.usage.usd)}</b>
           </button>
-          <button className="btn white top-ico" onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
-            <Ico name={st.playing ? 'pause' : 'play'} size={32} />
-          </button>
+          {s.done ? (
+            <button className="btn white top-ico top-pr" onClick={() => store.runAgain()}>
+              Run again
+            </button>
+          ) : (
+            <button className="btn white top-ico" onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
+              <Ico name={st.playing ? 'pause' : 'play'} size={32} />
+            </button>
+          )}
         </>
       )}
       <button
@@ -176,6 +182,16 @@ function Dialogue({ farmer, side, dock = false, children }: { farmer: FarmerId; 
         {children}
       </div>
     </section>
+  )
+}
+
+// Every simulated plan acts out one of a few scripted scenarios. Say which, or that none matched.
+function DemoTag({ goal }: { goal: string }) {
+  const sc = scenario(goal)
+  return (
+    <span className="tag gold" title={sc.matched ? `Simulated: the farmers act out the ${sc.name.toLowerCase()} scenario` : 'Simulated: your goal matches none of the scenarios, so the farmers act out a generic app'}>
+      Demo scenario
+    </span>
   )
 }
 
@@ -210,16 +226,13 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         </div>
       </Dialogue>
     )
-  const one = s.singleAgentEstimate
   const ids = FARMER_ORDER.filter((x) => s.farmers[x])
+  // The run itself, simulated on its default path with your current farmers and rules: the plan and the run agree.
   const edits = st.kit[p.id] ?? {}
   const setupOf = (id: FarmerId) => applyEdit(s.farmers[id]!, edits[id])
-  // Your model choices move the price: each farmer's share scales with its model's rate.
-  const rate = (m: string) => MODELS.find((x) => x.model === m)?.rate ?? 1
-  const est = s.estimate && {
-    minutes: s.estimate.minutes,
-    usd: ids.reduce((n, id) => n + (s.farmers[id]!.limits.usd / 1.3) * (rate(setupOf(id).model) / rate(s.farmers[id]!.model) - 1), s.estimate.usd),
-  }
+  const fc = st.forecast(p)
+  const est = fc?.crew
+  const one = fc?.solo
   const setCrew = (next: FarmerId[]) => planInto(p, next)
   const missing = FARMER_ORDER.filter((x) => !s.farmers[x])
   return (
@@ -233,11 +246,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           </span>
         )}
         {!p.plannedLive && p.liveNote && <span className="tag red">Live call failed</span>}
-        {!p.plannedLive && !p.liveNote && !scenario(p.goal).matched && (
-          <span className="tag gold" title="Your goal matches none of the sample projects, so the farmers act out a generic app">
-            Demo scenario
-          </span>
-        )}
+        {!p.plannedLive && !p.liveNote && <DemoTag goal={p.goal} />}
       </div>
       {!p.plannedLive && p.liveNote && <p className="impact">This plan is simulated, because the live call failed: {p.liveNote}</p>}
       <p className="plan-lead">
@@ -451,6 +460,11 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
   const r = REASON[ask.reason]
   const n = list.reduce((k, t) => k + 1 + (t.changes?.length ?? 0), 0)
   const shown = all ? list : list.slice(0, 3)
+  const work = s.tasks.filter((t) => !t.gate)
+  const out = work.filter((t) => t.stopped && t.status !== 'accepted')
+  const ready = out.length
+    ? `The pull request has ${list.length} of ${work.length} tasks, ${n} commit${n === 1 ? '' : 's'}, and every check passed. ${out.length} stopped task${out.length === 1 ? '' : 's'} stay${out.length === 1 ? 's' : ''} out.`
+    : `${/again/.test(ask.question) ? 'The pull request is ready again' : 'The pull request is ready'}: ${n} commit${n === 1 ? '' : 's'}, and every check passed.`
   const merge = ask.suggested
   const rest = ask.alternatives.filter((a) => a !== SEND_BACK)
   return (
@@ -462,7 +476,8 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
           Your review
         </span>
       </div>
-      <p>{holding ? 'Holding. Nothing merges until you say so.' : `${/again/.test(ask.question) ? 'The pull request is ready again' : 'The pull request is ready'}: ${n} commit${n === 1 ? '' : 's'}, and every check passed.`}</p>
+      <p>{holding ? 'Holding. Nothing merges until you say so.' : ready}</p>
+      {!holding && <Sureness ask={ask} />}
       <div className="list pr-commits">
         {shown.map((t) => {
           const check = [...t.checks].reverse().find((c) => c.pass)
@@ -482,6 +497,15 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
             <span className="grow">+{list.length - shown.length} more</span>
           </button>
         )}
+        {out.map((t) => (
+          <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
+            <Mark pass={false} />
+            <span className="grow">
+              {t.name}
+              <span className="sub">Stopped, left out of this pull request</span>
+            </span>
+          </button>
+        ))}
       </div>
       {writing ? (
         <form
@@ -552,6 +576,7 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
     return (
       <Dialogue farmer={ask.farmer} side={side}>
         <PrReview s={s} ask={ask} holding={holding} hold={() => setHolding(true)} />
+        <InWords ask={ask} onHold={() => setHolding(true)} />
       </Dialogue>
     )
   return (
@@ -601,6 +626,7 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
             </div>
           )}
           {ask.impact && <p className="impact">{ask.impact}</p>}
+          <Sureness ask={ask} />
         </>
       )}
       <div className="row">
@@ -616,8 +642,59 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
             </button>
           ))}
       </div>
+      <InWords ask={ask} onHold={() => setHolding(true)} />
     </Dialogue>
   )
+}
+
+// How sure the farmer is of its suggestion, and what that rests on.
+const SURE = { high: 'Sure', medium: 'Fairly sure', low: 'Unsure' } as const
+function Sureness({ ask }: { ask: Ask }) {
+  if (!ask.confidence) return null
+  return (
+    <p className={`sureness ${ask.confidence}`}>
+      <b>{SURE[ask.confidence]}</b> {ask.basis}
+    </p>
+  )
+}
+
+// Answer in your own words: the Planner reads it as one of the options, or says it can't and the ask stays open.
+function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
+  const [text, setText] = useState('')
+  const [miss, setMiss] = useState('')
+  const send = (e: React.FormEvent) => {
+    e.preventDefault()
+    const msg = text.trim()
+    if (!msg) return
+    const r = store.answerInWords(ask.id, msg)
+    if (!r) return setMiss(msg)
+    setText('')
+    setMiss('')
+    if (/^not yet/i.test(r)) onHold()
+  }
+  return (
+    <>
+      {miss && <p className="said">I can’t tell which way “{miss}” goes. Pick one, or say yes or no.</p>}
+      <form className="row grow-form in-words" onSubmit={send}>
+        <span className="field">
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Or answer in your own words" aria-label="Answer in your own words" />
+        </span>
+        <button className="btn tan" type="submit" disabled={!text.trim()}>
+          <Ico name="chat" />
+          Send
+        </button>
+      </form>
+    </>
+  )
+}
+
+// What shipped and where it is now: every task or only some, and live, at 10%, rolled back or not shipped.
+function doneLead(s: RunState) {
+  const work = s.tasks.filter((t) => !t.gate)
+  const shipped = work.filter((t) => t.status === 'accepted').length
+  const last = s.deploy[s.deploy.length - 1]?.stage
+  const where = last === '100%' ? 'live for everyone' : last === '10%' ? 'live for 10% of users' : last === 'rollback' ? 'rolled back, so nothing is live' : 'not shipped yet'
+  return shipped < work.length ? `${shipped} of ${work.length} tasks shipped, ${where}.` : `Everything is in and ${where}.`
 }
 
 function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }) {
@@ -645,7 +722,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
       </div>
       {s.done ? (
         <p>
-          {s.deploy[s.deploy.length - 1]?.stage === 'rollback' ? 'Everything is merged, and you rolled it back, so nothing is live.' : 'Everything is in and live for everyone.'} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caughtLine(s)}, and you made {s.asks.filter((a) => a.answer).length} call{s.asks.filter((a) => a.answer).length === 1 ? '' : 's'}.
+          {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caughtLine(s)}, and you made {s.asks.filter((a) => a.answer).length} call{s.asks.filter((a) => a.answer).length === 1 ? '' : 's'}.
         </p>
       ) : null}
       {s.done && outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
@@ -669,6 +746,9 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
             </button>
             <button className="btn tan" onClick={() => store.setDrawer({ kind: 'usage' })}>
               Spend
+            </button>
+            <button className="btn tan" onClick={() => store.runAgain()}>
+              Run again
             </button>
           </>
         ) : (

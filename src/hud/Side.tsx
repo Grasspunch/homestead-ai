@@ -238,6 +238,13 @@ export function FarmerPanel({ s, id, p }: { s: RunState; id: FarmerId; p: Projec
   )
 }
 
+// A release the crew made by itself that a later rollback took down.
+function supersededBy(s: RunState, x: { t: number; what: string }) {
+  if (!/shipped|merged/i.test(x.what)) return ''
+  const rb = s.deploy.find((d) => d.stage === 'rollback' && d.t > x.t)
+  return rb ? (rb.reason === BY_YOU ? '. Later rolled back by you' : '. Later rolled back') : ''
+}
+
 export function InboxPanel({ s }: { s: RunState }) {
   const open = s.asks.filter((a) => !a.answer)
   const decided = s.asks.filter((a) => a.answer).reverse()
@@ -269,7 +276,7 @@ export function InboxPanel({ s }: { s: RunState }) {
               <Ico name="check" size={16} tone="green" />
               <span className="grow">
                 {x.what}
-                <span className="sub">{ago(s, x.t)}</span>
+                <span className="sub">{ago(s, x.t)}{supersededBy(s, x)}</span>
               </span>
             </button>
           ))}
@@ -284,7 +291,7 @@ export function InboxPanel({ s }: { s: RunState }) {
               <Swatch farmer={a.farmer} />
               <span className="grow">
                 {a.answer!.choice}
-                <span className="sub">{a.question}</span>
+                <span className="sub">{store.project()?.notes?.[a.id] ? `In your words: “${store.project()!.notes![a.id]}”. ` : ''}{a.question}</span>
               </span>
             </button>
           ))}
@@ -304,7 +311,7 @@ interface Fix {
   farmer: FarmerId
   title: string
   why: string
-  saves: number
+  saves?: number // measured from this run, when it can be
   model?: string // a fix you can apply here: move this farmer to a cheaper model
 }
 
@@ -331,7 +338,7 @@ export function ApplyFix({ fix }: { fix: Fix }) {
     <div className="fix">
       <span className="grow">
         {fix.title}
-        <span className="sub">Saves {usd(fix.saves)} a run</span>
+        <span className="sub">{fix.saves !== undefined ? `Saves ${usd(fix.saves)} a run` : 'Skips the pause and the re-plan mid-run'}</span>
       </span>
       {store.applied.has(fix.key) ? (
         <span className="ok px-s">Applied</span>
@@ -362,7 +369,7 @@ function fixes(s: RunState): Fix[] {
   if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', farmer: 'designer', title: 'Run the Designer on Claude Sonnet 5.5', why: 'Its screenshot checks don’t need the bigger model.', saves: designer.usd * 0.5, model: 'Claude Sonnet 5.5' })
   for (const r of s.replans) {
     const t = s.tasks.find((x) => r.added.includes(x.id))
-    if (t) out.push({ key: `split-${t.id}`, farmer: 'planner', title: `Plan "${t.name.split(': ')[1] ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.', saves: 0.25 })
+    if (t) out.push({ key: `split-${t.id}`, farmer: 'planner', title: `Plan "${t.name.split(': ')[1] ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.' })
   }
   return out
 }
@@ -431,7 +438,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
         {less > 0.5 ? <>, <b>{usd(less)}</b> less</> : less < -0.5 ? <>, <b>{usd(-less)}</b> more</> : null}
       </p>
       {out && <p className="vs-out">{out.line}</p>}
-      <p className="vs-note">One agent carries every file’s context, so each step runs about a third slower.</p>
+      <p className="vs-note">One agent carries every file’s context, so each step runs about a third slower and costs about 10% more.</p>
       <div className="vs-grid" role="table">
         <span role="columnheader" />
         <span role="columnheader">This crew</span>
@@ -701,7 +708,7 @@ export function ControlPanel({ p }: { p: Project }) {
                 {m.label}
                 <span className="sub">
                   {v === 'ask' ? 'Asks you first, with a suggested answer' : m.auto}
-                  {m.key === 'ship' && v === 'ask' ? `. Clean runs in a row: ${Math.min(3, p.cleanRuns ?? 0)} of 3` : ''}
+                  {m.key === 'ship' && v === 'ask' ? `. Clean runs in a row: ${Math.min(3, p.cleanRuns ?? 0)} of 3${p.everSentBack ? '. Not offered: you sent work back on this farm' : store.kit[p.id]?.deployer?.rules.deploy === false ? '. Not offered while May deploy is off' : ''}` : ''}
                 </span>
               </span>
               <div className="seg" role="radiogroup" aria-label={m.label}>
