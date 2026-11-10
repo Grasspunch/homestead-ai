@@ -198,3 +198,11 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 .top .top-ico { height: 56px; min-width: 56px; justify-content: center; padding: 0; border-width: 12px; }
 .top .top-ico .mail-ico { width: 39px; height: 24px; background-size: 39px 24px; }
 .inbox-btn .badge { top: -20px; right: -20px; }
+/* an ask's header: which plot it's about, then how urgent */
+.plot-chip { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px 0 2px; font: 700 var(--t-body)/1 var(--ui); color: var(--bark); border: 2px solid var(--field-line); background: var(--field-ink); }
+.plot-chip:hover { border-color: var(--bark-2); }
+.plot-chip .sign-ico { image-rendering: pixelated; display: block; }
+.urgency { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 6px; font: 400 13px/1 px4; letter-spacing: .5px; color: #fff6e4; border-radius: 4px; white-space: nowrap; }
+.urgency.red { background: var(--berry); }
+.urgency.honey { background: #b98322; }
+.urgency.calm { background: var(--bark-3); }

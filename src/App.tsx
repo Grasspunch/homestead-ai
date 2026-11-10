@@ -2,9 +2,9 @@ import './fonts'
 import './hud/hud.css'
 import './hud/panel.css'
 import { useEffect, useRef, useState } from 'react'
-import { FarmView } from './farm/FarmView'
+import { FarmView, cropOf } from './farm/FarmView'
 import { Home } from './hud/Home'
-import { Ico, LimitField, Portrait, Swatch, mins, usd } from './hud/bits'
+import { Ico, LimitField, Portrait, Sign, Swatch, mins, usd, type IconName } from './hud/bits'
 import { FarmerPage } from './hud/FarmerPage'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, setMoment } from './hud/Side'
 import { getLiveMode, route, setLiveMode } from './run/agent'
@@ -303,13 +303,15 @@ function TrustDialogue({ s, side }: { s: RunState; side: boolean }) {
   )
 }
 
-const REASON: Record<Ask['reason'], { label: string; cls: string }> = {
-  cost: { label: 'Over budget', cls: 'gold' },
-  disagree: { label: 'Disagreement', cls: 'grey' },
-  irreversible: { label: 'Reaches real users', cls: 'sky' },
-  anomaly: { label: 'Failed check', cls: 'red' },
-  risk: { label: 'Ship again', cls: 'sky' },
-  big: { label: 'Big change', cls: '' },
+// Colour says how urgent it is; the icon says what kind of question it is.
+// Red: broken and waiting on you. Honey: a decision with money or reach. Bark: your call, no rush.
+const REASON: Record<Ask['reason'], { label: string; urgency: 'red' | 'honey' | 'calm'; icon: IconName }> = {
+  anomaly: { label: 'Failed check', urgency: 'red', icon: 'alert' },
+  cost: { label: 'Over budget', urgency: 'honey', icon: 'coin' },
+  big: { label: 'Big change', urgency: 'honey', icon: 'star' },
+  irreversible: { label: 'Reaches real users', urgency: 'honey', icon: 'play' },
+  risk: { label: 'Ship again', urgency: 'honey', icon: 'play' },
+  disagree: { label: 'Disagreement', urgency: 'calm', icon: 'chat' },
 }
 
 function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
@@ -328,13 +330,17 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
   return (
     <Dialogue farmer={ask.farmer} side={side}>
       <div className="who">
-        <b>{f?.label ?? 'Farmer'}</b>
-        <span className={`tag ${r.cls}`}>{r.label}</span>
         {task && (
-          <button className="aside link" onClick={() => store.setDrawer({ kind: 'task', id: task.id })}>
+          <button className="plot-chip" onClick={() => store.setDrawer({ kind: 'task', id: task.id })} title="Open this task">
+            <Sign crop={cropOf(s.tasks, task.id)} />
             {task.name}
           </button>
         )}
+        <span className={`urgency ${r.urgency}`}>
+          <Ico name={r.icon} tone="light" />
+          {r.label}
+        </span>
+        <span className="aside">From the {f?.label ?? 'crew'}</span>
       </div>
       {holding ? (
         <p>Holding. Nothing ships until you say so.</p>

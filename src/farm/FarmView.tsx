@@ -14,7 +14,7 @@ import { FARMER_ORDER } from '../run/types'
 
 const PX = 16 // atlas pixels per tile
 type Crop = 'wheat' | 'carrot' | 'pumpkin' | 'tulip' | 'cabbage'
-const CROPS: Crop[] = ['wheat', 'carrot', 'tulip', 'pumpkin', 'cabbage']
+export const CROPS: Crop[] = ['wheat', 'carrot', 'tulip', 'pumpkin', 'cabbage']
 type Dir = 'down' | 'up' | 'left' | 'right'
 type Emote = 'alert' | 'notes' | 'dots' | 'check' | 'x' | 'coin' | 'read' | 'zzz'
 
@@ -49,11 +49,14 @@ export function farmLayout(tasks: { id: string; gate: boolean }[], known: string
     y: 3 + Math.floor(i / cols) * 5,
     w: 3,
     h: 2,
-    crop: CROPS[tasks.findIndex((x) => x.id === t.id) % CROPS.length],
+    crop: cropOf(tasks, t.id),
     gate: t.gate,
   }))
   return { w: 12 + cols * 7 + 1, h: Math.max(14, 3 + rows * 5 + 1), plots }
 }
+
+// Each task's crop, the same on its plot, its sign and anywhere the task is named.
+export const cropOf = (tasks: { id: string }[], id: string) => CROPS[Math.max(0, tasks.findIndex((x) => x.id === id)) % CROPS.length]
 
 // Spots in the yard, in tiles (feet position).
 const DOOR = { x: 4, y: 6.6 }

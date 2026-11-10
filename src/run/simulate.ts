@@ -224,7 +224,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     } else if (task === disputed) {
       at(end + 0.4, { type: 'check', task: task.id, by: 'designer', pass: false, notes: 'The sources cover the reply box', evidence: ['evidence/widget.png'], proof: screens('overlap') })
       at(end + 0.6, { type: 'disagree', task: task.id, sides: [
-        { farmer: 'designer', position: 'Fold the sources into one tap-to-open chip', why: 'In the 380 px chat panel the three sources take 180 px and cover the reply box. A chip keeps the box clear, and the done-when asks for the sources to be shown without getting in the way. The cost is one extra click for people who want them.' },
+        { farmer: 'designer', position: 'Fold the sources into one click-to-open chip', why: 'In the 380 px chat panel the three sources take 180 px and cover the reply box. A chip keeps the box clear, and the done-when asks for the sources to be shown without getting in the way. The cost is one extra click for people who want them.' },
         { farmer: 'builder', position: 'Keep them open and make the text smaller', why: 'Support answers are only trusted when the source is visible, and a chip hides it. Dropping the sources to 12 px frees about 70 px, which clears the reply box. It is a two-line change with no new component to test.' },
       ] })
       if (asks('disagree')) {

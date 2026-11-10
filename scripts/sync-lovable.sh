@@ -10,6 +10,7 @@ rm -rf "$dst/src/homestead" && mkdir -p "$dst/src/homestead"
 ( cd "$src/src" && tar cf - --exclude=main.tsx . ) | ( cd "$dst/src/homestead" && tar xf - )
 cp "$src/public/sprites/atlas.png" "$dst/public/sprites/atlas.png"
 cp "$src"/public/ui/* "$dst/public/ui/"
+mkdir -p "$dst/public/proof" && cp "$src"/public/proof/* "$dst/public/proof/"
 cp "$src/public/fonts/sprout-lands.ttf" "$dst/public/fonts/sprout-lands.ttf"
 cp "$src"/public/cursor-paw*.png "$dst/public/"
 cp "$src/public/favicon.ico" "$dst/public/favicon.ico"

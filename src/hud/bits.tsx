@@ -59,6 +59,29 @@ export function Portrait({ farmer, size = 108 }: { farmer: FarmerId; size?: numb
   return <canvas ref={ref} style={{ width: size, height: size }} aria-hidden />
 }
 
+// A plot's sign, drawn from the atlas at twice its size, so a task reads the same here as on the farm.
+export function Sign({ crop, size = 32 }: { crop: string; size?: number }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    let live = true
+    atlasLoaded().then(() => {
+      const c = ref.current
+      const f = frame(`sign_${crop}`)
+      if (!live || !c || !f) return
+      c.width = f[2]
+      c.height = f[3]
+      const g = c.getContext('2d')!
+      g.imageSmoothingEnabled = false
+      g.clearRect(0, 0, f[2], f[3])
+      draw(g, `sign_${crop}`, 0, 0)
+    })
+    return () => {
+      live = false
+    }
+  }, [crop])
+  return <canvas ref={ref} className="sign-ico" style={{ width: size, height: size }} aria-hidden />
+}
+
 export function Swatch({ farmer }: { farmer: FarmerId }) {
   const t = SWATCH[farmer]
   return <span className="sw" style={{ background: t.body, boxShadow: `inset 0 0 0 2px ${t.shade}` }} aria-hidden />
