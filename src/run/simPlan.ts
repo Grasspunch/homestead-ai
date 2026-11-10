@@ -3,7 +3,17 @@
 
 import { CREW } from '../agent/agents'
 import type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
-import type { Estimate, FarmerId, FarmerSetup, PlanTask } from './types'
+import type { Estimate, FarmerId, FarmerSetup, PlanTask, Screen } from './types'
+
+// The moments every simulated run passes through, written for one kind of project, so the text a farmer
+// says fits the goal. A goal that matches no template runs the generic one, marked as a demo scenario.
+export interface Side { position: string; why: string; option: string; tool: string; check: string; shot: 'ok' | 'alt' }
+export interface Script {
+  screen: Screen
+  refactor: { what: string; line: string }
+  dispute: { topic: string; failNote: string; impact: string; designer: Side; builder: Side }
+  rollout: { peak: number; cause: string; fix: string; check: string; file: string; tests: string[] }
+}
 
 interface Draft {
   name: string
@@ -11,6 +21,66 @@ interface Draft {
   context: Partial<Record<FarmerId, string[]>>
   // Why this project needs each farmer, in the project's own terms.
   why?: Partial<Record<FarmerId, string>>
+  script: Script
+  matched: boolean
+}
+
+const SUPPORT: Script = {
+  screen: 'chat',
+  refactor: { what: 'move how answers are routed into one module', line: 'Moved answer routing into one module' },
+  dispute: {
+    topic: 'how the sources fit in the chat panel',
+    failNote: 'The sources cover the reply box',
+    impact: 'People get either a tidy panel with one click to see sources, or every source at once in smaller text.',
+    designer: { position: 'Fold the sources into one click-to-open chip', why: 'In the 380 px chat panel the three sources take 180 px and cover the reply box. A chip keeps the box clear, and the done-when asks for the sources without getting in the way. The cost is one extra click for people who want them.', option: 'Fold into a chip', tool: 'Folded the sources into a chip', check: 'The sources fold into a chip, and the reply box is clear', shot: 'ok' },
+    builder: { position: 'List them under the answer in smaller text', why: 'Support answers are only trusted when the source is visible, and a chip hides it. Listing the sources at 12 px under the answer clears the reply box. It is a two-line change with no new component to test.', option: 'Smaller text', tool: 'Listed the sources under the answer at 12 px', check: 'Every source shows under the answer, and the reply box is clear', shot: 'alt' },
+  },
+  rollout: { peak: 0.031, cause: 'long questions time out after 10 s', fix: 'Shortened long questions before answering, added a timeout fallback', check: 'Long questions answer in under 4 s', file: 'tests/long-questions.test.ts', tests: ['a 2,000-word question answers in under 4 s', 'a timeout falls back to a person', 'short questions are unchanged', 'the fallback keeps the chat', 'no answer is cut mid-sentence'] },
+}
+
+const CHECKOUT: Script = {
+  screen: 'app',
+  refactor: { what: 'move every price calculation into one pricing module', line: 'Moved price calculation into one module' },
+  dispute: {
+    topic: 'where the cookie notice goes on the checkout screen',
+    failNote: 'The cookie notice covers the pay button',
+    impact: 'Buyers get either a clear checkout with the notice asked earlier, or the notice kept on checkout as a slim strip.',
+    designer: { position: 'Ask about cookies once, before checkout', why: 'On short windows the notice covers the pay button, and people leave a checkout they can’t finish. Asking once on the page before keeps checkout clear.', option: 'Ask before checkout', tool: 'Moved the cookie notice before checkout', check: 'Nothing covers the pay button', shot: 'ok' },
+    builder: { position: 'Keep it on checkout as a slim strip on top', why: 'Consent should show where the card is entered. A slim strip above the form keeps it there and clears the pay button, with no new page to build.', option: 'Slim strip on top', tool: 'Made the cookie notice a slim strip above the form', check: 'The notice sits above the form, and the pay button is clear', shot: 'alt' },
+  },
+  rollout: { peak: 0.027, cause: 'card payments time out after 10 s when the provider is slow', fix: 'Waited for the provider’s answer instead of timing out, and made retries charge once', check: 'Slow card payments complete, and a retry never charges twice', file: 'tests/billing/slow-provider.test.ts', tests: ['a slow provider answer still completes the order', 'a retried payment charges once', 'a declined card shows a clear error', 'a timeout leaves no half-paid order', 'refunds still post to the account'] },
+}
+
+const DASHBOARD: Script = {
+  screen: 'dash',
+  refactor: { what: 'compute every metric in one shared query layer', line: 'Moved the metric queries into one shared layer' },
+  dispute: {
+    topic: 'where the week-over-week changes go',
+    failNote: 'The legend covers the signups chart',
+    impact: 'People get either every change in a row under the charts, or clean charts with the changes on hover.',
+    designer: { position: 'Put the changes in a row under the charts', why: 'The floating legend hides the first chart at most widths. A row under the charts keeps every number visible and reads left to right with the cards.', option: 'A row under the charts', tool: 'Moved the changes into a row under the charts', check: 'Every chart is clear, and the changes sit in a row under them', shot: 'alt' },
+    builder: { position: 'Show the legend only on hover', why: 'The charts carry the story and the changes are secondary. A hover legend is a two-line change and keeps the board quiet.', option: 'Only on hover', tool: 'Showed the legend on hover only', check: 'Every chart is clear, and the changes show on hover', shot: 'ok' },
+  },
+  rollout: { peak: 0.024, cause: 'the metrics API takes over 3 s on the largest accounts, so their boards time out', fix: 'Cached each metric for a minute and paged the largest accounts', check: 'Every metric loads in under 300 ms on the largest account', file: 'tests/metrics/large-account.test.ts', tests: ['the largest account loads in under 300 ms', 'a cached metric refreshes after a minute', 'paging returns every row once', 'an empty account shows zeroes', 'a slow query falls back to the cache'] },
+}
+
+const GENERIC: Script = {
+  screen: 'app',
+  refactor: { what: 'move the shared data code into one module', line: 'Moved the shared data code into one module' },
+  dispute: {
+    topic: 'where the notice goes on the main screen',
+    failNote: 'A notice covers the main button',
+    impact: 'People get either a clear main screen with the notice asked earlier, or the notice kept as a slim strip.',
+    designer: { position: 'Ask once, before the main screen', why: 'On short windows the notice covers the main button. Asking once on the page before keeps the main screen clear.', option: 'Ask before', tool: 'Moved the notice before the main screen', check: 'Nothing covers the main button', shot: 'ok' },
+    builder: { position: 'Keep it as a slim strip on top', why: 'A slim strip above the form keeps the notice where it applies and clears the button, with no new page to build.', option: 'Slim strip on top', tool: 'Made the notice a slim strip above the form', check: 'The notice sits above the form, and the button is clear', shot: 'alt' },
+  },
+  rollout: { peak: 0.029, cause: 'requests time out under load after 10 s', fix: 'Added a timeout fallback and paged the slow query', check: 'Every request answers in under 1 s under load', file: 'tests/load.test.ts', tests: ['a busy minute answers in under 1 s', 'a timeout falls back cleanly', 'paging returns every row once', 'a restart keeps the data', 'an empty list shows a clear message'] },
+}
+
+// Which template a goal runs, and whether it really matched one.
+export function scenario(goal: string): { script: Script; matched: boolean; name: string } {
+  const d = draft(goal)
+  return { script: d.script, matched: d.matched, name: d.name }
 }
 
 const USD_SCALE = 15
@@ -38,6 +108,8 @@ function draft(goal: string): Draft {
         { id: 'chat-widget', name: 'Chat widget', farmer: 'designer', doneWhen: 'The widget answers and shows its sources without covering the reply box', mins: 12, usd: 0.8 },
         SHIP,
       ],
+      script: SUPPORT,
+      matched: true,
       context: { builder: ['src/', 'docs/help/', 'eval/questions.jsonl'], designer: ['src/widget/', 'docs/brand.md'], tester: ['tests/', 'eval/questions.jsonl'] },
       why: {
         planner: "Keeps the answers and the widget in step, and passes your notes on. Opus, for judgment.",
@@ -57,6 +129,8 @@ function draft(goal: string): Draft {
         { id: 'checkout-ui', name: 'Checkout screens', farmer: 'designer', doneWhen: 'Checkout works with clear errors and nothing covering the pay button', mins: 12, usd: 0.8 },
         { ...SHIP, doneWhen: 'Live for 10% of buyers with no failed payments, then for everyone' },
       ],
+      script: CHECKOUT,
+      matched: true,
       context: { builder: ['src/billing/', 'docs/pricing.md'], designer: ['src/checkout/', 'docs/brand.md'], tester: ['tests/billing/'] },
       why: {
         planner: "Keeps prices, payments and screens reading from one plan config. Opus, for judgment.",
@@ -75,6 +149,8 @@ function draft(goal: string): Draft {
         { id: 'dashboard-ui', name: 'Dashboard screens', farmer: 'designer', doneWhen: 'Charts read clearly at a glance', mins: 14, usd: 0.9 },
         SHIP,
       ],
+      script: DASHBOARD,
+      matched: true,
       context: { builder: ['src/metrics/', 'db/schema.sql'], designer: ['src/dashboard/'], tester: ['tests/metrics/'] },
       why: {
         planner: "Keeps the queries and the charts agreeing on what each metric means. Opus, for judgment.",
@@ -93,6 +169,8 @@ function draft(goal: string): Draft {
       { id: 'screens', name: 'Design the screens', farmer: 'designer', doneWhen: 'Every screen works, with nothing covering its main button', mins: 12, usd: 0.8 },
       SHIP,
     ],
+    script: GENERIC,
+    matched: false,
     context: { builder: ['src/', 'package.json'], designer: ['src/ui/', 'docs/brand.md'], tester: ['tests/'] },
   }
 }

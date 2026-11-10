@@ -87,3 +87,54 @@ describe('the moments in a run', () => {
     for (const e of ev) if (e.type === 'check' && e.pass) expect(e.proof).toBeTruthy()
   })
 })
+
+describe('your answers branch the run', () => {
+  const plan = simulatePlan(GOAL)
+  const base = { goal: GOAL, ...plan, autonomy: AUTONOMY_PRESETS.often }
+  const run = (choices?: Record<string, string>) => simulateRun({ ...base, choices })
+  const asksOf = (ev: ReturnType<typeof run>) => ev.filter((e) => e.type === 'ask')
+  const first = asksOf(run())[0]
+
+  it('asks about cost first', () => {
+    expect(first.type === 'ask' && first.reason).toBe('cost')
+  })
+
+  it('gives a different run for a different cost answer', () => {
+    if (first.type !== 'ask') throw new Error()
+    const split = run()
+    const stop = run({ [first.id]: 'Stop it here' })
+    const raise = run({ [first.id]: first.alternatives!.find((a) => a.startsWith('Raise'))! })
+    const end = (ev: typeof split) => ev.find((e) => e.type === 'done')!
+    expect(JSON.stringify(stop)).not.toBe(JSON.stringify(split))
+    expect(JSON.stringify(raise)).not.toBe(JSON.stringify(split))
+    expect(split.some((e) => e.type === 'replan')).toBe(true)
+    expect(stop.some((e) => e.type === 'replan')).toBe(false)
+    expect(stop.some((e) => e.type === 'stop')).toBe(true)
+    const usd = (ev: typeof split) => { const d = end(ev); return d.type === 'done' ? d.usd : 0 }
+    expect(usd(raise)).toBeGreaterThan(usd(split))
+    // The answer in the log is the one you gave, and the run up to the ask is the same.
+    const ans = stop.find((e) => e.type === 'answer' && e.id === first.id)
+    expect(ans && ans.type === 'answer' && ans.choice).toBe('Stop it here')
+    const before = (ev: typeof split) => JSON.stringify(ev.filter((e) => e.t <= first.t))
+    expect(before(stop)).toBe(before(split))
+  })
+
+  it('ships to everyone when you skip the 10% stage, and every user sees the bad release', () => {
+    const ship = asksOf(run()).find((a) => a.type === 'ask' && a.reason === 'irreversible' && /10%/.test(a.suggested))
+    if (!ship || ship.type !== 'ask') throw new Error('no ship ask')
+    const all = ship.alternatives!.find((a) => /everyone/i.test(a))!
+    const ev = run({ [ship.id]: all })
+    const deploys = ev.filter((e) => e.type === 'deploy').map((e) => (e.type === 'deploy' ? e.stage : ''))
+    expect(deploys[0]).toBe('100%')
+  })
+
+  it('leaves a stopped failing task out of the pull request', () => {
+    const fail = asksOf(run()).find((a) => a.type === 'ask' && a.reason === 'anomaly')
+    if (!fail || fail.type !== 'ask') throw new Error('no failed-check ask')
+    const ev = run({ [fail.id]: 'Stop this task' })
+    const s = reduce(ev, Number.MAX_SAFE_INTEGER)
+    const t = s.tasks.find((x) => x.id === fail.task)!
+    expect(t.stopped).toBeTruthy()
+    expect(t.status).not.toBe('ripe')
+  })
+})

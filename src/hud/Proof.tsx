@@ -1,6 +1,6 @@
 // What a check rests on, shown rather than described: the test run, the screenshots, the rollout's numbers.
 import type { CSSProperties } from 'react'
-import type { Proof, RunState, Shot, TaskState, TestResult } from '../run/types'
+import type { Proof, RunState, Screen, Shot, TaskState, TestResult } from '../run/types'
 import { Mark, Swatch } from './bits'
 import { ERROR_LIMIT } from '../run/simulate'
 
@@ -32,15 +32,16 @@ export function Tests({ tests, kind }: { tests: TestResult[]; kind: 'unit' | 'in
 
 // A screenshot of the screen the crew built, drawn here as a small mock of the product.
 // Real screenshots of the built screen, cropped to what the check is about. A failed check rings the broken part.
-const RING: Record<'chat' | 'app', { x: number; y: number; w: number; h: number }> = {
+const RING: Record<Screen, { x: number; y: number; w: number; h: number }> = {
   chat: { x: 0.068, y: 0.599, w: 0.864, h: 0.3125 },
   app: { x: 0.029, y: 0.845, w: 0.943, h: 0.117 },
+  dash: { x: 0.057, y: 0.466, w: 0.336, h: 0.335 },
 }
 
-export function Screens({ shots, chat, note, thumb = false }: { shots: Shot[]; chat: boolean; note?: string; thumb?: boolean }) {
+export function Screens({ shots, chat, screen, note, thumb = false }: { shots: Shot[]; chat: boolean; screen?: Screen; note?: string; thumb?: boolean }) {
   const shot = shots[shots.length - 1]
   if (!shot) return null
-  const kind = chat ? 'chat' : 'app'
+  const kind: Screen = screen ?? (chat ? 'chat' : 'app')
   const bad = shot.state === 'overlap'
   const r = RING[kind]
   return (
@@ -55,7 +56,7 @@ export function Screens({ shots, chat, note, thumb = false }: { shots: Shot[]; c
 }
 
 export function ProofView({ proof, chat, note }: { proof: Proof; chat: boolean; note?: string }) {
-  if (proof.kind === 'screens' && proof.shots) return <Screens shots={proof.shots} chat={chat} note={note} />
+  if (proof.kind === 'screens' && proof.shots) return <Screens shots={proof.shots} chat={chat} screen={proof.screen} note={note} />
   if (proof.tests) return <Tests tests={proof.tests} kind={proof.kind === 'integration' ? 'integration' : 'unit'} />
   return null
 }
@@ -150,7 +151,7 @@ export function ProofPop({ check, state, style, onOpen }: { check: Check; state:
       </span>
       {pr?.kind === 'screens' && pr.shots ? (
         <span className="pp-shot-row">
-          <Screens shots={pr.shots} chat={chat} thumb />
+          <Screens shots={pr.shots} chat={chat} screen={pr.screen} thumb />
           <span className="pp-line">{check.notes}</span>
         </span>
       ) : pr?.kind === 'rollout' ? (

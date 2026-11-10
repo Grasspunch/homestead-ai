@@ -427,7 +427,10 @@ function fixes(s: RunState): Fix[] {
 export function caught(s: RunState): { where: string; what: string }[] {
   const out: { where: string; what: string }[] = []
   for (const t of s.tasks) for (const c of t.checks) if (!c.pass) out.push({ where: t.name, what: c.notes })
-  for (const d of s.deploy) if (d.stage === 'rollback') out.push({ where: 'Rollout', what: d.reason ?? 'Errors passed 2% at 10%, so it rolled back on its own' })
+  // A rollback only counts as caught when it came after the 10% stage; after a full ship every user already saw it.
+  s.deploy.forEach((d, i) => {
+    if (d.stage === 'rollback' && s.deploy[i - 1]?.stage !== '100%') out.push({ where: 'Rollout', what: d.reason ?? 'Errors passed 2% at 10%, so it rolled back on its own' })
+  })
   return out
 }
 

@@ -406,6 +406,11 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
       setHolding(true)
       return
     }
+    // Looking isn't deciding: open the task with its failing tests, and the ask stays open.
+    if (/^show me/i.test(choice) && ask.task) {
+      store.setDrawer({ kind: 'task', id: ask.task })
+      return
+    }
     store.answer(ask.id, choice)
   }
   return (

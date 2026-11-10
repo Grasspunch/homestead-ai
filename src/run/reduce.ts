@@ -209,6 +209,12 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
         log({ farmer: 'planner', text: e.reason, kind: 'info' }, e.t)
         break
       }
+      case 'stop': {
+        const k = task(e.task)
+        if (k) k.stopped = e.reason
+        log({ task: e.task, text: e.reason, kind: 'info' }, e.t)
+        break
+      }
       case 'done':
         s.done = { usd: e.usd, minutes: e.minutes, asks: e.asks, autoFixes: e.autoFixes, actions: e.actions }
         for (const f of Object.values(s.farmers)) if (f) f.state = 'done'
@@ -220,27 +226,18 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
   for (const f of Object.values(s.farmers)) {
     if (!f || f.state === 'needs' || f.state === 'done') continue
     const k = task(f.task)
-    if (k && k.status === 'wilted') f.state = 'stuck'
+    if (k && k.status === 'wilted' && !k.stopped) f.state = 'stuck'
   }
 
-  // Your reviews: accepted work leaves its plot for the chest; sent-back work regrows until it's changed.
+  // Your reviews: accepted work leaves its plot for the chest. Sent-back work is real events in the log;
+  // here it only keeps your note beside the task.
   for (const [id, r] of Object.entries(reviews)) {
     const k = task(id)
-    if (!k || k.status !== 'ripe') continue
-    if (r.kind === 'accept') {
+    if (!k) continue
+    if (r.kind === 'back') k.sentBack = r.note
+    else if (k.status === 'ripe') {
       k.status = 'accepted'
       k.acceptedBy = 'you'
-      continue
-    }
-    k.sentBack = r.note
-    if (r.done) continue
-    k.status = 'growing'
-    k.progress = 0.7
-    const f = farmer(k.farmer)
-    if (f && f.state !== 'needs') {
-      f.state = 'working'
-      f.task = id
-      f.lastTool = `Changing it: ${r.note}`
     }
   }
   return s

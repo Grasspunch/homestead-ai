@@ -33,7 +33,11 @@ export interface Project {
   level: AutonomyLevel | 'custom'
   autonomy: Autonomy
   liveNote?: string // why a live call fell back to the simulation
+  sentBack?: { task: string; note: string; t: number }[] // work you sent back, in order, with the run time you did it
 }
+
+const MIN = 60_000
+const REDO = 3 * MIN // how long a farmer takes to change sent-back work
 
 export interface ChatLine {
   from: 'you' | 'planner'
@@ -149,7 +153,9 @@ class Store {
     this.reviews = {}
     const p = this.project(project)
     if (p?.approved) {
-      this.setSpeed(p.events)
+      // A fresh watch: the run as planned, before any of your answers.
+      p.sentBack = []
+      this.rebuild(p)
       this.play()
     }
     this.notify()
@@ -207,12 +213,31 @@ class Store {
 
   answer(askId: string, choice: string) {
     this.viewerAnswers = { ...this.viewerAnswers, [askId]: choice }
-    // Jump to the moment the run carried on.
     const p = this.project()
+    // A different answer from the one in the log: the run forks from here.
+    const rec = p?.events.find((e) => e.type === 'answer' && e.id === askId)
+    if (p && rec && rec.type === 'answer' && rec.choice !== choice) this.rebuild(p)
+    // Jump to the moment the run carried on.
     const ans = p?.events.find((e) => e.type === 'answer' && e.id === askId)
     if (ans && ans.t > this.clock) this.clock = ans.t
     if (this.drawer?.kind === 'ask' && this.drawer.id === askId) this.drawer = null
     this.notify()
+  }
+
+  // Run the plan again with everything you've decided so far: your answers, your changes to each farmer,
+  // the rules you set, and the work you sent back. The simulation is deterministic, so what came before stays the same.
+  private rebuild(p: Project) {
+    const plan = p.events.find((e) => e.type === 'plan')
+    if (!plan || plan.type !== 'plan') return
+    const kit = this.kit[p.id] ?? {}
+    const farmers = p.events
+      .filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer')
+      .map(({ t: _t, type: _ty, ...f }) => applyEdit(f, kit[f.id]))
+    const deployAsks = kit.deployer?.rules.deploy === false
+    let events = simulateRun({ goal: p.goal, farmers, tasks: plan.tasks, estimate: plan.estimate, singleAgentEstimate: plan.singleAgentEstimate, autonomy: p.autonomy, choices: this.viewerAnswers, deployAsks })
+    for (const sb of p.sentBack ?? []) events = redo(events, farmers, sb, p.autonomy.review !== 'ask')
+    p.events = events
+    this.setSpeed(events)
   }
 
   accept(task: string) {
@@ -237,15 +262,16 @@ class Store {
     this.notify()
   }
 
-  // Sent back with a note: the farmer regrows it, then it's ready for you again.
+  // Sent back with a note: the farmer changes it, a different farmer checks it, and it's ready for you again.
   sendBack(task: string, note: string) {
-    this.reviews = { ...this.reviews, [task]: { kind: 'back', note, done: false } }
+    this.reviews = { ...this.reviews, [task]: { kind: 'back', note } }
+    const p = this.project()
+    if (p) {
+      p.sentBack = [...(p.sentBack ?? []), { task, note, t: this.clock }]
+      this.rebuild(p)
+      if (!this.playing) this.play()
+    }
     this.notify()
-    setTimeout(() => {
-      const r = this.reviews[task]
-      if (r?.kind === 'back' && r.note === note) this.reviews = { ...this.reviews, [task]: { ...r, done: true } }
-      this.notify()
-    }, 4000)
   }
 
   // ---- your own project: a live plan you can change and approve ----
@@ -299,13 +325,11 @@ class Store {
     p.autonomy = autonomy
     // On a farm that is already running, the new setting replays the run from the start.
     if (p.approved) {
-      const plan = p.events.find((e) => e.type === 'plan')
-      if (plan && plan.type === 'plan') {
-        const farmers = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => f)
-        p.events = simulateRun({ goal: p.goal, farmers, tasks: plan.tasks, estimate: plan.estimate, singleAgentEstimate: plan.singleAgentEstimate, autonomy })
-        this.open(id)
-        return
-      }
+      p.sentBack = []
+      this.viewerAnswers = {}
+      this.rebuild(p)
+      this.open(id)
+      return
     }
     this.notify()
   }
@@ -328,13 +352,12 @@ class Store {
     if (!p) return
     const plan = p.events.find((e) => e.type === 'plan')
     if (!plan || plan.type !== 'plan') return
-    const farmers = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => applyEdit(f, this.kit[id]?.[f.id]))
-    p.events = simulateRun({ goal: p.goal, farmers, tasks: plan.tasks, estimate: plan.estimate, singleAgentEstimate: plan.singleAgentEstimate, autonomy: p.autonomy })
     p.approved = true
+    p.sentBack = []
     this.clock = 0
     this.viewerAnswers = {}
     this.reviews = {}
-    this.setSpeed(p.events)
+    this.rebuild(p)
     this.play()
   }
 }
@@ -344,4 +367,39 @@ export const store = new Store()
 export function useStore() {
   useSyncExternalStore(store.subscribe, store.snapshot)
   return store
+}
+
+// Work you sent back: everything after that moment waits while the farmer changes it.
+// The farmer reworks it at a retry cost, a different farmer checks it, and it's ready again.
+export function redo(events: RunEvent[], farmers: FarmerSetup[], sb: { task: string; note: string; t: number }, autoAccept: boolean): RunEvent[] {
+  const start = events.find((e) => e.type === 'task_start' && e.task === sb.task)
+  if (!start || start.type !== 'task_start') return events
+  const f = start.farmer
+  const has = (id: FarmerId) => farmers.some((x) => x.id === id)
+  const by: FarmerId = f !== 'tester' && has('tester') ? 'tester' : f !== 'planner' && has('planner') ? 'planner' : farmers.find((x) => x.id !== f)?.id ?? f
+  const spent = events.reduce((s, e) => s + (e.type === 'usage' && e.task === sb.task ? e.usd : 0), 0)
+  const retry = +Math.max(0.2, spent * 0.35).toFixed(3)
+  const t0 = sb.t
+  const at = (dm: number) => Math.round(t0 + dm * MIN)
+  const tokensIn = Math.round(retry / 0.000004)
+  const added: RunEvent[] = [
+    { t: at(0.05), type: 'task_start', task: sb.task, farmer: f },
+    { t: at(0.4), type: 'tool', farmer: f, task: sb.task, tool: 'edit', summary: `Changing it: ${sb.note}` },
+    { t: at(0.45), type: 'usage', farmer: f, task: sb.task, tokensIn, tokensOut: Math.round(tokensIn * 0.12), usd: retry, kind: 'retry' },
+    { t: at(1.2), type: 'progress', task: sb.task, value: 0.5 },
+    { t: at(2), type: 'progress', task: sb.task, value: 0.85 },
+    { t: at(2.2), type: 'task_built', task: sb.task },
+    { t: at(2.5), type: 'check', task: sb.task, by, pass: true, notes: `Changed as you asked: ${sb.note}`, evidence: ['tests/report.json'] },
+    { t: at(2.7), type: 'task_ripe', task: sb.task, summary: `Changed as you asked: ${sb.note}`, evidence: ['tests/report.json'] },
+    { t: at(2.8), type: 'verify', task: sb.task, by, pass: true },
+  ]
+  if (autoAccept) added.push({ t: at(2.9), type: 'accept', task: sb.task, by })
+  const shifted = events.map((e) => (e.t > t0 && e.type !== 'done' ? { ...e, t: e.t + REDO } : e))
+  const out = [...shifted.filter((e) => e.type !== 'done'), ...added].sort((a, b) => a.t - b.t)
+  const done = events.find((e) => e.type === 'done')
+  if (done && done.type === 'done') {
+    const last = out[out.length - 1]?.t ?? 0
+    out.push({ ...done, t: last + 30_000, usd: +(done.usd + retry).toFixed(2), minutes: Math.round(last / MIN) })
+  }
+  return out
 }

@@ -43,11 +43,14 @@ export interface TestResult {
   ms: number
   error?: string
 }
-export type Shot = { device: 'phone' | 'desktop'; state: 'ok' | 'overlap' }
+export type Shot = { device: 'phone' | 'desktop'; state: 'ok' | 'overlap' | 'alt' }
+// Which captured screen a screenshot shows: the support widget, a checkout form, or a metrics board.
+export type Screen = 'chat' | 'app' | 'dash'
 export interface Proof {
   kind: 'unit' | 'integration' | 'screens' | 'rollout'
   tests?: TestResult[]
   shots?: Shot[]
+  screen?: Screen
 }
 
 export interface Metrics {
@@ -90,6 +93,8 @@ export type RunEvent =
   | { t: number; type: 'deploy'; stage: DeployStage; url?: string; reason?: string; metrics?: Metrics }
   | { t: number; type: 'monitor'; stage: '10%' | '100%'; metrics: Metrics }
   | { t: number; type: 'replan'; reason: string; tasks: PlanTask[] }
+  // You stopped a task: it stays out of the pull request.
+  | { t: number; type: 'stop'; task: string; reason: string }
   | { t: number; type: 'done'; usd: number; minutes: number; asks: number; autoFixes: number; actions: number }
 
 export type TaskStatus = 'waiting' | 'growing' | 'checking' | 'wilted' | 'ripe' | 'accepted'
@@ -105,10 +110,11 @@ export interface TaskState extends PlanTask {
   verified?: boolean
   acceptedBy?: FarmerId | 'you'
   sentBack?: string // your note, when you sent it back
+  stopped?: string // why it was stopped, when you stopped it
 }
 
 // What you did with finished work while watching: accepted it, or sent it back with a note.
-export type Review = { kind: 'accept' } | { kind: 'back'; note: string; done: boolean }
+export type Review = { kind: 'accept' } | { kind: 'back'; note: string }
 
 export type FarmerState = 'idle' | 'working' | 'stuck' | 'needs' | 'done'
 
