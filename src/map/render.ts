@@ -1322,6 +1322,8 @@ function fieldState(e: Engine, f: FieldSlot): { state: ValleyState; reason?: Rea
   }
   const grown = e.phase === 'grow' || e.phase === 'harvest' || e.phase === 'ship'
   if (grown && ts.length && ts.every((t) => e.taskRipe(t))) return { state: 'done', words: 'Done' }
+  // An agent with no plot of its own (the Reviewer) is done when it says so.
+  if (grown && fhs.length && fhs.every((fh) => fh.status === 'done')) return { state: 'done', words: 'Done' }
   return { state: 'idle', words: fhs[0] ? stateLine(e, fhs[0]) : 'No task' }
 }
 
@@ -1353,8 +1355,8 @@ export function drawBigChar(
   const anim = state === 'working' ? 'water' : 'idle'
   let dy = 0
   let squash = 1
-  if (state === 'needs' && !reduced && age < 0.6) dy = -Math.round(Math.sin((age / 0.6) * Math.PI) * S * 3)
-  if (state === 'done' && !reduced) dy = Math.round((Math.sin(clock * 3.2) - 1) * S * 0.4)
+  const { dir, dy: idleDy } = bigIdle(state, clock, age, S)
+  dy = idleDy
   if (state === 'failed') squash = 0.86
   ctx.fillStyle = 'rgba(40,40,60,0.2)'
   ctx.beginPath()
@@ -1363,9 +1365,10 @@ export function drawBigChar(
   ctx.translate(x, y)
   ctx.scale(1, squash)
   if (state === 'failed') ctx.rotate(0.06)
-  draw(ctx, charFrame(anim, 'down', reduced ? 0 : clock, anim === 'idle' ? 5 : 8), -24 * S, -33 * S + dy, { tint, scale: S })
+  draw(ctx, charFrame(anim, dir, reduced ? 0 : clock, anim === 'idle' ? 5 : 8), -24 * S, -33 * S + dy, { tint, scale: S })
   ctx.restore()
   const head = Math.round(y - HEAD * S * squash + dy)
+  if (state === 'done') glyph(ctx, x, head - 4, { kind: 'check' }, -1, clock, 1)
   if (state === 'needs') glyph(ctx, x, head - 4, { kind: 'ask', reason: opts.reason ?? 'Anomaly' }, -1, clock, 1)
   if (state === 'failed') glyph(ctx, x, head - 4, { kind: 'ask', reason: 'Failure' }, -1, clock, 1)
   if (state === 'working') glyph(ctx, x, head - 4, { kind: 'work' }, -1, clock, 1)
@@ -1374,7 +1377,7 @@ export function drawBigChar(
     const u = Math.max(2, Math.round(S / 2))
     for (let i = 0; i < 3; i++) {
       const k = reduced ? 0.3 + i * 0.25 : (clock * 0.45 + i / 3) % 1
-      const nx = Math.round(x + 3 * S + Math.sin(k * 6 + i) * 2 * S + i * S)
+      const nx = Math.round(x + 20 + S + Math.sin(k * 6 + i) * 2 * S + i * S)
       const ny = Math.round(head - k * 10 * S)
       ctx.save()
       ctx.globalAlpha *= 1 - k * 0.9
@@ -1387,6 +1390,20 @@ export function drawBigChar(
     }
   }
   return head
+}
+
+// How a big character idles, so each state reads at a glance.
+// Needs you: it hops once when the ask arrives, then looks left and right for you.
+// Done: little happy hops in place, facing you.
+function bigIdle(state: ValleyState, clock: number, age: number, S: number): { dir: Dir; dy: number } {
+  if (reduced) return { dir: 'down', dy: 0 }
+  if (state === 'needs') {
+    const look: Dir[] = ['down', 'left', 'down', 'right']
+    const dy = age < 0.6 ? -Math.round(Math.sin((age / 0.6) * Math.PI) * S * 3) : 0
+    return { dir: look[Math.floor(clock * 0.9) % look.length], dy }
+  }
+  if (state === 'done') return { dir: 'down', dy: -Math.round(Math.abs(Math.sin(clock * 3)) * S * 1.5) }
+  return { dir: 'down', dy: 0 }
 }
 
 // One eighth note.
@@ -1576,7 +1593,7 @@ const FAIL = '#b0412e'
 const OUT = '#2d5da8'
 
 type Box = { x: number; y: number; w: number; h: number }
-export type Glyph = { kind: 'work' } | { kind: 'done' } | { kind: 'ask'; reason: ReasonLabel }
+export type Glyph = { kind: 'work' } | { kind: 'done' } | { kind: 'check' } | { kind: 'ask'; reason: ReasonLabel }
 
 // The one glyph over a farmhand. The engine's glyph, with the harvest's own moments on top:
 // nothing while the crew carries crops in, a red cross on the farmhand whose code failed a gate.
@@ -1674,6 +1691,8 @@ const BITS: Record<string, string[]> = {
   envelope: ['#########', '##.....##', '#.#...#.#', '#..#.#..#', '#...#...#', '#.......#', '#########'],
   // Two beamed eighth notes: whistling, done.
   notes: ['..#######', '..#######', '..#.....#', '..#.....#', '..#.....#', '###...###', '###...###', '###...###'],
+  // A tick: the whole field or valley is done.
+  check: ['.......##', '......###', '.....###.', '##..###..', '#####....', '.###.....'],
 }
 
 const pulses = new Map<string, { key: string; t: number }>()
@@ -1727,9 +1746,9 @@ function glyph(ctx: CanvasRenderingContext2D, x: number, y: number, g: Glyph, pu
       ctx.fillRect(-9 + i * 7, Math.round(cy + 1 - hop), 4, 4)
     }
   } else {
-    const name = g.kind === 'done' ? 'notes' : { Anomaly: 'question', Failure: 'cross', Risk: 'bang', Cost: 'coin', Irreversible: 'envelope' }[g.reason]
+    const name = g.kind === 'done' ? 'notes' : g.kind === 'check' ? 'check' : { Anomaly: 'question', Failure: 'cross', Risk: 'bang', Cost: 'coin', Irreversible: 'envelope' }[g.reason]
     const rows = BITS[name]
-    ctx.fillStyle = g.kind === 'ask' && g.reason === 'Failure' ? FAIL : g.kind === 'ask' && g.reason === 'Irreversible' ? OUT : INK
+    ctx.fillStyle = g.kind === 'check' ? '#3f7a2c' : g.kind === 'ask' && g.reason === 'Failure' ? FAIL : g.kind === 'ask' && g.reason === 'Irreversible' ? OUT : INK
     const u = 2
     const bw = rows[0].length * u
     const bh = rows.length * u
@@ -1817,8 +1836,8 @@ function bigChar(ctx: CanvasRenderingContext2D, x: number, y: number, S: number,
   let dy = 0
   let squash = 1
   if (state === 'working') anim = 'water'
-  if (state === 'needs' && !reduced && age < 0.6) dy = -Math.round(Math.sin((age / 0.6) * Math.PI) * S * 3)
-  if (state === 'done' && !reduced) dy = Math.round(Math.sin(clock * 3.2) * S * 0.6)
+  const { dir, dy: idleDy } = bigIdle(state, clock, age, S)
+  dy = idleDy
   if (state === 'failed') squash = 0.84
   // Shadow.
   ctx.fillStyle = 'rgba(40,40,60,0.2)'
@@ -1828,9 +1847,10 @@ function bigChar(ctx: CanvasRenderingContext2D, x: number, y: number, S: number,
   ctx.translate(x, y)
   ctx.scale(1, squash)
   if (state === 'failed') ctx.rotate(0.06)
-  draw(ctx, charFrame(anim, 'down', reduced ? 0 : clock, anim === 'idle' ? 5 : 8), -24 * S, -33 * S + dy, { tint, scale: S })
+  draw(ctx, charFrame(anim, dir, reduced ? 0 : clock, anim === 'idle' ? 5 : 8), -24 * S, -33 * S + dy, { tint, scale: S })
   ctx.restore()
   const head = y - Math.round(17 * S * squash) + dy
+  if (state === 'done') glyph(ctx, x, head - 4, { kind: 'check' }, -1, clock, 1)
   if (state === 'needs' && reason) glyph(ctx, x, head - 4, { kind: 'ask', reason }, -1, clock, 1)
   if (state === 'failed') glyph(ctx, x, head - 4, { kind: 'ask', reason: 'Failure' }, -1, clock, 1)
   if (state === 'working') glyph(ctx, x, head - 4, { kind: 'work' }, -1, clock, 1)
@@ -1843,7 +1863,7 @@ function bigChar(ctx: CanvasRenderingContext2D, x: number, y: number, S: number,
       ctx.fillStyle = INK
       ctx.font = `700 ${15 + i * 2}px ${SANS}`
       ctx.textAlign = 'center'
-      ctx.fillText(i % 2 ? '\u266B' : '\u266A', Math.round(x + 4 * S + Math.sin(k * 6 + i) * 6), Math.round(head + 6 - k * 34))
+      ctx.fillText(i % 2 ? '\u266B' : '\u266A', Math.round(x + 20 + S + Math.sin(k * 6 + i) * 6), Math.round(head + 6 - k * 34))
       ctx.restore()
     }
   }
