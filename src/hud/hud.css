@@ -53,6 +53,9 @@ input, textarea { font: inherit; color: inherit; }
 .btn:active { transform: translateY(2px); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.tan { border-image-source: url(/ui/btn_tan.png); }
+/* A suggestion you can tap: flat face, outline and lip only, so it reads lighter than an answer button. */
+.btn.chip { border-image-source: url(/ui/btn_chip.png); }
+.btn.chip:hover { filter: none; border-image-source: url(/ui/btn_cream.png); }
 .btn.white { border-image-source: url(/ui/btn_white.png); }
 .btn.brown { border-image-source: url(/ui/btn_brown.png); color: #fff6e4; }
 .btn.sm { height: 42px; font-size: 17px; border-width: 10px; }
@@ -233,7 +236,7 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 .dlg.dock .portrait { width: 72px; height: 72px; border-width: 10px; border-image-width: 12px; }
 .dlg.dock .portrait canvas { inset: 2px; }
 .dlg.dock .approve small { display: none; }
-.dlg.dock .body { flex: 1; min-height: 0; width: 100%; --tail-at: 30px; }
+.dlg.dock .body { flex: 1; min-height: 0; width: 100%; --tail-at: 8px; } /* the tail's tip under the portrait's centre */
 .dlg.dock .crew-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .dlg.dock .crew { grid-template-columns: minmax(0, 1fr) 168px 80px 24px; grid-auto-flow: row dense; column-gap: 10px; }
 .dlg.dock .crew-head span:nth-child(2) { display: none; }

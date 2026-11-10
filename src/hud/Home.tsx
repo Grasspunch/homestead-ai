@@ -202,7 +202,7 @@ export function Home() {
           </form>
           <div className="row examples">
             {EXAMPLES.map((x) => (
-              <button key={x} className="btn tan xs" onClick={() => start(x)}>
+              <button key={x} className="btn chip xs" onClick={() => start(x)}>
                 {x}
               </button>
             ))}
