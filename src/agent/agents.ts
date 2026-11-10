@@ -299,7 +299,7 @@ export const PLAN_SCHEMA = {
           context: { type: 'array', items: { type: 'string' }, description: 'The only paths and docs this farmer may read, 2 to 5 entries, for example "docs/pricing.md" or "src/checkout/"' },
           constraints: { type: 'array', items: { type: 'string' }, description: 'What it may and may not do, 2 to 4 entries, for example "May not deploy" or "Read only: src/"' },
           limits: limitsSchema,
-          why: { type: 'string', description: 'One sentence, under 110 characters, on why this goal needs this farmer: name its part of this project, and why its model fits. For example "Payments cannot be half broken, so it ships to 10% of buyers first."' },
+          why: { type: 'string', description: 'One sentence, under 110 characters, on why this goal needs this farmer: name its part of this project. Never name the model or its price; the model picker shows those. For example "Payments cannot be half broken, so it ships to 10% of buyers first."' },
         },
       },
     },

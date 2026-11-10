@@ -102,14 +102,18 @@
 .farm-tag { flex-direction: column; height: auto; min-height: 30px; gap: 1px; padding: 2px 4px; }
 .farm-words { font-family: var(--ui); font-size: var(--t-meta); color: var(--bark-2); letter-spacing: 0; }
 .farm-words.alert { color: var(--berry); font-weight: 700; }
-.examples { gap: 6px; }
+.examples { gap: 6px; min-height: 0; overflow: hidden; }
+/* The starters fold away once you type: height, the body's gap and opacity ease together, so nothing jumps. */
+.examples-fold { display: grid; grid-template-rows: 1fr; opacity: 1; transition: grid-template-rows 220ms ease, margin-top 220ms ease, opacity 160ms ease; }
+.examples-fold.shut { grid-template-rows: 0fr; margin-top: -10px; opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .examples-fold { transition: none; } }
 .examples .btn.xs { font-family: var(--ui); font-size: 13px; letter-spacing: 0; }
 
 @media (max-width: 900px) {
   .stops { flex-wrap: wrap; }
   .levels.compact button { padding: 4px 6px; font-size: var(--t-meta); }
   .sides { grid-template-columns: 1fr; }
-  .examples { display: none; }
+  .examples-fold { display: none; }
   .grow-form { flex-wrap: nowrap; }
   .plot-label { font-size: var(--t-meta) !important; }
 }

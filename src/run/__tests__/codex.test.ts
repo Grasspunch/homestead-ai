@@ -43,7 +43,8 @@ describe('the models, from Lovable AI’s list', () => {
     expect(f.tester.model).toBe(cheaper)
     expect(f.deployer.model).toBe(cheaper)
     const g = Object.fromEntries(simulatePlan('Add a dark mode to the settings page').farmers.map((x) => [x.id, x]))
-    expect(g.tester.why).toMatch(/GPT-6 Luna, a tenth of Haiku’s price/)
+    // A farmer's line says what it does here; the model and its price live in the model picker.
+    for (const x of [...Object.values(g), ...Object.values(f)]) expect(x.why).not.toMatch(/Opus|Sonnet|Haiku|Fable|GPT|Codex|\bprice\b/)
     expect(agentName(f.builder.agent)).toBe('Codex')
     expect(agentName(f.planner.agent)).toBe('Claude Code')
   })

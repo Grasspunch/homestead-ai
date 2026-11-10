@@ -116,9 +116,9 @@ function draft(goal: string): Draft {
       matched: true,
       context: { builder: ['src/', 'docs/help/', 'eval/questions.jsonl'], designer: ['src/widget/', 'docs/brand.md'], tester: ['tests/', 'eval/questions.jsonl'] },
       why: {
-        planner: "Keeps the answers and the widget in step, and passes your notes on. Opus, for judgment.",
-        builder: "Indexes the help docs, answers from them and hands off when unsure. GPT-6.1 Sol on Codex, at Sonnet 5’s price.",
-        designer: "The widget is what customers see, so it keeps sources visible and the reply box clear. Sonnet 5, since screens follow the brand guide.",
+        planner: "Keeps the answers and the widget in step, and passes your notes on.",
+        builder: "Indexes the help docs, answers from them and hands off when unsure.",
+        designer: "The widget is what customers see, so it keeps sources visible and the reply box clear.",
         tester: "Runs the eval questions against every answer, so a wrong one never reaches a customer.",
         deployer: "Wrong answers reach real customers, so it ships to 10% first and rolls back on its own.",
       },
@@ -137,9 +137,9 @@ function draft(goal: string): Draft {
       matched: true,
       context: { builder: ['src/billing/', 'docs/pricing.md'], designer: ['src/checkout/', 'docs/brand.md'], tester: ['tests/billing/'] },
       why: {
-        planner: "Keeps prices, payments and screens reading from one plan config. Opus, for judgment.",
-        builder: "Prices, the checkout API and webhooks are one chain of money code. GPT-6.1 Sol on Codex, at Sonnet 5’s price.",
-        designer: "Buyers leave at confusing errors, so it owns the checkout screens and their copy. Sonnet 5, working from the brand guide.",
+        planner: "Keeps prices, payments and screens reading from one plan config.",
+        builder: "Prices, the checkout API and webhooks are one chain of money code.",
+        designer: "Buyers leave at confusing errors, so it owns the checkout screens and their copy. It works from the brand guide.",
         tester: "Runs test-card purchases and refunds against every done-when, so nobody is charged wrong.",
         deployer: "Payments can't be half broken, so 10% of buyers first, rolled back at the first failed payment.",
       },
@@ -158,9 +158,9 @@ function draft(goal: string): Draft {
       matched: true,
       context: { builder: ['src/metrics/', 'db/schema.sql'], designer: ['src/dashboard/'], tester: ['tests/metrics/'] },
       why: {
-        planner: "Keeps the queries and the charts agreeing on what each metric means. Opus, for judgment.",
-        builder: "Writes the metric queries and the API. GPT-6.1 Sol on Codex, at Sonnet 5’s price.",
-        designer: "Charts only help if they read at a glance, so it designs them on their own. Sonnet 5, working from the brand guide.",
+        planner: "Keeps the queries and the charts agreeing on what each metric means.",
+        builder: "Writes the metric queries and the API.",
+        designer: "Charts only help if they read at a glance, so it designs them on their own. It works from the brand guide.",
         tester: "Checks every metric against a hand count, so the dashboard never shows a wrong number.",
         deployer: "Ships to 10% first and rolls back if the API slows down or errors.",
       },
@@ -183,11 +183,11 @@ function draft(goal: string): Draft {
 const PRIORITY: FarmerId[] = ['builder', 'tester', 'planner', 'designer', 'deployer']
 
 const WHY: Record<FarmerId, string> = {
-  planner: 'Splits the work, prices it and passes your messages on. Needs judgment, so Opus.',
-  builder: 'Writes most of the code. GPT-6.1 Sol on Codex, at Sonnet 5’s price.',
-  designer: 'Owns the screens and copy, from the brand guide. Sonnet 5.',
-  tester: 'Checks the others against each done-when, so nobody grades its own work. GPT-6 Luna, a tenth of Haiku’s price.',
-  deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own. GPT-6 Luna, a tenth of Haiku’s price.',
+  planner: 'Splits the work, prices it and passes your messages on.',
+  builder: 'Writes most of the code.',
+  designer: 'Owns the screens and copy, from the brand guide.',
+  tester: 'Checks the others against each done-when, so nobody grades its own work.',
+  deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own.',
 }
 
 function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boolean): FarmerSetup {

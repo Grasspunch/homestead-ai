@@ -200,12 +200,24 @@ export function Home() {
               Plan it
             </button>
           </form>
-          <div className="row examples">
-            {EXAMPLES.map((x) => (
-              <button key={x} className="btn chip xs" onClick={() => start(x)}>
-                {x}
-              </button>
-            ))}
+          {/* Starters until you type; a tap fills the box so you can edit it before planning. */}
+          <div className={`examples-fold${goal ? ' shut' : ''}`} inert={!!goal || undefined} aria-hidden={!!goal || undefined}>
+            <div className="row examples">
+              {EXAMPLES.map((x) => (
+                <button
+                  key={x}
+                  type="button"
+                  className="btn chip xs"
+                  onClick={() => {
+                    setGoal(x)
+                    const el = input.current
+                    if (el) requestAnimationFrame(() => (el.focus(), el.setSelectionRange(x.length, x.length)))
+                  }}
+                >
+                  {x}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </section>
