@@ -120,7 +120,8 @@ export interface FieldSlot {
 // A team template is a valley layout: one field per agent, in member order, around the farmstead.
 // The head farmer is the only one that works from the farmstead itself.
 // Up to five fields fit in two rows; more add rows above and below.
-export function layoutFields(team: TeamTemplate): FieldSlot[] {
+// Only agents with a plot get a field: an agent with no task this run waits at the farmstead with the head farmer.
+export function layoutFields(team: TeamTemplate, busy?: Set<string>): FieldSlot[] {
   const ids: string[] = []
   for (const m of team.members) {
     const a = AGENT_TEMPLATES.find((x) => x.id === m.agent)
@@ -131,10 +132,13 @@ export function layoutFields(team: TeamTemplate): FieldSlot[] {
     const id = team.staffs[r]
     if (id && id !== 'head-farmer' && !ids.includes(id)) ids.push(id)
   }
+  if (busy) ids.splice(0, ids.length, ...ids.filter((id) => ROLE_ORDER.some((r) => team.staffs[r] === id && busy.has(r))))
   const rows = Math.max(2, Math.ceil((ids.length + 1) / 3))
   const above = Math.floor((rows - 1) / 2)
   const cells: { c: number; r: number }[] = []
-  for (let r = 0; r < rows; r++) for (let c = 0; c < 3; c++) if (!(r === above && c === 1)) cells.push({ c, r: r - above })
+  // Three fields sit either side of the farmstead and one below it, so no corner is left bare.
+  if (ids.length === 3) cells.push({ c: 0, r: 0 }, { c: 2, r: 0 }, { c: 1, r: 1 })
+  else for (let r = 0; r < rows; r++) for (let c = 0; c < 3; c++) if (!(r === above && c === 1)) cells.push({ c, r: r - above })
   return ids.map((id, i) => {
     const a = AGENT_TEMPLATES.find((x) => x.id === id)
     const cell = cells[i] ?? { c: i % 3, r: Math.floor(i / 3) + rows - above }
@@ -212,8 +216,8 @@ export type ValleyState = 'working' | 'idle' | 'needs' | 'done' | 'failed'
 
 export const VALLEY_STATS: Record<string, { agents: number; energyWeek: number; pests: number; waiting: number; harvests: number; unattended?: string; state?: ValleyState; reason?: 'Cost' | 'Risk' | 'Irreversible' | 'Failure' | 'Anomaly'; doing?: string }> = {
   [FARM.name]: { agents: 6, energyWeek: 0, pests: 0, waiting: 0, harvests: 0 },
-  [NEIGHBOUR.name]: { agents: 3, energyWeek: 214_000, pests: 0, waiting: 0, harvests: 6, unattended: '1 sprinkler: weekly schedule emails', state: 'done', doing: 'Shipped the winter schedule last week. No vet works Saturdays from 1 December.' },
-  'Pharmacy stock': { agents: 2, energyWeek: 96_000, pests: 1, waiting: 0, harvests: 12, unattended: '1 beehive: nightly stock count', state: 'working', doing: 'Reordering flea and worm treatments before they run out.' },
+  [NEIGHBOUR.name]: { agents: 3, energyWeek: 214_000, pests: 0, waiting: 0, harvests: 6, unattended: 'A sprinkler sends the weekly schedule emails', state: 'done', doing: 'Shipped the winter schedule last week. No vet works Saturdays from 1 December.' },
+  'Pharmacy stock': { agents: 2, energyWeek: 96_000, pests: 1, waiting: 0, harvests: 12, unattended: 'A beehive counts stock each night', state: 'working', doing: 'Reordering flea and worm treatments before they run out.' },
   'Lab results': { agents: 3, energyWeek: 168_000, pests: 0, waiting: 1, harvests: 4, state: 'needs', reason: 'Risk', doing: 'Waiting for a vet to approve how results are worded for owners.' },
 }
 

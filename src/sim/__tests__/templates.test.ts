@@ -53,13 +53,14 @@ describe('Agent and team templates', () => {
     expect(e.crew).toBe(DEFAULT_TEAM)
   })
 
-  it('every agent in the crew gets a field, and Settings lists the same agents', () => {
+  it('every agent with a task gets a field, and Settings lists the whole crew', () => {
     for (const id of ['feature', 'gstack', 'bug-fix', 'design-pass']) {
       const e = freshEngine()
       e.setCrew(id)
       e.relayout()
       const agents = new Set(e.team.members.map((m) => m.agent).filter((a) => a !== 'head-farmer'))
-      expect(new Set(e.fields.map((f) => f.id)), id).toEqual(agents)
+      const busy = new Set(e.tasks.map((t) => e.team.staffs[t.assignee]))
+      expect(new Set(e.fields.map((f) => f.id)), id).toEqual(new Set([...agents].filter((a) => busy.has(a))))
       expect(e.crewAgentKeys.length, id).toBe(agents.size + 1)
       for (const k of e.crewAgentKeys) expect(e.settings.agents[k], `${id} ${k}`).toBeDefined()
     }

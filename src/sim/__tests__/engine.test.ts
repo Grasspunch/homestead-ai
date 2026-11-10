@@ -28,7 +28,7 @@ describe('Done-when gates', () => {
     expect(e.taskRipe(e.task('backend'))).toBe(false) // integration still missing
     e.gates.backend.integration = { state: 'fail', text: 'x' }
     expect(e.taskRipe(e.task('backend'))).toBe(false)
-    e.gates.backend.integration = { state: 'pass', text: '9 passed' }
+    e.gates.backend.integration = { state: 'pass', text: 'Passed' }
     expect(e.taskRipe(e.task('backend'))).toBe(true)
   })
 
@@ -112,7 +112,7 @@ describe('the harvest review', () => {
     await until(e, () => !e.gatesRunning, 'rerun', 10)
     expect(e.gateFailed).toBe(false)
     for (const g of GATE_ORDER) expect(['pass', 'look']).toContain(e.harvestGates[g].state)
-    expect(e.harvestGates.review.text).toBe('0 blocking, 2 notes')
+    expect(e.harvestGates.review.text).toBe('Notes, nothing blocking')
     expect(e.log.some((l) => l.text === HARVEST_FAIL.fixed)).toBe(true)
     expect(e.canApprove).toBe(false)
     for (const c of CHECKS) e.toggleTick(c.id)
@@ -205,7 +205,7 @@ describe('story setup', () => {
     expect(e.tasks.map((t) => t.id)).toEqual(['frontend', 'backend', 'messaging'])
     expect(Object.keys(e.farmhands).sort()).toEqual(['backend', 'frontend', 'messaging', 'reviewer'])
     expect(e.tasks.some((t) => t.assignee === 'reviewer')).toBe(false)
-    expect(e.fields.map((f) => f.name)).toEqual(['Frontend', 'Backend', 'Messaging', 'Tests', 'Reviewer'])
+    expect(e.fields.map((f) => f.name)).toEqual(['Frontend', 'Backend', 'Messaging'])
     expect(e.neededYou).toBe(1)
   })
 })

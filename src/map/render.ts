@@ -784,7 +784,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
   hits.push({ kind: 'head', id: 'head', rect: { x: hf.x * TILE - 8, y: hf.y * TILE - 18, w: 16, h: 20 }, title: 'Head farmer', body: headStatus(e) })
 
   for (const fh of Object.values(e.farmhands)) {
-    if (fh.inside || (big && e.fieldOf(fh.id) && !e.carrying[fh.id])) continue
+    if (fh.inside || (big && e.fieldOf(fh.id) && !e.carrying[fh.id]) || (big && onAField(e, fh))) continue
     list.push({ y: fh.y, fn: () => drawFarmhand(ctx, e, fh, clock) })
     // The hit box is the body; collision elsewhere uses only the feet.
     hits.push({ kind: 'farmhand', id: fh.id, rect: { x: fh.x * TILE - 8, y: fh.y * TILE - 18, w: 16, h: 20 }, title: fh.role, body: e.fhStatus(fh) })
@@ -1021,7 +1021,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
       nameLine(ctx, hfeet.x, hfeet.y + 3, 'Head farmer', asking ? 'Needs you' : '', a, placed)
     }
     for (const fh of Object.values(e.farmhands)) {
-      if (fh.inside || fh.fade <= 0.05 || (big && e.fieldOf(fh.id) && !e.carrying[fh.id])) continue
+      if (fh.inside || fh.fade <= 0.05 || (big && e.fieldOf(fh.id) && !e.carrying[fh.id]) || (big && onAField(e, fh))) continue
       if (farmPage && !farmPage.roles.includes(fh.id)) continue
       const feet = toScreen(fh.x, fh.y)
       if (!inView(feet)) continue
@@ -1294,6 +1294,11 @@ function drawDeps(ctx: CanvasRenderingContext2D, e: Engine) {
   }
 }
 
+// An agent with no field of its own, standing in another's: hidden on the valley page so it never overlaps that field's big character.
+function onAField(e: Engine, fh: { id: RoleId; x: number; y: number }) {
+  return !e.fieldOf(fh.id) && e.fields.some((f) => fh.x >= f.rect.x && fh.x <= f.rect.x + f.rect.w && fh.y >= f.rect.y && fh.y <= f.rect.y + f.rect.h)
+}
+
 // What a field's big character shows on the valley page.
 function fieldState(e: Engine, f: FieldSlot): { state: ValleyState; reason?: ReasonLabel; anim?: string; words: string } {
   const fhs = f.roles.map((r) => e.farmhands[r])
@@ -1328,9 +1333,10 @@ function focusOf(e: Engine) {
 const bigSince = new Map<string, { key: string; t: number }>()
 
 // One oversized character for a field or a whole valley, standing with its feet at screen (x, y), scale S.
-// Working plays its work animation; idle stands; needs bounces once then holds, with the reason glyph;
-// done whistles, bobbing, with ink music notes drifting up; failed slumps under a red cross.
-// Returns the y of the top of its head. Shared with the Valleys page.
+// Each wears a straw hat. Not started: leans on a pitchfork, chewing a straw. Working: waters its crop.
+// Needs you: hops once, then looks around and tips its hat for you. Done: stands still, eyes open, beside a
+// basket of its harvest, under a tick. Failed: slumps under a red cross, its hat knocked to the ground.
+// Returns the y of the top of its hat. Shared with the Valleys page.
 export function drawBigChar(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -1346,11 +1352,8 @@ export function drawBigChar(
   ctx.imageSmoothingEnabled = false
   // Big characters water: the till and chop swings have a motion smear and a tool below the feet that read as glitches at this size.
   const anim = state === 'working' ? 'water' : 'idle'
-  let dy = 0
-  let squash = 1
-  const { dir, dy: idleDy } = bigIdle(state, clock, age, S)
-  dy = idleDy
-  if (state === 'failed') squash = 0.86
+  const { dir, dy } = bigIdle(state, clock, age, S)
+  const squash = state === 'failed' ? 0.86 : 1
   ctx.fillStyle = 'rgba(40,40,60,0.2)'
   ctx.beginPath()
   ctx.ellipse(x, y - S, 6 * S, 2.4 * S, 0, 0, Math.PI * 2)
@@ -1358,36 +1361,21 @@ export function drawBigChar(
   ctx.translate(x, y)
   ctx.scale(1, squash)
   if (state === 'failed') ctx.rotate(0.06)
-  draw(ctx, charFrame(anim, dir, reduced ? 0 : clock, anim === 'idle' ? (state === 'done' ? 2.5 : 5) : 8), -24 * S, -33 * S + dy, { tint, scale: S })
+  const f = bigFrame(anim, dir, state, clock)
+  draw(ctx, f.name, -24 * S, -33 * S + dy, { tint, scale: S })
+  farmerKit(ctx, S, -33 * S + dy, state, anim, dir, f.i, clock)
   ctx.restore()
-  const head = Math.round(y - HEAD * S * squash + dy)
+  const head = Math.round(y - (state === 'failed' ? HEAD : HEAD + 4) * S * squash + dy)
   if (state === 'done') glyph(ctx, x, head - 4, { kind: 'check' }, -1, clock, 1)
   if (state === 'needs') glyph(ctx, x, head - 4, { kind: 'ask', reason: opts.reason ?? 'Anomaly' }, -1, clock, 1)
   if (state === 'failed') glyph(ctx, x, head - 4, { kind: 'ask', reason: 'Failure' }, -1, clock, 1)
   if (state === 'working') glyph(ctx, x, head - 4, { kind: 'work' }, -1, clock, 1)
-  if (state === 'done') {
-    // Whistling: ink pixel notes drifting up and away from the head.
-    const u = Math.max(2, Math.round(S / 2))
-    for (let i = 0; i < 3; i++) {
-      const k = reduced ? 0.3 + i * 0.25 : (clock * 0.3 + i / 3) % 1
-      const nx = Math.round(x + 20 + S + Math.sin(k * 6 + i) * 2 * S + i * S)
-      const ny = Math.round(head - k * 10 * S)
-      ctx.save()
-      ctx.globalAlpha *= 0.55 * (1 - k * 0.9)
-      ctx.fillStyle = INK
-      const rows = i % 2 ? BITS.notes : NOTE
-      rows.forEach((row, j) => {
-        for (let c = 0; c < row.length; c++) if (row[c] === '#') ctx.fillRect(nx + c * u, ny + j * u, u, u)
-      })
-      ctx.restore()
-    }
-  }
   return head
 }
 
 // How a big character idles, so each state reads at a glance.
 // Needs you: it hops once when the ask arrives, then looks left and right for you.
-// Done: stands still and breathes slowly, so it never pulls your eye.
+// Done and not started: it stands facing you.
 function bigIdle(state: ValleyState, clock: number, age: number, S: number): { dir: Dir; dy: number } {
   if (reduced) return { dir: 'down', dy: 0 }
   if (state === 'needs') {
@@ -1395,12 +1383,74 @@ function bigIdle(state: ValleyState, clock: number, age: number, S: number): { d
     const dy = age < 0.6 ? -Math.round(Math.sin((age / 0.6) * Math.PI) * S * 3) : 0
     return { dir: look[Math.floor(clock * 0.9) % look.length], dy }
   }
-  if (state === 'done') return { dir: 'down', dy: 0 }
   return { dir: 'down', dy: 0 }
 }
 
-// One eighth note.
-const NOTE = ['..##.', '..#.#', '..#..', '..#..', '###..', '###..']
+// The frame a big character shows. Done holds one frame, eyes open, so it never pulls your eye.
+function bigFrame(anim: string, dir: Dir, state: ValleyState, clock: number) {
+  const fps = anim === 'idle' ? 5 : 8
+  const t = reduced || state === 'done' ? 0 : clock
+  const n = animCounts[`${anim}_${dir}`] ?? 1
+  return { name: charFrame(anim, dir, t, fps), i: Math.floor(t * fps) % n }
+}
+
+// The farmer's kit, drawn in the sprite's own pixels over a big character.
+// k outline, y straw, d straw in shade, b hat band, m fork tines, h fork handle.
+const KIT: Record<string, string> = { k: '#5c4e92', y: '#ecc969', d: '#c99a45', b: '#8a5a34', m: '#8d93a0', h: '#b07a45', o: '#e58f3a', g: '#6f9a4e', s: '#e3c46c', t: '#b8913f' }
+const HAT = ['......kkkkkk......', '.....kyyyyyyk.....', '.....kyyyyyyk.....', '.....kbbbbbbk.....', '.kkkkyyyyyyyykkkk.', 'kyyyyyyyyyyyyyyyyk', '.kddddddddddddddk.', '..kkkkkkkkkkkkkk..']
+const FORK = ['m.m.m', 'm.m.m', 'm.m.m', 'mmmmm', ...Array(21).fill('.khk.'), '.kkk.']
+// The harvest piled in the basket: carrots with their tops.
+const PRODUCE = ['..g...g..g..', '.ooo.ooo.oo.', 'oooooooooooo']
+// How far the head sits from its idle place in each watering frame, in sprite pixels.
+const WATER_HEAD = [1, -2, -1, -1, -1, -1, -2, 1]
+
+function farmerKit(ctx: CanvasRenderingContext2D, S: number, oy: number, state: ValleyState, anim: string, dir: Dir, fi: number, clock: number) {
+  const ox = -24 * S
+  const paint = (rows: string[], c0: number, r0: number) =>
+    rows.forEach((row, r) => {
+      for (let c = 0; c < row.length; c++) {
+        const col = KIT[row[c]]
+        if (!col) continue
+        ctx.fillStyle = col
+        ctx.fillRect(ox + (c0 + c) * S, oy + (r0 + r) * S, S, S)
+      }
+    })
+  // The head's top row in the frame: 17 standing, a little lower or higher as it waters.
+  const top = 17 + (anim === 'water' && dir === 'down' ? WATER_HEAD[fi] ?? 0 : 0)
+  if (state === 'failed') {
+    // Knocked off, lying on the ground beside it.
+    paint(HAT, 28, 26)
+    return
+  }
+  if (state === 'idle' || state === 'needs') paint(FORK, 29, 8)
+  if (state === 'done') {
+    // A basket of the harvest on the ground beside it, a little smaller than the farmer.
+    const u = Math.max(2, Math.round(S * 0.6))
+    const bx = ox + 29 * S
+    const by = oy + 33 * S - 15 * u
+    draw(ctx, 'basket', bx, by, { scale: u })
+    PRODUCE.forEach((row, r) => {
+      for (let c = 0; c < row.length; c++) {
+        if (!KIT[row[c]]) continue
+        ctx.fillStyle = KIT[row[c]]
+        ctx.fillRect(bx + (2 + c) * u, by + (1 + r) * u, u, u)
+      }
+    })
+  }
+  // Needs you: every few seconds it lifts its hat to you.
+  const tip = state === 'needs' && !reduced && clock % 2.6 < 0.5 ? -2 : 0
+  paint(HAT, 15, top - 4 + tip)
+  if (state === 'idle' && dir === 'down') {
+    // Chewing a straw: its tip nods now and then.
+    const nod = !reduced && Math.floor(clock * 1.4) % 3 === 0 ? 1 : 0
+    paint(['s'], 20, 23)
+    paint(['s'], 19, 23)
+    paint(['s'], 18, 22 + nod)
+    paint(['s'], 17, 22 + nod)
+    paint(['t'], 16, 21 + nod)
+  }
+}
+
 
 // The shipping crate: a chest at 1x on a small pallet, lid open while crops arrive.
 function drawCrate(ctx: CanvasRenderingContext2D, tx: number, ty: number, open: boolean, filled: number) {
@@ -1563,7 +1613,7 @@ function headStatus(e: Engine) {
   if (e.headThinking > 0) return 'Thinking…'
   if (e.phase === 'clarify') return 'Has a few questions for you'
   if (e.phase === 'plan') return e.planReady ? 'Waiting for you to approve the plan' : 'Tilling a patch per task'
-  if (e.openAsks.length) return `Relaying ${e.openAsks.length} ask${e.openAsks.length > 1 ? 's' : ''}`
+  if (e.openAsks.length) return 'Passing on what the crew asks'
   return 'Watching the crew'
 }
 
@@ -1821,18 +1871,14 @@ function regionValley(ctx: CanvasRenderingContext2D, e: Engine, name: string, r:
   return top
 }
 
-// One oversized character for a whole valley or field, standing at (x, y) on screen with scale S.
-// Returns the y of the top of its head. Local stand-in until the shared drawBigChar is in.
+// One oversized character for a whole valley, standing at (x, y) on screen with scale S, in the same
+// clothes and moods as a field's. Returns the y of the top of its hat.
 function bigChar(ctx: CanvasRenderingContext2D, x: number, y: number, S: number, state: ValleyState, reason: ReasonLabel | undefined, clock: number, age: number, tint?: { body: string; shade: string }) {
   ctx.save()
   ctx.imageSmoothingEnabled = false
-  let anim = 'idle'
-  let dy = 0
-  let squash = 1
-  if (state === 'working') anim = 'water'
-  const { dir, dy: idleDy } = bigIdle(state, clock, age, S)
-  dy = idleDy
-  if (state === 'failed') squash = 0.84
+  const anim = state === 'working' ? 'water' : 'idle'
+  const { dir, dy } = bigIdle(state, clock, age, S)
+  const squash = state === 'failed' ? 0.84 : 1
   // Shadow.
   ctx.fillStyle = 'rgba(40,40,60,0.2)'
   ctx.beginPath()
@@ -1841,26 +1887,15 @@ function bigChar(ctx: CanvasRenderingContext2D, x: number, y: number, S: number,
   ctx.translate(x, y)
   ctx.scale(1, squash)
   if (state === 'failed') ctx.rotate(0.06)
-  draw(ctx, charFrame(anim, dir, reduced ? 0 : clock, anim === 'idle' ? (state === 'done' ? 2.5 : 5) : 8), -24 * S, -33 * S + dy, { tint, scale: S })
+  const f = bigFrame(anim, dir, state, clock)
+  draw(ctx, f.name, -24 * S, -33 * S + dy, { tint, scale: S })
+  farmerKit(ctx, S, -33 * S + dy, state, anim, dir, f.i, clock)
   ctx.restore()
-  const head = y - Math.round(17 * S * squash) + dy
+  const head = y - Math.round((state === 'failed' ? 17 : 21) * S * squash) + dy
   if (state === 'done') glyph(ctx, x, head - 4, { kind: 'check' }, -1, clock, 1)
   if (state === 'needs' && reason) glyph(ctx, x, head - 4, { kind: 'ask', reason }, -1, clock, 1)
   if (state === 'failed') glyph(ctx, x, head - 4, { kind: 'ask', reason: 'Failure' }, -1, clock, 1)
   if (state === 'working') glyph(ctx, x, head - 4, { kind: 'work' }, -1, clock, 1)
-  if (state === 'done' && !reduced) {
-    // Whistling: ink music notes drifting up and away.
-    for (let i = 0; i < 3; i++) {
-      const k = (clock * 0.3 + i / 3) % 1
-      ctx.save()
-      ctx.globalAlpha = 0.55 * (1 - k)
-      ctx.fillStyle = INK
-      ctx.font = `700 ${15 + i * 2}px ${SANS}`
-      ctx.textAlign = 'center'
-      ctx.fillText(i % 2 ? '\u266B' : '\u266A', Math.round(x + 20 + S + Math.sin(k * 6 + i) * 6), Math.round(head + 6 - k * 34))
-      ctx.restore()
-    }
-  }
   return head
 }
 
@@ -1946,13 +1981,12 @@ function valleyCard(ctx: CanvasRenderingContext2D, x: number, top: number, name:
   ctx.save()
   const lines = [
     ...(s.crew ? [`Crew: ${s.crew}`] : []),
-    `${s.agents} agents, ${s.waiting} waiting on a human`,
     ...(s.unattended ? [s.unattended] : []),
   ]
   ctx.font = `400 14px ${SANS}`
   const wLines = Math.max(...lines.map((l) => ctx.measureText(l).width))
   ctx.font = `700 16px ${SANS}`
-  const word = state === 'working' ? `${s.agents} agents working` : STATE_WORDS[state]
+  const word = STATE_WORDS[state]
   const wName = ctx.measureText(name).width
   ctx.font = `700 13px ${SANS}`
   const wWord = ctx.measureText(word).width + 14

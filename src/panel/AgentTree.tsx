@@ -134,7 +134,7 @@ export function AgentTree() {
   const headSub = headAsk ? 'Needs you' : e.headThinking > 0 ? 'Thinking' : e.phase === 'plan' && !e.planReady ? 'Tilling a patch per task' : 'Watching the crew'
 
   const rows: TreeRow[] = [
-    { id: 'region', depth: 0, label: 'Valleys', sub: `${2 + OTHER_FARMS.length} projects`, go: jump(() => e.setView('valley')) },
+    { id: 'region', depth: 0, label: 'Valleys', sub: '', go: jump(() => e.setView('valley')) },
     {
       id: 'valley',
       depth: 1,

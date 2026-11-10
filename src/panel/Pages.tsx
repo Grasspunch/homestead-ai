@@ -14,7 +14,6 @@ import './pages.css'
 type E = ReturnType<typeof useEngine>
 type Bucket = 'needs' | 'working' | 'done'
 const ORDER: Bucket[] = ['needs', 'working', 'done']
-const BUCKET_WORD: Record<Bucket, string> = { needs: 'needs you', working: 'working', done: 'done' }
 
 // ---- Valleys ---------------------------------------------------------------------------
 
@@ -52,10 +51,9 @@ export function valleyRows(e: E): ValleyRow[] {
 
 export function valleysStatus(e: E) {
   const rows = valleyRows(e)
-  return ORDER.map((b) => [b, rows.filter((r) => r.bucket === b).length] as const)
-    .filter(([, n]) => n)
-    .map(([b, n]) => `${n} ${BUCKET_WORD[b]}`)
-    .join(', ')
+  if (rows.some((r) => r.bucket === 'needs')) return 'A project needs you'
+  if (rows.some((r) => r.bucket === 'working')) return 'Nothing needs you'
+  return 'Every project is done'
 }
 
 export function ValleysBody() {
@@ -81,7 +79,9 @@ export function ValleysBody() {
 // ---- a farm: one agent's field -------------------------------------------------------------
 
 export function farmTitle(e: E, id: RoleId) {
-  return `${e.farmhands[id]?.role ?? id}'s field`
+  const name = e.farmhands[id]?.role ?? id
+  // An agent with no task this run has no field: its page is just the agent.
+  return e.fieldOf(id) ? `${name}'s field` : name
 }
 
 export function FarmBody({ id }: { id: RoleId }) {

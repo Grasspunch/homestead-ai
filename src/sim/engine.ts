@@ -438,7 +438,8 @@ export class Engine {
     const key = `${this.crew}|${this.tasks.map((t) => t.assignee + (t.subtasks.some((s) => s.addedByReplan) ? '+' : '')).join(',')}`
     if (key === this.layoutKey) return
     this.layoutKey = key
-    this.fields = layoutFields(this.team)
+    this.dirty = true
+    this.fields = layoutFields(this.team, new Set(this.tasks.map((t) => t.assignee)))
     this.syncCrewSettings()
     for (const f of this.fields) {
       const ts = this.tasks.filter((t) => f.roles.includes(t.assignee))
@@ -561,9 +562,8 @@ export class Engine {
     this.nav = []
     this.callStart = this.clock
     this.head.scrollT = 0
-    const n = this.attachments.filter((a) => a.selected).length
     this.request('clarify', () => callAgent('clarify', { goal: this.goal, attached: this.attachedNames() }, RECORDED.clarify))
-    this.addLog('Head farmer', `Read the brief and ${n} attachments`, 'info', undefined, 'A new head farmer starts every farm. It only knows the brief and the files, skills and tools attached to it.')
+    this.addLog('Head farmer', 'Read the brief and its attachments', 'info', undefined, 'A new head farmer starts every farm. It only knows the brief and the files, skills and tools attached to it.')
     this.notify()
   }
 
@@ -657,7 +657,7 @@ export class Engine {
     if (this.phase === 'harvest' && this.harvestStage === 'review') {
       const h = this.harvestGates[g]
       if (h.state === 'run') return { state: 'run', text: 'Running again' }
-      if (h.state === 'fail') return { state: 'fail', text: taskId === HARVEST_FAIL.taskId ? (g === HARVEST_FAIL.gate ? HARVEST_FAIL.short : '1 blocking') : 'Blocked' }
+      if (h.state === 'fail') return { state: 'fail', text: taskId === HARVEST_FAIL.taskId ? (g === HARVEST_FAIL.gate ? HARVEST_FAIL.short : 'Blocking') : 'Blocked' }
       if (g === 'review') return h.state === 'look' ? { state: 'pass', text: 'Passed' } : h
       return { state: 'pass', text: this.gates[taskId]?.[g]?.text ?? 'Passed' }
     }
@@ -1151,7 +1151,6 @@ export class Engine {
     if (failed) return { text: `${failed === 'e2e' ? 'End-to-end' : GATES[failed].name} failed`, tone: 'fail' }
     if (done === t.subtasks.length) return { text: 'Running gates', tone: '' }
     if (this.farmhands[t.assignee].paused) return { text: 'Paused', tone: '' }
-    if (done > 0) return { text: `${t.subtasks.length - done} left`, tone: '' }
     if (t.subtasks.some((s) => s.started)) return { text: 'Working', tone: '' }
     const s = t.subtasks[0]
     if ((s.needs ?? []).some((f) => !this.flags.has(f))) return { text: 'Waiting', tone: '' }
@@ -1289,7 +1288,7 @@ export class Engine {
 
   private reviewResult(): GateResult {
     const notes = this.out.review?.data.notes.length ?? 0
-    return { state: 'look', text: `0 blocking, ${notes} note${notes === 1 ? '' : 's'}` }
+    return { state: 'look', text: notes ? 'Notes, nothing blocking' : 'Nothing blocking' }
   }
 
   get gateFailed() {
@@ -1897,7 +1896,7 @@ export class Engine {
       this.call('Reviewer', r)
       const b = r.data.blocking[0]
       if (b && !this.fixSent) {
-        this.harvestGates.review = { state: 'fail', text: `${r.data.blocking.length} blocking` }
+        this.harvestGates.review = { state: 'fail', text: 'Blocking' }
         this.addLog('Reviewer', `Blocking: ${b.problem}`, 'pest', HARVEST_FAIL.taskId, `${b.file} line ${b.line}. ${b.rule}`)
       } else {
         this.harvestGates.review = this.reviewResult()
@@ -1916,7 +1915,7 @@ export class Engine {
         const other = c.data.claims.find((x) => x.farm !== FARM.name)
         this.addLog('Head farmer', `Found the cause in ${NEIGHBOUR.name}: ${c.data.claims.map((x) => x.claim).join(', but ')}`, 'info', t.id, other ? `${other.source}: “${other.quote}”` : c.data.why)
       } else {
-        this.addLog('Head farmer', `Checked ${this.docsChecked} files on 2 farms: no clash found`, 'auto', t.id, c.data.why)
+        this.addLog('Head farmer', 'Checked both farms’ files: no clash found', 'auto', t.id, c.data.why)
         this.raiseCrow()
       }
     }
@@ -2416,7 +2415,7 @@ export class Engine {
     }
     this.gates[task.id] = results
     const passed = this.machineGates(task.id).filter((g) => results[g]?.state === 'pass')
-    if (passed.length) this.addLog('Gates', `${task.name}: ${passed.map((g) => `${GATES[g].name.toLowerCase()} ${results[g]!.text}`).join(', ')}`, 'info', task.id)
+    if (passed.length) this.addLog('Gates', `${task.name}: ${passed.map((g) => GATES[g].name.toLowerCase()).join(', ')} passed`, 'info', task.id)
     if (this.taskRipe(task)) this.addLog(fh.role, `Ripe: ${task.name}`, 'done', task.id)
     this.notify()
   }
@@ -2438,7 +2437,7 @@ export class Engine {
       this.gates[task.id] ??= {}
       this.gates[task.id]!.integration = { state: 'fail', text: INTEGRATION_FAIL.text }
       this.addLog(fh.role, 'Found Saturday slots with no vet on staging', 'pest', task.id, CLASH.failed)
-      if (!this.requested.has('conflict')) this.addLog('Head farmer', `Checking ${this.docsChecked} files on 2 farms for why`, 'info', task.id)
+      if (!this.requested.has('conflict')) this.addLog('Head farmer', 'Checking both farms’ files for why', 'info', task.id)
       const hours = this.out.hours?.data
       this.request('conflict', () =>
         callAgent('conflict', { claim: hours ? `Saturdays ${hours.saturday}` : CLASH.sheet, source: hours?.source ?? 'unknown', failure: CLASH.failed, ourDocs: [...task.signposts] }, RECORDED.conflict),

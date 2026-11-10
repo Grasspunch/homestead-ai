@@ -51,7 +51,7 @@ function TemplatesPage() {
         <ul className="rows flat">
           {teams.map((t) => (
             <li key={t.id}>
-              <Row label={t.name} end={e.crew === t.id ? 'In use' : `${t.members.length} agents`} onClick={() => e.go({ kind: 'settings', id: `templates:team:${t.id}` })} testId={`team-${t.id}`} />
+              <Row label={t.name} end={e.crew === t.id ? 'In use' : undefined} onClick={() => e.go({ kind: 'settings', id: `templates:team:${t.id}` })} testId={`team-${t.id}`} />
             </li>
           ))}
         </ul>

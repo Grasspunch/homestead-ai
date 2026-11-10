@@ -85,14 +85,13 @@ export function Overview() {
 function PlantNow() {
   const e = useEngine()
   if (e.phase === 'brief') return <BriefNow />
-  const n = e.attachments.filter((a) => a.selected).length
   return (
     <div className="plant">
       <div className="plant-goal" data-testid="plant-goal">
         <p>{e.goal}</p>
         <p className="quiet">
           {e.team?.name ? `${e.team.name}, ` : ''}
-          {n} files, skills and tools, {fmtK(e.budget)} energy
+          {fmtK(e.budget)} energy budget
         </p>
       </div>
       <ClarifyNow />
@@ -108,7 +107,6 @@ function PlantNow() {
 function BriefNow() {
   const e = useEngine()
   const [edit, setEdit] = useState(false)
-  const n = e.attachments.filter((a) => a.selected).length
   return (
     <>
       <label className="field-label" htmlFor="goal">
@@ -133,7 +131,7 @@ function BriefNow() {
       <CrewRow />
       <div className="line">
         <span>
-          <b>{n} files, skills and tools</b> the crew may use
+          <b>Files, skills and tools</b> the crew may use
         </span>
         <button className="linkish" onClick={() => setEdit(!edit)} aria-expanded={edit}>
           {edit ? 'Done' : 'Edit'}
@@ -171,11 +169,10 @@ function Slow() {
 function ClarifyNow() {
   const e = useEngine()
   const [open, setOpen] = useState<number | null>(null)
-  const n = e.attachments.filter((a) => a.selected).length
   if (e.phase === 'clarify' && e.headThinking > 0)
     return (
       <>
-        <p className="quiet">Reading your goal and {n} files, skills and tools</p>
+        <p className="quiet">Reading your goal and files</p>
         <Slow />
       </>
     )
@@ -318,7 +315,7 @@ function HarvestNow() {
       <div className={`outbox mergebox ${e.sendState === 'sent' ? 'sent' : ''}`}>
         <ul className="rows">
           <li>
-            <Row mark={<span className="kind pr">PR</span>} label={`Pull request #${OUTPUT.pr}`} sub={`${OUTPUT.files} files, +${OUTPUT.added} −${OUTPUT.removed}`} onClick={() => e.go({ kind: 'out', id: 'pr' })} testId="out-pr" />
+            <Row mark={<span className="kind pr">PR</span>} label={`Pull request #${OUTPUT.pr}`} sub={`+${OUTPUT.added} −${OUTPUT.removed}`} onClick={() => e.go({ kind: 'out', id: 'pr' })} testId="out-pr" />
           </li>
         </ul>
         {e.gateFailed && <MergeControls />}
@@ -332,7 +329,7 @@ function HarvestNow() {
             let mark: 'pass' | 'fail' | 'run' | 'look' = 'pass'
             if (r.state === 'fail') [end, tone, mark] = ['Failed', 'fail', 'fail']
             else if (r.state === 'run' || r.state === 'wait') [end, tone, mark] = ['Running', '', 'run']
-            else if (cs.length && n < cs.length) [end, tone, mark] = [`Look, ${cs.length - n} left`, '', 'look']
+            else if (cs.length && n < cs.length) [end, tone, mark] = ['Look', '', 'look']
             return (
               <li key={g}>
                 <Row mark={<GateMark s={mark} />} label={GATES[g].name} sub={r.text} end={end} tone={tone} onClick={() => e.go({ kind: 'out', id: g })} testId={`gate-${g}`} />
@@ -354,17 +351,16 @@ export function StaysWithYou() {
     <>
     <ul className="rows">
       <li>
-        <Row label="Your decisions" end={String(e.decisions.length)} onClick={() => e.go({ kind: 'out', id: 'decisions' })} />
+        <Row label="Your decisions" onClick={() => e.go({ kind: 'out', id: 'decisions' })} />
       </li>
       <li>
-        <Row label="Lessons saved" end={String(e.seeds.filter((s) => s.isNew).length + e.pendingSeeds.length)} onClick={() => e.go({ kind: 'out', id: 'lessons' })} />
+        <Row label="Lessons saved" onClick={() => e.go({ kind: 'out', id: 'lessons' })} />
       </li>
     </ul>
     <details className="fine">
       <summary>Energy and calls</summary>
       <p>
-        {fmtK(e.energyUsed)} tokens, about ${e.usd.toFixed(2)}. Budget {fmtK(e.budget)}. {e.liveCalls ? `${e.liveCalls} live model calls and ` : ''}
-        {e.simSteps + e.replayCalls} simulated steps.
+        {fmtK(e.energyUsed)} tokens, about ${e.usd.toFixed(2)}. Budget {fmtK(e.budget)}.
       </p>
     </details>
     <button className="linkish" onClick={() => e.reset()} data-testid="restart">

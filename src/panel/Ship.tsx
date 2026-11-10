@@ -66,7 +66,7 @@ export function ShipNow() {
         </li>
         {ciDone && !showCi ? (
           <li>
-            <Row mark={<GateMark s="pass" />} label={`CI on ${OUTPUT.base}`} end={`${CI_JOBS.length} passed`} tone="done" onClick={() => setShowCi(true)} testId="ci-summary" />
+            <Row mark={<GateMark s="pass" />} label={`CI on ${OUTPUT.base}`} end="Passed" tone="done" onClick={() => setShowCi(true)} testId="ci-summary" />
           </li>
         ) : (
           CI_JOBS.map((j) => {
@@ -88,7 +88,7 @@ export function ShipNow() {
           </li>
           {live && (
             <li>
-              <Row mark={<GateMark s="pass" />} label="Canary health" end={`${HEALTH.length} passed`} tone="done" testId="health-summary" />
+              <Row mark={<GateMark s="pass" />} label="Canary health" end="Passed" tone="done" testId="health-summary" />
             </li>
           )}
           {deploying &&

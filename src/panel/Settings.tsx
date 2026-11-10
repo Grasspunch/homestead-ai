@@ -85,7 +85,7 @@ function Root() {
   const liveEv = e.live === false ? 'Needs ANTHROPIC_API_KEY on the server.' : undefined
   const rows: { id: string; label: string; sub?: string; end?: string }[] = [
     { id: 'agents', label: 'Agents', end: String(agents.length) },
-    { id: 'gates', label: 'Done-when gates', end: `${GATE_ORDER.filter((g) => S.gates[g].required).length} required` },
+    { id: 'gates', label: 'Done-when gates' },
     { id: 'mcp', label: 'MCP servers', end: String(tools(e).length) },
     { id: 'sandbox', label: 'Sandbox', end: S.sandbox.where === 'container' ? 'Container' : S.sandbox.where === 'ci' ? 'CI runners' : 'Worktree' },
     { id: 'limits', label: 'Limits', sub: `${k(S.run.budget_tokens)} tokens, $${S.run.budget_usd}, ${S.run.timeout_min} min per run` },
@@ -188,10 +188,9 @@ function Mcp() {
     <div className="settings">
       <ul className="rows">
         {tools(e).map((t) => {
-          const access = t.access ?? []
           return (
             <li key={t.name}>
-              <Row mark={<span className="kind tool">T</span>} label={t.name} end={`${access.filter((a) => a.on).length} allowed`} onClick={() => e.go({ kind: 'lib', id: t.name })} />
+              <Row mark={<span className="kind tool">T</span>} label={t.name} onClick={() => e.go({ kind: 'lib', id: t.name })} />
             </li>
           )
         })}

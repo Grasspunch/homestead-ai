@@ -32,14 +32,8 @@ export function FarmPeek() {
             <dd>{crew}</dd>
           </>
         )}
-        <dt>Agents</dt>
-        <dd>{s.agents}</dd>
-        <dt>Waiting on a human</dt>
-        <dd>{s.waiting}</dd>
         <dt>Energy this week</dt>
         <dd>{fmtK(s.energyWeek)} tokens</dd>
-        <dt>Harvests</dt>
-        <dd>{s.harvests}</dd>
         {s.unattended && (
           <>
             <dt>Runs on its own</dt>

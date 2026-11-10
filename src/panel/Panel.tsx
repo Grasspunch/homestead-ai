@@ -35,31 +35,28 @@ function OverviewStatus() {
     return (
       <>
         <span data-testid="meter-needed">
-          {done === e.tasks.length ? 'Every task done' : `${e.tasks.length - done} ${e.tasks.length - done === 1 ? 'task' : 'tasks'} to go`}. Needed you {e.neededYou} {e.neededYou === 1 ? 'time' : 'times'}.
+          {done === e.tasks.length ? 'Every task done.' : 'The crew is at work.'}
         </span>
         <Meter />
       </>
     )
   if (e.phase === 'ship') {
-    const times = `Needed you ${e.neededYou} ${e.neededYou === 1 ? 'time' : 'times'}.`
-    if (e.shipStage === 'announced') return <>Willow Lane Vets is taking bookings online. {times}</>
-    if (e.shipStage === 'live') return <>Live for everyone at Willow Lane Vets. {times}</>
+    if (e.shipStage === 'announced') return <>Willow Lane Vets is taking bookings online.</>
+    if (e.shipStage === 'live') return <>Live for everyone at Willow Lane Vets.</>
     if (e.shipStage === 'ci') return <>Merged. CI is running on main.</>
     if (e.shipStage === 'cifailed') return <>CI failed on main.</>
-    if (e.shipStage === 'rollback' || e.shipStage === 'rolledback') return <>Rolled back to “Call us to book”. {times}</>
-    if (e.shipStage === 'fixing') return <>Fixing availability search. {times}</>
+    if (e.shipStage === 'rollback' || e.shipStage === 'rolledback') return <>Rolled back to “Call us to book”.</>
+    if (e.shipStage === 'fixing') return <>Fixing availability search.</>
     if (e.shipStage === 'canary' || e.shipStage === 'canary2') return <>Canary live for 5% of visitors.</>
     if (e.shipStage === 'rollout') return <>Rolling out, {e.rollout}% of visitors.</>
-    return <>Merged, not deployed. {times}</>
+    return <>Merged, not deployed.</>
   }
   if (e.gateFailed) return <>Blocked. 1 gate failed.</>
   if (e.harvestStage === 'review' && e.gatesRunning) return <>Gates running.</>
   if (e.approved && e.sendState !== 'sent') return <>Approved, not merged.</>
-  if (e.sendState === 'sent') return <>Merged. Needed you {e.neededYou} {e.neededYou === 1 ? 'time' : 'times'}.</>
+  if (e.sendState === 'sent') return <>Merged.</>
   return (
-    <>
-      Ripe. Needed you {e.neededYou} {e.neededYou === 1 ? 'time' : 'times'}.
-    </>
+<>Ripe. Ready for your review.</>
   )
 }
 

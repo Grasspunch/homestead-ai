@@ -130,7 +130,7 @@ function StepView({ id }: { id: string }) {
         <Section title="Crew and attachments">
           <ul className="rows">
             <li>
-              <Row label={e.team.name} end={`${e.team.members.length} agents`} onClick={() => e.go({ kind: 'settings', id: `templates:team:${e.crew}` })} />
+              <Row label={e.team.name} onClick={() => e.go({ kind: 'settings', id: `templates:team:${e.crew}` })} />
             </li>
             {attached.map((n) => {
               const kind = e.lib(n).kind
@@ -209,10 +209,10 @@ function StepView({ id }: { id: string }) {
       </ul>
       <ul className="rows">
         <li>
-          <Row label="All activity" end={String(e.log.length)} onClick={() => e.go({ kind: 'log', tab: 'all' })} testId="filter-all" />
+          <Row label="All activity" onClick={() => e.go({ kind: 'log', tab: 'all' })} testId="filter-all" />
         </li>
         <li>
-          <Row label="Decided without you" end={String(e.autoDecided.length)} onClick={() => e.go({ kind: 'log', tab: 'auto' })} testId="filter-auto" />
+          <Row label="Decided without you" onClick={() => e.go({ kind: 'log', tab: 'auto' })} testId="filter-auto" />
         </li>
       </ul>
     </>
@@ -491,12 +491,12 @@ function Checks({ g }: { g: GateId }) {
   )
 }
 
-function ResultRows({ rows }: { rows: [string, string, string][] }) {
+function ResultRows({ rows }: { rows: [string, string][] }) {
   return (
     <ul className="rows">
-      {rows.map(([l, s, end]) => (
+      {rows.map(([l, s]) => (
         <li key={l}>
-          <Row mark={<GateMark s="pass" />} label={<span className="mono">{l}</span>} sub={s} end={end} tone="done" />
+          <Row mark={<GateMark s="pass" />} label={<span className="mono">{l}</span>} sub={s} tone="done" />
         </li>
       ))}
     </ul>
@@ -583,7 +583,7 @@ function GateView({ g }: { g: GateId }) {
             )}
           </pre>
           <p className="quiet">
-            {OUTPUT.files} files, +{OUTPUT.added} −{OUTPUT.removed}.
+            +{OUTPUT.added} −{OUTPUT.removed}
           </p>
         </Section>
         <Section title="Checked against">
