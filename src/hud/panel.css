@@ -244,8 +244,10 @@
 .levels button.on, .seg button.on, .page-crew button.on { border-image-source: url(/ui/btn_cream.png); background: none; color: var(--bark); box-shadow: none; }
 .page-crew button:hover { background: none; filter: brightness(1.05); }
 .model, .kit-item { border-image-source: url(/ui/btn_cream.png); }
-.model.on { position: relative; }
-.model.on::after { content: ""; position: absolute; right: -2px; top: -4px; width: 18px; height: 17px; background: url(/ui/ui_check.png) center / contain no-repeat; image-rendering: pixelated; }
+/* A model you can pick is tan; the chosen one is cream with a leaf outline that follows the pixel edge. */
+.model { border-image-source: url(/ui/btn_tan.png); }
+.model:not(.on) b, .model:not(.on) small { color: var(--bark-2); }
+.model.on { border-image-source: url(/ui/btn_cream.png); filter: drop-shadow(3px 0 0 var(--leaf)) drop-shadow(-3px 0 0 var(--leaf)) drop-shadow(0 3px 0 var(--leaf)) drop-shadow(0 -3px 0 var(--leaf)); }
 .page-head > .page-crew { max-width: 62%; flex-wrap: nowrap; }
 .page-crew button { padding: 0 3px; font-size: 12.5px; }
 /* Finished work waiting for you: accept or send back. */

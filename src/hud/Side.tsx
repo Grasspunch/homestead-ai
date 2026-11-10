@@ -390,7 +390,7 @@ export function ApplyFix({ fix }: { fix: Fix }) {
     <div className="fix">
       <span className="grow">
         {fix.title}
-        <span className="sub">{fix.why} Saves about {usd(fix.saves)} a run.</span>
+        <span className="sub">Saves {usd(fix.saves)} a run</span>
       </span>
       {store.applied.has(fix.key) ? (
         <span className="ok px-s">Applied</span>
@@ -447,10 +447,9 @@ export function CrewVsAlone({ s }: { s: RunState }) {
   const found = caught(s)
   return (
     <div className="vs">
-      <h3>This crew against one agent alone</h3>
+      <h3>Crew vs one agent</h3>
       <p className="vs-gap">
         <span className="big">{mins(sooner)}</span> sooner{less > 0.5 ? <>, <b>{usd(less)}</b> less</> : less < -0.5 ? <>, <b>{usd(-less)}</b> more</> : null}
-        <span className="tag grey">Estimate</span>
       </p>
       <div className="vs-grid" role="table">
         <span role="columnheader" />
@@ -462,12 +461,9 @@ export function CrewVsAlone({ s }: { s: RunState }) {
         <span>Cost</span>
         <b>{usd(crew.usd)}</b>
         <span>{usd(one.usd)}</span>
-        <span>Checked by</span>
-        <b>The {s.farmers.tester ? 'Tester' : 'Planner'}, every task</b>
-        <span>Only itself</span>
-        <span>Caught before users</span>
-        <b>{found.length ? `${found.length} problem${found.length > 1 ? 's' : ''}` : 'Nothing yet'}</b>
-        <span>{found.length ? 'Would have shipped' : 'Unchecked'}</span>
+        <span>Caught</span>
+        <b>{found.length}</b>
+        <span>Unchecked</span>
       </div>
       {found.length > 0 && (
         <ul className="vs-caught">
@@ -481,9 +477,6 @@ export function CrewVsAlone({ s }: { s: RunState }) {
           ))}
         </ul>
       )}
-      <p className="fine">
-        The crew works in parallel and each farmer reads only its own files. The Builder runs on Sonnet at half of Opus’s price, and the Tester and Deployer on Haiku for very little. One agent runs every task on Opus in one growing context.
-      </p>
     </div>
   )
 }
@@ -499,10 +492,10 @@ export function UsagePanel({ s }: { s: RunState }) {
     <Panel label="Spend">
       <CrewVsAlone s={s} />
       <div>
-        <h3>Spend</h3>
+        <h3>Spent</h3>
         <div className="stat">
           <span className="big">{usd(s.usage.usd)}</span>
-          {est && <span>of about {usd(est.usd)} planned</span>}
+          {est && <span>of {usd(est.usd)}</span>}
         </div>
         {est && (
           <div className="bar" style={{ marginTop: 8 }}>
@@ -511,7 +504,7 @@ export function UsagePanel({ s }: { s: RunState }) {
         )}
       </div>
       <div>
-        <h3>Each farmer, for what it costs</h3>
+        <h3>By farmer</h3>
         <div className="crew-spend">
           {ids.map((id) => {
             const f = s.farmers[id]!
@@ -530,7 +523,7 @@ export function UsagePanel({ s }: { s: RunState }) {
                 <span className="bar thin">
                   <i style={{ width: `${(f.usd / max) * 100}%`, background: spike ? 'var(--honey)' : '#c9a27a' }} />
                 </span>
-                <span className="returned">{spike ? <b className="warn">Near its limit. </b> : null}{returnOf(s, id)}.</span>
+                {spike && <span className="returned"><b className="warn">Near its limit</b></span>}
                 {fix && <ApplyFix fix={fix} />}
               </div>
             )
@@ -550,7 +543,6 @@ export function UsagePanel({ s }: { s: RunState }) {
           <span className="chip"><span className="sw" style={{ background: 'var(--honey)' }} />Fixing {usd(kinds.retry.usd)}</span>
         </div>
       </div>
-      <p className="fine">{s.actions} actions so far.</p>
     </Panel>
   )
 }

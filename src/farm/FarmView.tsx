@@ -352,21 +352,10 @@ function bed(g: CanvasRenderingContext2D, pl: Plot, wet: boolean) {
 }
 
 function staked(g: CanvasRenderingContext2D, pl: Plot, alpha = 1) {
-  // A ghost of the bed with a wooden stake at each corner: marked out, not dug yet.
+  // A ghost of the bed: marked out, not dug yet.
   g.save()
   g.globalAlpha = 0.32 * alpha
   bed(g, pl, false)
-  g.globalAlpha = alpha
-  const x0 = (pl.x - 1) * PX + 2
-  const y0 = (pl.y - 1) * PX + 1
-  const x1 = (pl.x + pl.w + 1) * PX - 5
-  const y1 = (pl.y + pl.h + 1) * PX - 8
-  for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
-    g.fillStyle = '#5b3a26'
-    g.fillRect(x, y, 3, 7)
-    g.fillStyle = '#b8814f'
-    g.fillRect(x + 1, y, 1, 6)
-  }
   g.restore()
 }
 
@@ -402,7 +391,9 @@ function emote(g: CanvasRenderingContext2D, fx: number, fy: number, what: Emote,
   }
   const m: Record<Exclude<Emote, 'dots'>, [number, number]> = { alert: [5, 8], notes: [8, 8], zzz: [9, 8], check: [0, 8], x: [3, 8], coin: [6, 10], read: [7, 5] }
   const [c, r] = m[what]
-  g.drawImage(IMG.emoji, c * 32, r * 32, 32, 32, bx + 1.5, by + 1, 13, 13)
+  // The cross fills its whole cell, so it's drawn a little smaller to clear the bubble's lower edge.
+  const sz = what === 'x' ? 11 : 13
+  g.drawImage(IMG.emoji, c * 32, r * 32, 32, 32, bx + 1.5 + (13 - sz) / 2, by + 1 + (13 - sz) / 2 - (what === 'x' ? 0.5 : 0), sz, sz)
 }
 
 // A heart rises from a chicken you clicked and fades.
