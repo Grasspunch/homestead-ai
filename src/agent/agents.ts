@@ -2,7 +2,9 @@
 // person's messages to the right farmer. Shared by the server route on Lovable (/api/agent)
 // and the Vite dev server, so local and deployed runs use the same prompts.
 // On Lovable every model, Claude or OpenAI, goes through Lovable's AI gateway with the LOVABLE_API_KEY secret, paid
-// with the workspace's credits. Local dev may call Claude directly with an Anthropic key instead. No key reaches the browser.
+// with the workspace's credits. Out of credits (402), a call falls back to the person's own key for that model's maker,
+// ANTHROPIC_API_KEY or OPENAI_API_KEY, when the server has it. Local dev may call the makers directly without the
+// gateway. No key reaches the browser.
 
 import type { Estimate, FarmerId, FarmerSetup, PlanTask } from '../run/types'
 import { reshapeSchema, type Ctx as ReshapeCtx } from '../run/reshape'
@@ -32,17 +34,27 @@ export interface GatewayClient {
 }
 export const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions'
 
-// The clients a server has. With the gateway, every call goes through it. Without it, Claude models need a direct
-// Anthropic client and OpenAI models can't run: the call throws MissingKey, which the server answers with 503 and the
-// browser turns into a simulated answer with a note.
+// An OpenAI key and, for tests, a stand-in for fetch.
+export interface OpenAIClient {
+  key: string
+  fetch?: typeof fetch
+}
+
+// The clients a server has. With the gateway, every call goes through it first; out of credits, it falls back to the
+// direct client for the model's maker, if there is one. Without the gateway, the direct client is used. Neither: the
+// call throws MissingKey, which the server answers with 503 and the browser turns into a simulated answer with a note.
 export interface Clients {
   gateway?: GatewayClient
   claude?: ClaudeClient
+  openai?: OpenAIClient
 }
+
+// Who answered a call: Lovable AI, or the person's own key for that maker.
+export type Source = 'lovable' | 'anthropic' | 'openai'
 
 export class MissingKey extends Error {
   constructor(public provider: 'anthropic' | 'openai') {
-    super(provider === 'openai' ? 'LOVABLE_API_KEY is not set' : 'ANTHROPIC_API_KEY is not set')
+    super(provider === 'openai' ? 'Neither LOVABLE_API_KEY nor OPENAI_API_KEY is set' : 'Neither LOVABLE_API_KEY nor ANTHROPIC_API_KEY is set')
   }
 }
 
@@ -73,19 +85,36 @@ export interface AgentResult<T> {
   data: T
   tokens: number
   model: string
+  source: Source
 }
 
 async function callJSON<T>(clients: Clients, system: string, user: string, schema: Record<string, unknown>, name = 'Claude Opus 5.5'): Promise<AgentResult<T>> {
   const m = modelOf(name) ?? modelOf('Claude Opus 5.5')!
-  if (clients.gateway) return callGateway<T>(clients.gateway, system, user, schema, m.gateway)
-  if (m.provider === 'openai') throw new MissingKey('openai')
-  const client = clients.claude
-  if (!client) throw new MissingKey('anthropic')
+  const direct = () => (m.provider === 'openai' ? callOpenAI<T>(clients.openai!, system, user, schema, m.api) : callClaude<T>(clients.claude!, system, user, schema, m.api))
+  const hasDirect = m.provider === 'openai' ? !!clients.openai : !!clients.claude
+  if (clients.gateway) {
+    try {
+      return await callGateway<T>(clients.gateway, system, user, schema, m.gateway)
+    } catch (e) {
+      // Out of Lovable credits: try the person's own key for this maker. Missing, or failing too, it stays out of credits.
+      if (!(e instanceof GatewayError) || e.code !== 'credits' || !hasDirect) throw e
+      try {
+        return await direct()
+      } catch (d) {
+        throw new GatewayError('credits', `Out of Lovable credits, and your ${m.provider === 'openai' ? 'OpenAI' : 'Anthropic'} key failed too: ${d instanceof Error ? d.message : String(d)}`)
+      }
+    }
+  }
+  if (!hasDirect) throw new MissingKey(m.provider)
+  return direct()
+}
+
+async function callClaude<T>(client: ClaudeClient, system: string, user: string, schema: Record<string, unknown>, api: string): Promise<AgentResult<T>> {
   const res = await client.beta.messages.create({
-    model: m.api,
+    model: api,
     max_tokens: 16000,
     // Opus falls back on the server when it declines; the smaller models have no server-side fallback.
-    ...(m.api === MODEL ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
+    ...(api === MODEL ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
     output_config: { effort: 'low', format: { type: 'json_schema', schema } },
     system,
     messages: [{ role: 'user', content: user }],
@@ -94,7 +123,37 @@ async function callJSON<T>(clients: Clients, system: string, user: string, schem
   if (res.stop_reason === 'max_tokens') throw new Error('The answer was cut off before it finished.')
   const text = res.content.find((b) => b.type === 'text')?.text
   if (!text) throw new Error('No text in the response.')
-  return { data: JSON.parse(text) as T, tokens: res.usage.input_tokens + res.usage.output_tokens, model: m.api }
+  return { data: JSON.parse(text) as T, tokens: res.usage.input_tokens + res.usage.output_tokens, model: api, source: 'anthropic' }
+}
+
+// The OpenAI Responses API, with the schema as a strict json_schema format: the same contract as the other calls.
+async function callOpenAI<T>(o: OpenAIClient, system: string, user: string, schema: Record<string, unknown>, model: string): Promise<AgentResult<T>> {
+  const res = await (o.fetch ?? fetch)('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${o.key}` },
+    body: JSON.stringify({
+      model,
+      instructions: system,
+      input: user,
+      max_output_tokens: 16000,
+      text: { format: { type: 'json_schema', name: 'homestead_answer', schema, strict: true } },
+    }),
+  })
+  type Body = {
+    status?: string
+    error?: { message?: string } | null
+    output_text?: string
+    output?: { content?: { type: string; text?: string; refusal?: string }[] }[]
+    usage?: { input_tokens?: number; output_tokens?: number }
+  }
+  const body = (await res.json().catch(() => ({}))) as Body
+  if (!res.ok) throw new Error(body.error?.message ?? `OpenAI answered ${res.status}.`)
+  const parts = (body.output ?? []).flatMap((x) => x.content ?? [])
+  if (parts.some((c) => c.type === 'refusal')) throw new Error('The model declined this request.')
+  if (body.status === 'incomplete') throw new Error('The answer was cut off before it finished.')
+  const text = body.output_text ?? parts.find((c) => c.type === 'output_text')?.text
+  if (!text) throw new Error('No text in the response.')
+  return { data: JSON.parse(text) as T, tokens: (body.usage?.input_tokens ?? 0) + (body.usage?.output_tokens ?? 0), model, source: 'openai' }
 }
 
 // Lovable's gateway speaks OpenAI's chat completions for every model. The schema goes as a strict json_schema
@@ -140,7 +199,7 @@ async function callGateway<T>(g: GatewayClient, system: string, user: string, sc
   }
   const bad = mismatch(schema, data)
   if (bad) throw new Error(`The answer didn't match the plan's shape (${bad}).`)
-  return { data: data as T, tokens: (body.usage?.prompt_tokens ?? 0) + (body.usage?.completion_tokens ?? 0), model }
+  return { data: data as T, tokens: (body.usage?.prompt_tokens ?? 0) + (body.usage?.completion_tokens ?? 0), model, source: 'lovable' }
 }
 
 // A small check of an answer against the JSON schema subset these calls use: type, enum, required, items, anyOf.

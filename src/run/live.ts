@@ -2,12 +2,15 @@
 // There is no recorded fallback for 'plan': a recorded plan can't match an arbitrary goal,
 // so a failed call throws and the caller shows the error.
 
-import type { AgentTask, PlanOut, ReshapeOut, RouteInput, RouteOut } from '../agent/agents'
+import type { AgentTask, PlanOut, ReshapeOut, RouteInput, RouteOut, Source } from '../agent/agents'
 import type { Ctx as ReshapeCtx } from './reshape'
 
 export type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
 
-export type LiveResult<T> = T & { tokens: number; model?: string }
+export type LiveResult<T> = T & { tokens: number; model?: string; source?: Source }
+
+// Who answered a live call, as the screen says it.
+export const SOURCE: Record<Source, string> = { lovable: 'Lovable AI', anthropic: 'your Anthropic key', openai: 'your OpenAI key' }
 
 const ENDPOINT = '/api/agent'
 const HEADERS: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -17,6 +20,7 @@ export interface Keys {
   anthropic: boolean
   openai: boolean
   gateway: boolean
+  own: { anthropic: boolean; openai: boolean } // the person's own keys, used when Lovable AI is out of credits
 }
 let keysAvailable: Promise<Keys> | null = null
 
@@ -24,8 +28,13 @@ let keysAvailable: Promise<Keys> | null = null
 export function probeKeys(): Promise<Keys> {
   keysAvailable ??= fetch(ENDPOINT, { headers: HEADERS })
     .then((r) => (r.ok ? r.json() : {}))
-    .then((j: { live?: boolean; gateway?: boolean; keys?: Partial<Keys> }) => ({ anthropic: !!(j.keys?.anthropic ?? j.live), openai: !!j.keys?.openai, gateway: !!j.gateway }))
-    .catch(() => ({ anthropic: false, openai: false, gateway: false }))
+    .then((j: { live?: boolean; gateway?: boolean; keys?: Partial<Keys>; own?: Partial<Keys['own']> }) => ({
+      anthropic: !!(j.keys?.anthropic ?? j.live),
+      openai: !!j.keys?.openai,
+      gateway: !!j.gateway,
+      own: { anthropic: !!j.own?.anthropic, openai: !!j.own?.openai },
+    }))
+    .catch(() => ({ anthropic: false, openai: false, gateway: false, own: { anthropic: false, openai: false } }))
   return keysAvailable
 }
 
@@ -51,7 +60,7 @@ export class GatewayRefused extends Error {
   constructor(public code: 'credits' | 'rate' | 'model', model?: string) {
     super(
       code === 'credits'
-        ? 'Out of Lovable credits, simulated instead'
+        ? 'Simulated (out of credits)'
         : code === 'rate'
           ? 'Lovable AI rate limit reached, simulated instead'
           : `Lovable AI doesn't offer the model "${model ?? '?'}", simulated instead. Check its id in src/run/kit.ts.`,
@@ -66,7 +75,7 @@ async function call<T>(task: AgentTask, input: Record<string, unknown>): Promise
   } catch {
     throw new Error('Could not reach the agent server.')
   }
-  let body: { data?: T; tokens?: number; model?: string; error?: string; missing?: 'anthropic' | 'openai'; code?: 'credits' | 'rate' | 'model' } | null = null
+  let body: { data?: T; tokens?: number; model?: string; source?: Source; error?: string; missing?: 'anthropic' | 'openai'; code?: 'credits' | 'rate' | 'model' } | null = null
   try {
     body = await res.json()
   } catch {
@@ -80,7 +89,7 @@ async function call<T>(task: AgentTask, input: Record<string, unknown>): Promise
     const why = body?.error ?? (res.ok ? 'The agent sent back no answer.' : `The agent server answered ${res.status}.`)
     throw new Error(task === 'plan' ? `Couldn't make a plan: ${why}` : task === 'reshape' ? `Couldn't read the change: ${why}` : `Couldn't route the message: ${why}`)
   }
-  return { ...body.data, tokens: body.tokens ?? 0, model: body.model }
+  return { ...body.data, tokens: body.tokens ?? 0, model: body.model, source: body.source }
 }
 
 // `model` is the Planner's model, by its picker name: the server picks the provider and model id from it.

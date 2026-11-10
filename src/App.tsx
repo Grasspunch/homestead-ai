@@ -288,8 +288,8 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         <b>Planner</b>
         <span className="tag grey">Plan</span>
         {p.plannedLive && (
-          <span className="tag sky" title={`This plan came from a live call to ${pl?.model ?? 'Claude Opus 5.5'}`}>
-            Planned live by {pl?.agent === 'codex' ? 'Codex' : 'Claude'}
+          <span className="tag sky" title={`This plan came from a live call to ${pl?.model ?? 'Claude Opus 5.5'}, through ${p.liveSource ?? 'Lovable AI'}`}>
+            Planned live: {cap(p.liveSource ?? 'Lovable AI')}
           </span>
         )}
         {!p.plannedLive && noKey && <span className="tag gold">{p.liveNote}</span>}
@@ -881,6 +881,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
     store.noteFor(p.id, r.data.to, msg)
     store.chatTo(p.id, { from: 'planner', text: r.data.reply, to: r.data.to })
     if (r.error) store.say(r.error)
+    else if (r.source && r.source !== 'Lovable AI') store.say(`Out of Lovable credits, answered through ${r.source}`)
   }
   return (
     <Dialogue farmer="planner" side={side}>
@@ -952,6 +953,8 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
   )
 }
 
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+
 function Settings() {
   const st = useStore()
   const [live, setLive] = useState(getLiveMode())
@@ -984,9 +987,15 @@ function Settings() {
         <div>
           <dt>Live:</dt>
           <dd className={keys?.gateway || keys?.anthropic ? 'yes' : 'no'}>
-            {!keys ? '…' : keys.gateway ? 'Lovable AI (uses workspace credits)' : keys.anthropic ? 'Claude only, with the Anthropic key' : 'Not set up'}
+            {!keys ? '…' : keys.gateway ? 'Lovable AI (uses workspace credits)' : keys.anthropic || keys.openai ? 'Your own keys' : 'Not set up'}
           </dd>
         </div>
+        {keys && (keys.own.anthropic || keys.own.openai) && (
+          <div>
+            <dt>{keys.gateway ? 'Out of credits:' : 'Keys:'}</dt>
+            <dd className="yes">{[keys.own.anthropic && 'your Anthropic key', keys.own.openai && 'your OpenAI key'].filter(Boolean).join(', ')}</dd>
+          </div>
+        )}
       </dl>
       <button className="toggle" onClick={() => store.enableNotifications(!st.notifications)}>
         <span className={`switch${st.notifications ? ' on' : ''}`} />

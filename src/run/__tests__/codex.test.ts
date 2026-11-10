@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { GATEWAY_URL, MODEL, MissingKey, errorReply, mismatch, modelFor, runAgent, type ClaudeClient } from '../../agent/agents'
-import { NO_KEY, isFallbackNote, plan, reshapeRead, setLiveMode } from '../agent'
+import { NO_KEY, isFallbackNote, plan, reshapeRead, route, setLiveMode } from '../agent'
 import { MODELS, agentName, providerOf } from '../kit'
 import { resetLiveProbe } from '../live'
 import { simulatePlan } from '../simPlan'
@@ -126,6 +126,72 @@ describe('live calls go through Lovable AI', () => {
   })
 })
 
+describe('out of Lovable credits, the person’s own key answers', () => {
+  const OUT = { error: { message: 'Payment required' } }
+  const claudeOk = () => vi.fn(async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(OK) }], usage: { input_tokens: 2, output_tokens: 2 } }))
+  const openaiOk = () => {
+    const calls: { url: string; model: string }[] = []
+    const fetch = (async (url: string, init: RequestInit) => {
+      calls.push({ url, model: JSON.parse(String(init.body)).model })
+      return new Response(JSON.stringify({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify(OK) }] }], usage: { input_tokens: 3, output_tokens: 3 } }))
+    }) as unknown as typeof globalThis.fetch
+    return { calls, client: { key: 'sk-test', fetch } }
+  }
+  it('Lovable AI first: with credits, the own keys are never called', async () => {
+    const create = claudeOk()
+    const o = openaiOk()
+    const r = await runAgent({ gateway: gateway(OK).client, claude: { beta: { messages: { create } } }, openai: o.client }, 'route', { model: 'Claude Opus 5.5', ...ROUTE_IN })
+    expect(r.source).toBe('lovable')
+    expect(create).not.toHaveBeenCalled()
+    expect(o.calls).toHaveLength(0)
+  })
+  it('a Claude farmer falls back to the Anthropic key, on its Anthropic id', async () => {
+    const create = claudeOk()
+    const o = openaiOk()
+    const r = await runAgent({ gateway: gateway(OUT, 402).client, claude: { beta: { messages: { create } } }, openai: o.client }, 'route', { model: 'Claude Opus 5.5', ...ROUTE_IN })
+    expect([r.source, r.model]).toEqual(['anthropic', 'claude-haiku-4-5'])
+    expect(o.calls).toHaveLength(0)
+  })
+  it('an OpenAI farmer falls back to the OpenAI key, on its OpenAI id', async () => {
+    const create = claudeOk()
+    const o = openaiOk()
+    const r = await runAgent({ gateway: gateway(OUT, 402).client, claude: { beta: { messages: { create } } }, openai: o.client }, 'plan', { model: 'GPT-6.1 Sol', goal: 'x' })
+    expect(r.source).toBe('openai')
+    expect(o.calls[0]).toEqual({ url: 'https://api.openai.com/v1/responses', model: 'gpt-6.1-sol' })
+    expect(create).not.toHaveBeenCalled()
+  })
+  it('no key for that maker, or it fails too: still out of credits, so simulated', async () => {
+    const onlyClaude = { gateway: gateway(OUT, 402).client, claude: { beta: { messages: { create: claudeOk() } } } }
+    expect(errorReply(await runAgent(onlyClaude, 'route', { model: 'GPT-6 Luna', ...ROUTE_IN }).catch((e) => e))).toMatchObject({ status: 402, body: { code: 'credits' } })
+    const failing = { gateway: gateway(OUT, 402).client, claude: { beta: { messages: { create: vi.fn(async () => { throw new Error('invalid x-api-key') }) } } } }
+    const e = await runAgent(failing, 'route', { model: 'Claude Sonnet 5', ...ROUTE_IN }).catch((x) => x)
+    expect(errorReply(e)).toMatchObject({ status: 402, body: { code: 'credits' } })
+    expect(e.message).toMatch(/your Anthropic key failed too: invalid x-api-key/)
+  })
+  it('a rate limit or a wrong id does not spend the own keys', async () => {
+    const create = claudeOk()
+    const e = await runAgent({ gateway: gateway({}, 429).client, claude: { beta: { messages: { create } } } }, 'route', ROUTE_IN).catch((x) => x)
+    expect(errorReply(e).status).toBe(429)
+    expect(create).not.toHaveBeenCalled()
+  })
+  it('the screen names the source: plan tag and reshape note', async () => {
+    const real = globalThis.fetch
+    globalThis.fetch = (async (_u: string, init?: RequestInit) =>
+      !init?.method
+        ? new Response(JSON.stringify({ live: true, gateway: true, keys: { anthropic: true, openai: true }, own: { anthropic: true, openai: false } }))
+        : new Response(JSON.stringify({ data: { title: 'x', reply: 'ok', changes: [] }, tokens: 1, model: 'claude-haiku-4-5', source: 'anthropic' }))) as unknown as typeof fetch
+    try {
+      setLiveMode(true)
+      const r = await route({ ...ROUTE_IN, farmers: ROUTE_IN.farmers as never } as never)
+      expect(r.source).toBe('your Anthropic key')
+    } finally {
+      globalThis.fetch = real
+      setLiveMode(false)
+      resetLiveProbe()
+    }
+  })
+})
+
 describe('when Lovable AI can’t answer, the call is simulated and says so', () => {
   const real = globalThis.fetch
   afterEach(() => {
@@ -155,7 +221,7 @@ describe('when Lovable AI can’t answer, the call is simulated and says so', ()
     server({ gateway: true }, () => new Response(JSON.stringify({ error: 'Out of Lovable credits', code: 'credits' }), { status: 402 }))
     setLiveMode(true)
     const r = await plan(SAMPLE_GOAL)
-    expect([r.live, r.error]).toEqual([false, 'Out of Lovable credits, simulated instead'])
+    expect([r.live, r.error]).toEqual([false, 'Simulated (out of credits)'])
     expect(r.data.farmers.length).toBeGreaterThan(0)
     expect(isFallbackNote(r.error)).toBe(true)
   })
@@ -177,6 +243,6 @@ describe('when Lovable AI can’t answer, the call is simulated and says so', ()
     server({ gateway: true }, () => new Response('{"code":"credits"}', { status: 402 }))
     setLiveMode(true)
     const r = await reshapeRead('skip the deployer', { farmers: ['builder', 'tester', 'deployer'], tasks: [] } as never)
-    expect(r).toEqual({ proposal: null, note: 'Out of Lovable credits, simulated instead' })
+    expect(r).toEqual({ proposal: null, note: 'Simulated (out of credits)' })
   })
 })

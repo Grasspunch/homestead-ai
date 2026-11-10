@@ -37,6 +37,7 @@ export interface Project {
   autonomy: Autonomy
   liveNote?: string // why a live call fell back to the simulation
   plannedLive?: boolean // the plan came from the real Planner, not the simulation
+  liveSource?: string // who answered it: Lovable AI, or your own Anthropic or OpenAI key
   sendBacks?: Record<string, { task: string; note: string }> // work you sent back from the pull request review, by ask
   rollbacks?: number[] // run times you rolled a live release back
   everSentBack?: boolean // a send back on this farm, ever: the trust offer never follows one

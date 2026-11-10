@@ -111,8 +111,9 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 ## A mixed crew
 - Models are grouped by maker wherever you pick one: "Claude" first, then "OpenAI (Codex)". In the plan's select that's an optgroup; on the farmer page each group has a small bold meta heading over its own grid of model buttons.
 - The farmer page names the agent under the farmer's name, in meta ink: "GPT-6.1 Sol on Codex", "Claude Sonnet 5 on Claude Code".
-- Settings shows one row under Live mode, "Live: Lovable AI (uses workspace credits)", in bold leaf when it can run, meta ink when it can't. Never a key.
-- A plan simulated for an expected reason carries a gold tag with it ("Out of Lovable credits, simulated instead", "Lovable AI rate limit reached, simulated instead") instead of the red "Live call failed". A wrong model id is a failure: red tag, and the line under it names the id to check.
+- Settings shows a row under Live mode, "Live: Lovable AI (uses workspace credits)", in bold leaf when it can run, meta ink when it can't, and under it "Out of credits: your Anthropic key, your OpenAI key" for the own keys the server has. Never a key.
+- A live plan's sky tag names who answered: "Planned live: Lovable AI", or "Planned live: Your Anthropic key" when credits ran out. A routed message answered by an own key says so in a toast.
+- A plan simulated for an expected reason carries a gold tag with it ("Simulated (out of credits)", "Lovable AI rate limit reached, simulated instead") instead of the red "Live call failed". A wrong model id is a failure: red tag, and the line under it names the id to check.
 
 ## Ask me, and proof that leads with the task
 - How often the crew stops for you is one select-styled field (the soft well with the pixel ▾): "Ask me: When it matters". It replaces the row of three level buttons everywhere: the plan's foot, the Control panel and /kit.

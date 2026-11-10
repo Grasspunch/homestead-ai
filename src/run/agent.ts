@@ -6,7 +6,7 @@
 
 import type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
 import type { FarmerId } from './types'
-import { GatewayRefused, KeyMissing, planGoal as livePlan, probeKeys, reshapeLive, routeMessage as liveRoute } from './live'
+import { GatewayRefused, KeyMissing, SOURCE, planGoal as livePlan, probeKeys, reshapeLive, routeMessage as liveRoute } from './live'
 import { providerOf } from './kit'
 import { changesFromLive, type Ctx as ReshapeCtx, type Proposal } from './reshape'
 import { simulatePlan, simulateRoute } from './simPlan'
@@ -36,6 +36,7 @@ export interface AgentAnswer<T> {
   data: T
   live: boolean
   error?: string // why a live call fell back
+  source?: string // who answered a live call: "Lovable AI", "your Anthropic key" or "your OpenAI key"
 }
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -54,7 +55,9 @@ async function run<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, 
   const provider = providerOf(model)
   if (live && (await probeKeys())[provider]) {
     try {
-      return { data: await liveCall(), live: true }
+      const data = await liveCall()
+      const src = (data as { source?: keyof typeof SOURCE }).source
+      return { data, live: true, source: src && SOURCE[src] }
     } catch (e) {
       return { data: sim(), live: false, error: noteOf(e) }
     }
@@ -81,7 +84,7 @@ export async function reshapeRead(message: string, ctx: ReshapeCtx, model?: stri
   try {
     const out = await reshapeLive(message, ctx, model)
     const proposal = changesFromLive(out, ctx)
-    return { proposal: proposal && { ...proposal, note: 'Read by the live Planner' } }
+    return { proposal: proposal && { ...proposal, note: `Read by the live Planner, through ${out.source ? SOURCE[out.source] : 'Lovable AI'}` } }
   } catch (e) {
     if (e instanceof KeyMissing || e instanceof GatewayRefused) return { proposal: null, note: noteOf(e) }
     return { proposal: null, note: `The live Planner failed (${e instanceof Error ? e.message : String(e)}), so I read this myself.` }
