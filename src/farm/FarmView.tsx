@@ -8,13 +8,13 @@ import { draw, frame, hasFrame } from '../map/atlas'
 import { atlasLoaded } from '../hud/bits'
 import { TINT } from '../run/crew'
 import { ProofPop } from '../hud/Proof'
+import { stepWalker, type Dir, type Walker } from './walk'
 import type { FarmerId, RunState, TaskState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
 
 const PX = 16 // atlas pixels per tile
 type Crop = 'wheat' | 'carrot' | 'pumpkin' | 'tulip' | 'cabbage'
 export const CROPS: Crop[] = ['wheat', 'carrot', 'tulip', 'pumpkin', 'cabbage']
-type Dir = 'down' | 'up' | 'left' | 'right'
 type Emote = 'alert' | 'notes' | 'dots' | 'check' | 'x' | 'coin' | 'read' | 'zzz'
 
 export interface Plot {
@@ -93,11 +93,6 @@ interface Cam {
   oy: number
 }
 
-interface Walker {
-  x: number
-  y: number
-  dir: Dir
-}
 
 // When you change the farm, a removed plot goes up in a puff of pixel cloud and the rest slide together.
 // The atlas has no smoke sprite, so the cloud is drawn here, in the same pixel size and palette.
@@ -798,23 +793,12 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
       w = { x: pose.x, y: pose.y, dir: pose.dir }
       walkers.set(id, w)
     }
-    const dx = pose.x - w.x
-    const dy = pose.y - w.y
-    const d = Math.hypot(dx, dy)
-    const step = 4.5 * dt
     let anim = pose.anim
     let dir = pose.dir
-    if (d > 0.05) {
-      if (d <= step) {
-        w.x = pose.x
-        w.y = pose.y
-      } else {
-        // Walk the longer leg first, so farmers move along rows and columns, not diagonals.
-        if (Math.abs(dx) > 0.05 && (Math.abs(dx) >= Math.abs(dy) || Math.abs(dy) < 0.05)) w.x += Math.sign(dx) * Math.min(step, Math.abs(dx))
-        else w.y += Math.sign(dy) * Math.min(step, Math.abs(dy))
-        anim = 'walk'
-        dir = Math.abs(pose.x - w.x) > 0.05 && Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
-      }
+    const walked = stepWalker(w, pose.x, pose.y, 4.5 * dt)
+    if (walked) {
+      anim = 'walk'
+      dir = walked
     }
     const fx = w.x
     const fy = w.y
