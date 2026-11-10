@@ -401,14 +401,14 @@ export function outcome(s: RunState): { line: string; value: string } | null {
   const checks = caught(s).filter((x) => x.kind === 'check').length
   if (!checks) return null
   const gap = s.done.usd - s.soloActual.usd
-  const cost = Math.abs(gap) < 0.5 ? 'Same cost as one agent' : gap > 0 ? `${usd(gap)} more than one agent` : `${usd(-gap)} less than one agent`
+  const cost = Math.abs(gap) < 0.5 ? 'cost the same' : gap > 0 ? `cost ${usd(gap)} less` : `cost ${usd(-gap)} more`
   const sooner = s.soloActual.minutes - s.done.minutes
   // The time rests on an assumption, so it says so: one agent's steps run about a third slower.
-  const time = sooner > 0 ? `, ${mins(sooner)} sooner assuming one agent runs a third slower` : ''
+  const time = sooner > 0 ? ` and take about ${mins(sooner)} longer, assuming it runs a third slower` : ''
   const spent = s.checkUsd !== undefined ? `${usd(s.checkUsd)} of checks` : 'A separate checker'
   return {
     line: `${spent} caught ${checks} problem${checks === 1 ? '' : 's'} before merge. One agent has nobody to catch them.`,
-    value: `${cost}${time}, and ${spent.charAt(0).toLowerCase() + spent.slice(1)} caught ${checks} problem${checks === 1 ? '' : 's'} before merge.`,
+    value: `${spent} caught ${checks} problem${checks === 1 ? '' : 's'} before merge. One agent alone would ${cost}${time}.`,
   }
 }
 
@@ -439,7 +439,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
         {less > 0.5 ? <>, <b>{usd(less)}</b> less</> : less < -0.5 ? <>, <b>{usd(-less)}</b> more</> : null}
       </p>
       {out && <p className="vs-out">{out.line}</p>}
-      <p className="vs-note">One agent carries every file’s context, so each step runs about a third slower and costs about 10% more.</p>
+      <p className="vs-note">One agent holds every file in context, so each step is about a third slower and 10% dearer.</p>
       <div className="vs-grid" role="table">
         <span role="columnheader" />
         <span role="columnheader">This crew</span>
@@ -740,7 +740,7 @@ export function ControlPanel({ p }: { p: Project }) {
           )
         })}
       </div>
-      {p.approved && <p className="fine">Changing this replays the run from the start with the new setting.</p>}
+      {p.approved && <p className="fine">Changing this restarts the run.</p>}
     </Panel>
   )
 }

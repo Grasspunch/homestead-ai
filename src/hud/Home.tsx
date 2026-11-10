@@ -184,7 +184,7 @@ export function Home() {
               </span>
             )}
           </div>
-          <p>Tell me what you want built. I’ll pick a crew, give each farmer only what it needs, and lay out the farm.</p>
+          <p>Tell me what to build. I’ll pick a crew and give each farmer only what it needs.</p>
           <form
             className="row"
             onSubmit={(e) => {

@@ -312,8 +312,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
             // How sure: how much of the task it has seen. Its hard cases are still ahead, and cost the most.
             confidence: seen >= 0.75 && steady ? 'high' : seen >= 0.5 && steady ? 'medium' : 'low',
             basis: `From ${i + 1} of its ${lines.length} steps, at ${stepCosts.slice(0, i + 1).map(money).join(' and ')}${steady ? ', a steady rate' : ', and rising'}. The hard cases are in the steps left, and cost the most.`,
-            question: `${task.name} is costing more than planned. It has used ${cents(spent)} of its ${cents(budget)} and is about half done.`,
-            impact: `At this rate it ends near ${money(projected)}. Splitting it keeps this part at ${cents(budget)} and gives the hard cases their own ${cents(rest$)}, about ${money(projected - budget - rest$)} less.`,
+            question: `${task.name} is over plan: ${cents(spent)} of its ${cents(budget)} spent, about half done.`,
+            impact: `At this rate it ends near ${money(projected)}. Splitting it caps this part at ${cents(budget)} and gives the hard cases ${cents(rest$)} of their own, about ${money(projected - budget - rest$)} less.`,
             suggested,
             alternatives: [raise, 'Stop it here'],
           })

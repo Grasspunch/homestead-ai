@@ -161,7 +161,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
           </div>
         )}
         {p.kind === 'sample' ? (
-          <span className="tag gold" title="Every farmer, cost and check is simulated, and the run replays the same way each time">
+          <span className="tag gold" title="Simulated: every run plays out the same way">
             Simulated sample
           </span>
         ) : (
@@ -232,7 +232,7 @@ function Dialogue({ farmer, side, dock = false, children }: { farmer: FarmerId; 
 function DemoTag({ goal }: { goal: string }) {
   const sc = scenario(goal)
   return (
-    <span className="tag gold" title={sc.matched ? `Simulated: the farmers act out the ${sc.name.toLowerCase()} scenario` : 'Simulated: your goal matches none of the scenarios, so the farmers act out a generic app'}>
+    <span className="tag gold" title={sc.matched ? `Simulated: the ${sc.name.toLowerCase()} scenario` : 'Simulated: no scenario matches your goal, so the crew builds a generic app'}>
       Simulated
     </span>
   )
@@ -296,21 +296,19 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
       <p className="plan-lead">
         {ids.length > 1 ? (
           <>
-            This crew of {ids.length} takes about <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>
-            {one && est ? (
+            About <b>{est && mins(est.minutes)}</b> and <b>{est && usd(est.usd)}</b> with {ids.length} farmers.
+            {one && est && (
               <>
-                , against one Sonnet agent alone:{' '}
-                {one.minutes > est.minutes ? <b className="gain">{mins(one.minutes - est.minutes)} sooner</b> : <b>{mins(est.minutes - one.minutes)} slower</b>}
-                {Math.abs(est.usd - one.usd) < 0.5 ? ', at the same cost' : est.usd > one.usd ? <>, and <b>{usd(est.usd - one.usd)} more</b></> : <>, and <b>{usd(one.usd - est.usd)} less</b></>}
-                {s.farmers.tester ? ', with every task checked by someone else' : ''}.
+                {' '}One Sonnet agent alone would{' '}
+                {one.minutes > est.minutes ? <>take <b className="gain">{mins(one.minutes - est.minutes)} longer</b></> : <>finish <b>{mins(est.minutes - one.minutes)} sooner</b></>}
+                {Math.abs(est.usd - one.usd) < 0.5 ? ' for the same cost' : est.usd > one.usd ? <> and cost <b>{usd(est.usd - one.usd)} less</b></> : <> and cost <b>{usd(one.usd - est.usd)} more</b></>}
+                {s.farmers.tester ? ', with no one checking its work' : ''}.
               </>
-            ) : (
-              '.'
             )}
           </>
         ) : (
           <>
-            One agent, everything in a row: <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>.
+            One agent, one task at a time: <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>.
           </>
         )}
       </p>
@@ -470,8 +468,8 @@ function TrustDialogue({ side }: { side: boolean }) {
       <div className="who">
         <b>Planner</b>
       </div>
-      <p>Three clean runs in a row: no rollback, nothing sent back. Merge future pull requests by itself when every check passes?</p>
-      <p className="impact">A failed check always asks you, and a rollback takes this back.</p>
+      <p>Three clean runs in a row. Merge future pull requests by itself when every check passes?</p>
+      <p className="impact">A failed check still asks you, and a rollback turns this off.</p>
       <div className="row">
         <button className="btn" onClick={() => store.answerTrust(true)} autoFocus>
           <Ico name="check" />
@@ -729,7 +727,7 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
         : r.why === 'no'
           ? 'Got it, not that. Which of these instead?'
           : r.why === 'question'
-            ? 'That reads as a question, so nothing has changed. Pick one of these, or tell me which.'
+            ? 'That sounds like a question, so I haven’t changed anything. Pick an option or tell me which.'
             : r.why === 'amount'
               ? `${r.amount} isn’t one of these options, so nothing has changed. Pick one, or tell me which.`
               : `I can’t match “${clip(msg)}” to one of these options, so this stays open. Pick one, or tell me again.`
@@ -757,7 +755,7 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
       {miss && <p className="said">{miss}</p>}
       <form className="row grow-form in-words" onSubmit={send}>
         <span className="field">
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Answer in your words, and I’ll match it to an option" aria-label="Answer in your words, and I’ll match it to an option" />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Or answer in your own words" aria-label="Answer in your own words" />
         </span>
         <button className="btn tan" type="submit" disabled={!text.trim()}>
           <Ico name="chat" />
@@ -786,7 +784,7 @@ function doneLead(s: RunState) {
   // A task you stopped part way is in, but not all of it.
   const cut = work.filter((t) => t.stopped && t.status === 'accepted').length
   if (shipped < work.length) return `${shipped} of ${work.length} tasks shipped, ${where}.`
-  return cut ? `All ${work.length} tasks are in, ${cut} of them cut short by you, and ${where}.` : `Everything is in and ${where}.`
+  return cut ? `All ${work.length} tasks are in, ${cut} of them cut short by you, and ${where}.` : `All ${work.length} tasks are in and ${where}.`
 }
 
 // Your request, read into changes: one row each, all on, and you take off any you want kept as it is.
@@ -806,7 +804,7 @@ function ChangeCard({ side }: { side: boolean }) {
           {pd.proposal.title}
         </span>
       </div>
-      <p>{pd.denied ? 'This browser blocks notifications, so each stage will show here as a message instead.' : `Make ${pd.proposal.rows.length === 1 ? 'this change' : `these ${pd.proposal.rows.length} changes`} to the farm?`}</p>
+      <p>{pd.denied ? 'Notifications are blocked in this browser, so each stage will show here instead.' : `Make ${pd.proposal.rows.length === 1 ? 'this change' : `these ${pd.proposal.rows.length} changes`} to the farm?`}</p>
       {pd.proposal.note && <p className="sureness">{pd.proposal.note}</p>}
       <ul className="change-rows" aria-label="Changes">
         {pd.proposal.rows.map((r) => (
@@ -961,7 +959,7 @@ function Settings() {
         <span className={`switch${live ? ' on' : ''}`} />
         <span>
           Live mode
-          <small>The Planner runs on Claude with the server’s API key. Off, it’s simulated and spends nothing.</small>
+          <small>On, the Planner calls Claude with the server’s API key. Off, it’s simulated and free.</small>
         </span>
       </button>
       <button className="toggle" onClick={() => store.enableNotifications(!st.notifications)}>
