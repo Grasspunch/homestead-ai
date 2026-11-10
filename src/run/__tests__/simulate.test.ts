@@ -138,3 +138,17 @@ describe('your answers branch the run', () => {
     expect(t.status).not.toBe('ripe')
   })
 })
+
+describe('nobody grades its own work', () => {
+  it('every check, verify and accept comes from a different farmer', () => {
+    for (const g of [GOAL, 'Add a checkout with Stripe', 'Build a metrics dashboard', 'Plan a hiring sprint']) {
+      for (const n of [2, 3, 5]) {
+        const plan = simulatePlan(g, n)
+        const ev = simulateRun({ goal: g, ...plan, autonomy: AUTONOMY_PRESETS.often })
+        const owner = new Map<string, string>()
+        for (const e of ev) if (e.type === 'task_start') owner.set(e.task, e.farmer)
+        for (const e of ev) if ((e.type === 'check' || e.type === 'verify' || e.type === 'accept') && owner.has(e.task)) expect(e.by, `${g} ${n} ${e.type} ${e.task}`).not.toBe(owner.get(e.task))
+      }
+    }
+  })
+})

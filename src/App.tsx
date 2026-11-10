@@ -151,6 +151,9 @@ function Top({ p, s }: { p: Project; s: RunState }) {
   )
 }
 
+// The pixel font is for labels of three words or fewer; a longer answer reads better in the text face.
+const long = (label: string) => (label.trim().split(/\s+/).length > 3 ? ' long' : '')
+
 function Dialogue({ farmer, side, children }: { farmer: FarmerId; side: boolean; children: React.ReactNode }) {
   return (
     <section className={`dlg${side ? ' with-side' : ''}`}>
@@ -479,13 +482,13 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
         </>
       )}
       <div className="row">
-        <button className="btn" onClick={() => store.answer(ask.id, ask.suggested)} autoFocus>
+        <button className={`btn${long(ask.suggested)}`} onClick={() => store.answer(ask.id, ask.suggested)} autoFocus>
           <Ico name="check" />
           {ask.suggested}
         </button>
         {!holding &&
           ask.alternatives.map((a) => (
-            <button key={a} className="btn tan" onClick={() => pick(a)}>
+            <button key={a} className={`btn tan${long(a)}`} onClick={() => pick(a)}>
               {a}
             </button>
           ))}

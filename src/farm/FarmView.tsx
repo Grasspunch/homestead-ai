@@ -7,7 +7,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { draw, hasFrame } from '../map/atlas'
 import { atlasLoaded } from '../hud/bits'
 import { TINT } from '../run/crew'
-import { store } from '../run/store'
 import { ProofPop } from '../hud/Proof'
 import type { FarmerId, RunState, TaskState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
@@ -114,6 +113,9 @@ export function FarmView(p: FarmViewProps) {
   const hearts = useRef(new Map<number, number>())
 
   const known = useRef<string[]>([])
+  // When each proof pop first showed, in wall-clock time, so it settles after a few seconds even while the run waits on you.
+  const popSeen = useRef(new Map<string, number>())
+  const [, setPopTick] = useState(0)
   const layout = useMemo(() => {
     // A new plan (nothing in common with the last) starts the order over.
     if (!p.state.tasks.some((t) => known.current.includes(t.id)) || p.planning) known.current = []
@@ -263,7 +265,14 @@ export function FarmView(p: FarmViewProps) {
           const t = p.state.tasks.find((x) => x.id === pl.id)
           const c = t?.checks[t.checks.length - 1]
           const latest = Math.max(...p.state.tasks.map((x) => x.checks[x.checks.length - 1]?.t ?? -1))
-          if (!t || !c || c.t !== latest || p.state.t - c.t > 7000 * store.speed) return null
+          if (!t || !c || c.t !== latest || p.state.t < c.t) return null
+          const key = `${pl.id}-${c.t}`
+          const now = performance.now()
+          if (!popSeen.current.has(key)) {
+            popSeen.current.set(key, now)
+            setTimeout(() => setPopTick((n) => n + 1), 7100)
+          }
+          if (now - popSeen.current.get(key)! > 7000) return null
           return (
             <ProofPop
               key={`${pl.id}-${c.t}`}

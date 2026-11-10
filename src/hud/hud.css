@@ -57,6 +57,7 @@ input, textarea { font: inherit; color: inherit; }
 .btn.brown { border-image-source: url(/ui/btn_brown.png); color: #fff6e4; }
 .btn.sm { height: 42px; font-size: 17px; border-width: 10px; }
 .btn.xs { height: 34px; font-size: 15px; border-width: 8px; gap: 6px; }
+.btn.long { font: 700 var(--t-body, 15px)/1.2 var(--ui); letter-spacing: 0; }
 .btn small { font-family: var(--ui); font-size: 13px; color: var(--bark-2); letter-spacing: 0; }
 
 .ico { display: inline-block; vertical-align: middle; flex: none; image-rendering: pixelated; background-image: url(/ui/icons.png); }

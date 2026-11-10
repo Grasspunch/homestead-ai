@@ -41,7 +41,7 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
   const kitTokens = items.filter((i) => !edit.off.includes(i.id)).reduce((n, i) => n + i.tokens, 0) + f.context.reduce((n, c) => n + contextTokens(c), 0)
   const set = (fn: Parameters<typeof store.editKit>[2]) => store.editKit(p.id, id, fn)
   const changed = !!(edit.model || edit.off.length || edit.contextOff.length || edit.contextAdd.length || Object.keys(edit.rules).length || edit.limits)
-  const after = p.approved ? 'Changes apply from its next task.' : 'Changes apply when you approve the plan.'
+  const after = p.approved ? 'Changes apply from now on.' : 'Changes apply when you approve the plan.'
   const status = { idle: 'Waiting for its next task', working: base.lastTool ?? 'Working', stuck: 'Fixing a failed check', needs: 'Waiting for you', done: 'Finished its tasks' }[base.state]
 
   return (
@@ -236,7 +236,8 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
 
             <section>
               <h3>Rules</h3>
-              {RULES.map((r) => (
+              {/* Only the rules the crew enforces: with May deploy off, the Deployer asks you before it ships. */}
+              {RULES.filter((r) => r.id === 'deploy' && id === 'deployer').map((r) => (
                 <button key={r.id} className="toggle rule-row" onClick={() => set((e) => (e.rules = { ...e.rules, [r.id]: !rules[r.id] }))}>
                   <span className={`switch${rules[r.id] ? ' on' : ''}`} />
                   <span>{r.label}</span>

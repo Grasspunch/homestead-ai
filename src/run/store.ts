@@ -5,7 +5,7 @@ import { simulateRun } from './simulate'
 import { simulatePlan } from './simPlan'
 import type { Review, Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
-import { applyEdit, emptyEdit, type KitEdit } from './kit'
+import { MODELS, applyEdit, emptyEdit, type KitEdit } from './kit'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from our help docs, and hands off to a person when it is not sure'
 
@@ -68,6 +68,7 @@ class Store {
   toast: { id: number; text: string } | null = null
   applied = new Set<string>() // usage fixes applied, by key
   kit: Record<string, Partial<Record<FarmerId, KitEdit>>> = {} // your changes to each farmer, per project
+  kitAt: Record<string, Partial<Record<FarmerId, number>>> = {} // when you first changed each farmer mid-run
   private lastAsk: string | null = null
   private listeners = new Set<() => void>()
 
@@ -153,8 +154,9 @@ class Store {
     this.reviews = {}
     const p = this.project(project)
     if (p?.approved) {
-      // A fresh watch: the run as planned, before any of your answers.
+      // A fresh watch: the run as planned, before any of your answers. Your changes to farmers apply from the start.
       p.sentBack = []
+      this.kitAt[p.id] = {}
       this.rebuild(p)
       this.play()
     }
@@ -235,6 +237,18 @@ class Store {
     const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
     let events = simulateRun({ goal: p.goal, farmers, tasks: plan.tasks, estimate: plan.estimate, singleAgentEstimate: plan.singleAgentEstimate, autonomy: p.autonomy, choices: this.viewerAnswers, deployAsks, plannedModels })
+    // Steps a farmer took before you changed its model were paid at the old rate.
+    const at = this.kitAt[p.id] ?? {}
+    const rate = (m: string) => MODELS.find((x) => x.model === m)?.rate ?? 1
+    events = events.map((e) => {
+      if (e.type !== 'usage') return e
+      const before = planned.find((f) => f.id === e.farmer)
+      const now = farmers.find((f) => f.id === e.farmer)
+      const t = at[e.farmer]
+      if (!before || !now || t === undefined || e.t >= t || before.model === now.model) return e
+      const k = rate(before.model) / rate(now.model)
+      return { ...e, usd: +(e.usd * k).toFixed(3), tokensIn: Math.round(e.tokensIn * k), tokensOut: Math.round(e.tokensOut * k) }
+    })
     for (const sb of p.sentBack ?? []) events = redo(events, farmers, sb, p.autonomy.review !== 'ask')
     p.events = events
     this.setSpeed(events)
@@ -339,6 +353,13 @@ class Store {
     const e = (k[farmer] ??= emptyEdit())
     fn(e)
     this.kit = { ...this.kit, [id]: { ...k } }
+    // On a running farm the change applies from now: the run is simulated again with it, and what was already spent stays.
+    const p = this.project(id)
+    if (p?.approved) {
+      const at = (this.kitAt[id] ??= {})
+      at[farmer] ??= this.clock
+      this.rebuild(p)
+    }
     this.notify()
   }
 

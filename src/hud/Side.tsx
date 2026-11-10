@@ -364,6 +364,7 @@ interface Fix {
   title: string
   why: string
   saves: number
+  model?: string // a fix you can apply here: move this farmer to a cheaper model
 }
 
 // What a farmer has given back for its spend, in a few words.
@@ -384,6 +385,7 @@ export function fixFor(s: RunState, id: FarmerId): Fix | undefined {
 }
 
 export function ApplyFix({ fix }: { fix: Fix }) {
+  const p = store.project()
   return (
     <div className="fix">
       <span className="grow">
@@ -392,17 +394,18 @@ export function ApplyFix({ fix }: { fix: Fix }) {
       </span>
       {store.applied.has(fix.key) ? (
         <span className="ok px-s">Applied</span>
-      ) : (
+      ) : fix.model && p ? (
         <button
           className="btn xs"
           onClick={() => {
             store.applied.add(fix.key)
-            store.say('Applied. Your next run uses it.')
+            store.editKit(p.id, fix.farmer, (e) => (e.model = fix.model))
+            store.say(`The ${fix.farmer.charAt(0).toUpperCase() + fix.farmer.slice(1)} runs on ${fix.model} from now on.`)
           }}
         >
           Apply
         </button>
-      )}
+      ) : null}
     </div>
   )
 }
@@ -415,7 +418,7 @@ function fixes(s: RunState): Fix[] {
   if (retry / total > 0.04) out.push({ key: 'retry', farmer: 'builder', title: 'Cap fix rounds at 2 per task', why: `Fixes after failed checks cost ${usd(retry)} this run.`, saves: retry * 0.4 })
   if (read / total > 0.2) out.push({ key: 'read', farmer: 'builder', title: 'Narrow the Builder to the folders it touched', why: `Reading files was ${Math.round((read / total) * 100)}% of the spend.`, saves: read * 0.35 })
   const designer = s.farmers.designer
-  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', farmer: 'designer', title: 'Check screenshots with Claude Sonnet 5.5', why: 'The Designer’s screenshot checks don’t need the bigger model.', saves: designer.usd * 0.3 })
+  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', farmer: 'designer', title: 'Run the Designer on Claude Sonnet 5.5', why: 'Its screenshot checks don’t need the bigger model.', saves: designer.usd * 0.5, model: 'Claude Sonnet 5.5' })
   for (const r of s.replans) {
     const t = s.tasks.find((x) => r.added.includes(x.id))
     if (t) out.push({ key: `split-${t.id}`, farmer: 'planner', title: `Plan "${t.name.split(': ')[1] ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.', saves: 0.25 })
@@ -562,7 +565,6 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
   const merged = s.deploy.length > 0
   const live = s.deploy[s.deploy.length - 1]?.stage
   const state = !merged ? 'Open' : live === '100%' ? 'Live for everyone' : live === 'rollback' ? 'Rolled back' : 'Merged, live for 10%'
-  const files = (t: TaskState) => 3 + (t.id.length % 5)
   return (
     <Panel label="Pull request">
       <div>
@@ -596,7 +598,7 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
                     {check ? `, checked by the ${s.farmers[check.by]?.label ?? check.by}` : ''}
                   </span>
                 </span>
-                <span className="mono">{files(t)} files</span>
+                <span className="mono">{usd(t.usd)}</span>
               </button>
             )
           })}
