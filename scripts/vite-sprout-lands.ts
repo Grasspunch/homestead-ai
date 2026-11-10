@@ -90,7 +90,7 @@ function walk(dir: string, out: string[] = []) {
   return out
 }
 
-function scan(root: string, build = false) {
+export function scan(root: string, build = false, urlBase = URL_BASE) {
   const base = path.join(root, DIR)
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'art', 'manifest.json'), 'utf8')) as Manifest
   const rects = manifestRects(manifest)
@@ -114,7 +114,8 @@ function scan(root: string, build = false) {
         packTitle: folder,
         dir: path.posix.dirname(rel) === '.' ? '' : path.posix.dirname(rel),
         name,
-        url: URL_BASE + [folder, ...rel.split('/')].map(encodeURIComponent).join('/'),
+        // Commas stay as they are: Vite looks public files up by the raw path, so %2C misses
+        url: urlBase + [folder, ...rel.split('/')].map((s) => encodeURIComponent(s).replace(/%2C/g, ',')).join('/'),
         kind,
         ...(size ? { w: size[0], h: size[1] } : {}),
         bytes,
