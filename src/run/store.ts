@@ -1,7 +1,7 @@
 // App state: which screen, the live plan being edited, and the replay of a recorded run.
 import { useSyncExternalStore } from 'react'
 import { duration, pendingAsk, reduce } from './reduce'
-import { SEND_BACK, simulateRun } from './simulate'
+import { SEND_BACK, fitLimits, simulateRun } from './simulate'
 import { liveStage, rollBack } from './rollback'
 import { simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
@@ -63,10 +63,10 @@ export interface Forecast {
 // - An amount that isn't one of the options ("raise it to $100") is never rounded to one: you're told and asked again.
 // - Otherwise naming an option's own words wins, then a plain yes takes the suggestion.
 const CONTRACTED = /\b(dont|dnt|didnt|doesnt|dosnt|dosent|doesent|shant|shouldnt|wouldnt|couldnt|cant|cannot|isnt|arent|wasnt|werent|wont|havent|hasnt|hadnt|mustnt|neednt|aint)\b/
-const NEGATION = /\b(no|nah|nope|not|never|stop|wait|hold|later|cancel|halt|leave it|rather not|avoid|avoiding|reject|refuse|against|bad idea|terrible idea)\b/
+const NEGATION = /\b(no|nah|nope|not|never|stop|wait|hold|later|cancel|halt|leave it|rather not|avoid|avoiding|reject|refuse|against|bad idea|terrible idea|skip|skipping|drop|forget|decline|veto|scrap|nix|ditch|pass on)\b/
 // Short replies that start like a question but answer: "do it", "can do", "is fine".
 const AFFIRM = /^\s*(do it|do that|do so|can do|will do|is fine|is ok|is okay|are fine)\b/i
-const QUESTION =/\?|^\s*(should|shall|do|does|did|can|could|would|will|is|are|what|how|why|when|which)\b|\b(what|how|why|explain|can you|could you)\b/i
+const QUESTION =/\?|^\s*(should|shall|do|does|did|can|could|would|will|is|are|what|how|why|when|which)\b(?![´`’‘ʼ′']t\b)|\b(what|how|why|explain|can you|could you)\b/i
 // Every apostrophe-like character reads as one: ´ ` ’ ‘ ʼ ′.
 const APOS = /[´`’‘ʼ′]/g
 const norm = (text: string) => ` ${text.toLowerCase().replace(APOS, "'").replace(/n[’']t\b/g, 'nt').replace(/[’']/g, '').replace(/[^a-z0-9%$. ]+/g, ' ')} `
@@ -84,6 +84,20 @@ export function readAnswerWhy(text: string, suggested: string, options: string[]
   const t = norm(text).replace(/\bnot (just|only)\b/g, ' ')
   const rather = /\brather\b/.test(t) && /\b(not|didnt|wouldnt|dont)\b/.test(t)
   const no = rather || CONTRACTED.test(t) || NEGATION.test(t)
+  // Naming who you side with: "go with the builder". Naming who is wrong takes the other side:
+  // "the designer is wrong", "overrule the designer", "not the designer's way".
+  const named = Object.entries(sides).filter(([who]) => new RegExp(`\\b${who.toLowerCase()}s?\\b`).test(t))
+  if (named.length === 1 && options.includes(named[0][1])) {
+    const against = no || /\b(wrong|overrule|overruled|overrules|disagree with|mistaken|instead of)\b/.test(t)
+    const other = Object.values(sides).find((o) => o !== named[0][1] && options.includes(o))
+    if (!against) return { choice: named[0][1] }
+    if (other) return { choice: other }
+  }
+  // A number of parts no option has: "split it in three" is not "Split it in two".
+  const NUM = /\b(one|two|three|four|five|six|half|halves|thirds?|quarters?)\b/g
+  const said = t.match(NUM) ?? []
+  const offered = options.flatMap((o) => norm(o).match(NUM) ?? [])
+  if (said.length && offered.length && said.some((w) => !offered.includes(w))) return { none: 'unclear' }
   if (no) {
     // An option that is itself a no, named by what it refuses: "no refactor" is "Keep it small, no refactor".
     const refusing = options.filter((o) => {
@@ -107,9 +121,6 @@ export function readAnswerWhy(text: string, suggested: string, options: string[]
     const withIt = options.filter((o) => (o.match(/\$\d+(\.\d+)?/g) ?? []).some((a) => wanted.includes(Number(a.slice(1)))))
     if (withIt.length === 1) return { choice: withIt[0] }
   }
-  // Naming who you side with: "go with the builder".
-  const named = Object.entries(sides).filter(([who]) => new RegExp(`\\b${who.toLowerCase()}s?\\b`).test(t))
-  if (named.length === 1 && options.includes(named[0][1])) return { choice: named[0][1] }
   const words = (o: string) => o.toLowerCase().replace(/[^a-z0-9%$ ]+/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !['again', 'with', 'here', 'your', 'from', 'that', 'this'].includes(w))
   const scored = options.map((o) => ({ o, n: words(o).filter((w) => t.includes(` ${w}`)).length })).sort((a, b) => b.n - a.n)
   if (scored[0]?.n && scored[0].n > (scored[1]?.n ?? 0)) return { choice: scored[0].o }
@@ -165,9 +176,18 @@ function valid(d: unknown): Saved | null {
   if (!d || typeof d !== 'object') return null
   const x = d as Record<string, unknown>
   if (x.v !== 1 || !Array.isArray(x.projects) || !x.projects.length) return null
+  // The fields each kind of event is drawn from: an ask with no words, say, is a save that can't be shown.
+  const okEvent = (e: RunEvent) => {
+    if (!e || typeof e.t !== 'number' || typeof e.type !== 'string') return false
+    if (e.type === 'ask') return typeof e.id === 'string' && typeof e.question === 'string' && typeof e.suggested === 'string' && (e.alternatives === undefined || Array.isArray(e.alternatives))
+    if (e.type === 'usage') return typeof e.usd === 'number' && typeof e.farmer === 'string'
+    if (e.type === 'plan') return Array.isArray(e.tasks)
+    if (e.type === 'farmer') return typeof e.id === 'string' && !!e.limits
+    return true
+  }
   const okProject = (p: unknown) => {
     const q = p as Project
-    return !!q && typeof q.id === 'string' && typeof q.name === 'string' && typeof q.goal === 'string' && Array.isArray(q.events) && q.events.every((e) => !!e && typeof e.t === 'number' && typeof e.type === 'string') && !!q.autonomy && typeof q.autonomy === 'object'
+    return !!q && typeof q.id === 'string' && typeof q.name === 'string' && typeof q.goal === 'string' && Array.isArray(q.events) && q.events.every(okEvent) && !!q.autonomy && typeof q.autonomy === 'object'
   }
   if (!x.projects.every(okProject)) return null
   const seen = Array.isArray(x.seen) ? x.seen.filter((k): k is string => typeof k === 'string') : []
@@ -385,6 +405,7 @@ class Store {
   loadSample() {
     if (this.restore()) return
     const plan = simulatePlan(SAMPLE_GOAL)
+    plan.farmers = fitLimits({ goal: SAMPLE_GOAL, ...plan })
     const events = simulateRun({ goal: SAMPLE_GOAL, ...plan })
     this.projects = [
       { id: 'sample', name: plan.name, goal: SAMPLE_GOAL, kind: 'sample', events, approved: true, level: 'matters', autonomy: AUTONOMY_PRESETS.matters },
@@ -573,10 +594,8 @@ class Store {
       this.chatTo(p.id, { from: 'planner', text: 'Holding. Nothing moves on this until you say so.' })
       return { kind: 'hold', choice }
     }
-    // Anything but the suggestion is said back first, so a misreading never applies by itself.
-    if (choice !== ask.suggested || needsConfirm(choice, ask.reason)) return { kind: 'confirm', choice }
-    this.confirmInWords(askId, text, choice)
-    return { kind: 'answered', choice }
+    // Every reading is said back first, so a misreading never applies by itself.
+    return { kind: 'confirm', choice }
   }
 
   confirmInWords(askId: string, text: string, choice: string) {
@@ -634,6 +653,39 @@ class Store {
     // Steps a farmer took before you changed its model were paid at the old rate.
     const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed, this.kitAt[p.id] ?? {})
     if (!built) return
+    // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
+    const t0 = p.clock ?? 0
+    if (t0 > 0) {
+      const past = { t: t0, spent: {} as Partial<Record<FarmerId, number>>, limit: {} as Partial<Record<FarmerId, number>>, asked: {} as Partial<Record<FarmerId, number>> }
+      for (const e of p.events) {
+        if (e.t > t0) continue
+        if (e.type === 'usage') past.spent[e.farmer] = (past.spent[e.farmer] ?? 0) + e.usd
+        if (e.type === 'ask' && e.limitFor) {
+          past.asked[e.limitFor] = (past.asked[e.limitFor] ?? 0) + 1
+          const c = answers[e.id]
+          const m = c && /^raise/i.test(c) ? /\$(\d+(\.\d+)?)/.exec(c) : null
+          if (m) past.limit[e.limitFor] = Number(m[1])
+          // Stopped there: halted from that minute, as the run you watched had it.
+          if (c && /^stop/i.test(c)) {
+            const inp = built.input as { halts?: Partial<Record<FarmerId, number>>; haltTotals?: Partial<Record<FarmerId, number>> }
+            inp.halts = { ...inp.halts, [e.limitFor]: e.t / 60_000 - 0.01 }
+            const whole = Number(/\$(\d+(\.\d+)?) in all/.exec(e.impact ?? '')?.[1] ?? 0)
+            if (whole) inp.haltTotals = { ...inp.haltTotals, [e.limitFor]: whole }
+          }
+        }
+        // A raise the lead made by itself.
+        if (e.type === 'auto_fix') {
+          const m = /^The (\w+) reached its .* raised it to \$(\d+)/.exec(e.what)
+          const f = m ? built.farmers.find((x) => x.label === m[1]) : undefined
+          if (f && m) past.limit[f.id] = Number(m[2])
+        }
+      }
+      // An ask open now is asked again by the new run, in its own place: it isn't counted as had.
+      const open = pendingAsk(p.events, t0, answers)
+      const oa = open ? p.events.find((e) => e.type === 'ask' && e.id === open) : undefined
+      if (oa && oa.type === 'ask' && oa.limitFor) past.asked[oa.limitFor] = (past.asked[oa.limitFor] ?? 1) - 1
+      ;(built.input as { past?: typeof past }).past = past
+    }
     let events = simulateRun(built.input)
     // An ask you've answered keeps the words you answered: a later change (a model, say) never rewrites it.
     // An ask already on screen keeps its numbers too, until you answer it.
@@ -641,16 +693,8 @@ class Store {
     const said = new Map(p.events.filter((e): e is Extract<RunEvent, { type: 'ask' }> => e.type === 'ask' && (!!answers[e.id] || e.t <= now)).map((e) => [e.id, e]))
     events = events.map((e) => {
       const was = e.type === 'ask' ? said.get(e.id) : undefined
-      return was && e.type === 'ask' ? { ...e, question: was.question, impact: was.impact, suggested: was.suggested, alternatives: was.alternatives, confidence: was.confidence, basis: was.basis } : e
+      return was && e.type === 'ask' ? { ...e, question: was.question, impact: was.impact, suggested: was.suggested, alternatives: was.alternatives, confidence: was.confidence, basis: was.basis, limitTo: was.limitTo } : e
     })
-    // A change mid-run can move a new ask (a farmer reaching its limit sooner) to before now. It never lands in
-    // the past: it and everything after it start from now.
-    for (let i = 0; i < 10; i++) {
-      const late = events.find((e) => e.type === 'ask' && e.t < now && !answers[e.id] && !said.has(e.id))
-      if (!late) break
-      const shift = now + 1000 - late.t
-      events = events.map((e) => (e.t >= late.t && e.type !== 'goal' && e.type !== 'plan' && e.type !== 'farmer' ? { ...e, t: e.t + shift } : e)).sort((a, b) => a.t - b.t)
-    }
     // The plan shows the forecast made when the run started.
     if (run.forecast) {
       const fc = run.forecast
@@ -660,6 +704,50 @@ class Store {
       const id = `ask-rb-${i + 1}`
       events = rollBack(events, t0, id, answers[id])
     })
+    // What already happened stays as it happened: every event up to now comes from the run you watched, so a
+    // change mid-run never reprices money spent, never moves an ask you can see, and never rewrites a raise you
+    // approved. Only the farmers and the plan come from the new run. From now on, the new run takes over.
+    if (now > 0 && p.events.length) {
+      const old = p.events
+      const head = (e: RunEvent) => e.type === 'goal' || e.type === 'plan' || e.type === 'farmer'
+      const kept = old.filter((e) => e.t <= now && !head(e) && e.type !== 'done')
+      const has = (e: RunEvent) =>
+        kept.some((k) =>
+          k.type === e.type &&
+          ((e.type === 'ask' && k.type === 'ask' && k.id === e.id) ||
+            (e.type === 'answer' && k.type === 'answer' && k.id === e.id) ||
+            (e.type === 'stop' && k.type === 'stop' && k.task === e.task) ||
+            (e.type === 'auto_fix' && k.type === 'auto_fix' && k.what === e.what)),
+        )
+      const shown = new Set(kept.filter((e) => e.type === 'ask').map((e) => (e.type === 'ask' ? e.id : '')))
+      // Something the new run says should have happened before now, and didn't: a farmer passing a lower limit
+      // sooner, say. It happens now instead, in the same order.
+      let n = 0
+      const late = events.filter((e) => e.t <= now && (e.type === 'ask' || e.type === 'answer' || e.type === 'stop' || e.type === 'auto_fix') && !has(e)).map((e) => ({ ...e, t: now + 1000 + 50 * n++ }))
+      const after = events.filter((e) => e.t > now && !head(e) && !(e.type === 'ask' && shown.has(e.id)))
+      events = [...events.filter(head), ...kept, ...late, ...after].sort((a, b) => a.t - b.t)
+      // An ask you answered just now keeps its answer in the log, even when the new run never asks it again.
+      for (const a of kept) {
+        if (a.type !== 'ask' || !answers[a.id] || events.some((e) => e.type === 'answer' && e.id === a.id)) continue
+        const i = events.indexOf(a)
+        events.splice(i + 1, 0, { t: Math.max(a.t, now), type: 'answer', id: a.id, choice: answers[a.id], by: 'human' })
+      }
+      // A spend limit ask that moved to now says what is spent now.
+      for (const a of late) {
+        if (a.type !== 'ask' || !a.limitFor) continue
+        const spentNow = events.reduce((m, e) => m + (e.type === 'usage' && e.farmer === a.limitFor && e.t <= a.t ? e.usd : 0), 0)
+        const whole = Math.max(spentNow, Number(/\$(\d+(\.\d+)?) in all/.exec(a.impact ?? "")?.[1] ?? spentNow))
+        const fmt = (x: number) => (whole >= 10 ? `$${Math.round(x)}` : `$${x.toFixed(2)}`)
+        const lim = /its (\$\d+(\.\d+)?) limit/.exec(a.question)?.[1] ?? ''
+        const over = spentNow > Number(lim.slice(1))
+        const who = /^The (\w+)/.exec(a.question)?.[1] ?? 'farmer'
+        const q = `The ${who} ${over ? 'has passed' : 'is about to pass'} its ${lim} limit, with ${fmt(spentNow)} spent, so I paused it.`
+        const im = `Finishing its work needs about ${fmt(whole - spentNow)} more, ${fmt(whole)} in all. Stopping it leaves its unfinished tasks out of the pull request.`
+        events = events.map((e) => (e === a || (e.type === 'ask' && e.id === a.id) ? { ...a, question: q, impact: im } : e))
+      }
+      const last = events.filter((e) => e.type !== 'done').reduce((m, e) => Math.max(m, e.t), 0)
+      events = events.map((e) => (e.type === 'done' && e.t <= last ? { ...e, t: last + 30_000 } : e))
+    }
     // Done's total is what Spend adds up: every step at the rate it was paid.
     const usd = +events.reduce((n, e) => n + (e.type === 'usage' ? e.usd : 0), 0).toFixed(2)
     events = events.map((e) => (e.type === 'done' ? { ...e, usd } : e))
@@ -754,9 +842,11 @@ class Store {
     p.name = this.uniqueName(name, id)
     p.planning = false
     p.error = undefined
+    // Limits at or above what each farmer spends on the plan's own path.
+    const fitted = fitLimits({ goal: p.goal, farmers, tasks, estimate, singleAgentEstimate })
     p.events = [
       { t: 0, type: 'goal', text: p.goal },
-      ...farmers.map((f) => ({ t: 1, type: 'farmer' as const, ...f })),
+      ...fitted.map((f) => ({ t: 1, type: 'farmer' as const, ...f })),
       { t: 2, type: 'plan', tasks, estimate, singleAgentEstimate },
     ]
     this.crewSize[id] = new Set(tasks.map((t) => t.farmer)).size

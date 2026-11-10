@@ -88,6 +88,8 @@ export function Swatch({ farmer }: { farmer: FarmerId }) {
 }
 
 export const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`
+// A task's own cost, to the cent: the same number the ask about it used.
+export const cents = (n: number) => `$${n.toFixed(2)}`
 export const mins = (n: number) => (n >= 60 ? `${Math.floor(n / 60)} h ${Math.round(n % 60)} min` : `${Math.round(n)} min`)
 export const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n))
 

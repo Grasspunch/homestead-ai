@@ -83,3 +83,11 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - A proof that pops up pulls the camera to its plot and the pop above it, so it never shows over a hidden plot.
 - Farms never share a name: a second "Support assistant" is "Support assistant 2", beside the sample.
 - Saved farms that can't be read clear themselves, and you start at Home with a toast.
+
+## Checkpoint 19
+- Every free-text answer is said back before it applies, the suggestion included.
+- Money asks before the step that would go over are tagged "Heading over budget"; "Over budget" only once it has passed.
+- Task costs in the pull request and task panel are to the cent, the same as the ask that named them.
+- Both Simulated tags (your farms and the sample) use the gold tag.
+- Home picks the largest scale (3, 2.5, 2 or 1.5) that shows every farm and the new-farm plot above the dialogue.
+- Done's time gain says "assuming one agent runs a third slower".

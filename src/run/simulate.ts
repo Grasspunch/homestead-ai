@@ -105,6 +105,9 @@ export interface SimInput {
   bugFixed?: boolean
   // When you changed each farmer's model mid-run (ms): its steps before then were paid at the planned model's rate.
   modelFrom?: Partial<Record<FarmerId, number>>
+  // The run you've watched so far, up to t (ms): what each farmer has really spent, its limit now and how many
+  // limit asks it has had. Spend limits count from these, so a change mid-run never re-asks or recounts the past.
+  past?: { t: number; spent: Partial<Record<FarmerId, number>>; limit: Partial<Record<FarmerId, number>>; asked: Partial<Record<FarmerId, number>> }
   // Farmers you stopped at their spend limit, and the run minute they reached it. Set by the run itself:
   // a stop re-runs the simulation so nothing after it involves that farmer.
   halts?: Partial<Record<FarmerId, number>>
@@ -570,41 +573,55 @@ export function simulateRun(input: SimInput): RunEvent[] {
   }
   ev.sort((a, b) => a.t - b.t)
   // Spend limits, the same rule for every farmer at every level: the Planner pauses a farmer before the step that
-  // would take it over its limit, and asks you to raise the limit or stop it there. A stop runs the whole
-  // simulation again with that farmer halted, so nothing after involves it.
+  // would take it over its limit, and asks you to raise the limit or stop it there. A raise you approve is the new
+  // limit, exactly: passing it asks again. A stop runs the whole simulation again with that farmer halted, so
+  // nothing after involves it. A farmer that would pass its limit by a few cents is raised by the lead, not asked.
   {
-    const total: Partial<Record<FarmerId, number>> = {}
-    for (const e of ev) if (e.type === 'usage') total[e.farmer] = (total[e.farmer] ?? 0) + e.usd
-    const spent: Partial<Record<FarmerId, number>> = {}
-    const paused = new Set<FarmerId>()
+    const past = input.past
+    const pastT = past?.t ?? -1
+    const total: Partial<Record<FarmerId, number>> = { ...past?.spent }
+    for (const e of ev) if (e.type === 'usage' && e.t > pastT) total[e.farmer] = (total[e.farmer] ?? 0) + e.usd
+    const spent: Partial<Record<FarmerId, number>> = { ...past?.spent }
+    const limit: Partial<Record<FarmerId, number>> = { ...past?.limit }
+    const asked: Partial<Record<FarmerId, number>> = { ...past?.asked }
+    const done = new Set<FarmerId>()
     const stopIt = 'Stop it here'
+    const fmtFor = (whole: number) => (n: number) => (whole >= 10 ? `$${Math.round(n)}` : `$${n.toFixed(2)}`)
     const limitAsk = (f: FarmerSetup, tm: number, spentNow: number, whole: number, task?: string) => {
-      const to = Math.ceil((whole * 1.1) / 5) * 5
+      const now = limit[f.id] ?? f.limits.usd
+      const to = Math.max(Math.ceil((whole * 1.1) / 5) * 5, Math.ceil(now) + 5)
       // Whole dollars once it's over $10, so the parts always add up to the total.
+      const fmt = fmtFor(whole)
       const big = whole >= 10
-      const fmt = (n: number) => (big ? `$${Math.round(n)}` : `$${n.toFixed(2)}`)
       const spentS = big ? Math.round(spentNow) : +spentNow.toFixed(2)
       const wholeS = big ? Math.round(whole) : +whole.toFixed(2)
-      const id = `ask-limit-${f.id}`
+      const n = (asked[f.id] = (asked[f.id] ?? 0) + 1)
+      const id = n === 1 ? `ask-limit-${f.id}` : `ask-limit-${f.id}-${n}`
       const suggested = `Raise its limit to ${money(to)}`
+      // How sure: how much of what it needs is already spent, and so known.
+      const known = whole > 0 ? spentNow / whole : 1
       at(tm + 0.01, {
         type: 'ask', id, farmer: lead, task, reason: 'cost', limitFor: f.id, limitTo: to,
-        confidence: 'high', basis: 'From what it has spent and the steps it has left.',
-        question: `The ${f.label} is about to pass its ${fmt(f.limits.usd)} limit, with ${fmt(spentS)} spent, so I paused it.`,
+        confidence: known >= 0.6 ? 'high' : known >= 0.35 ? 'medium' : 'low',
+        basis: `${fmt(spentS)} of the ${fmt(wholeS)} is already spent; the rest is from the steps it has left.`,
+        question: `The ${f.label} is about to pass its ${fmt(now)} limit, with ${fmt(spentS)} spent, so I paused it.`,
         impact: `Finishing its work needs about ${fmt(wholeS - spentS)} more, ${fmt(wholeS)} in all. Stopping it leaves its unfinished tasks out of the pull request.`,
         suggested, alternatives: [stopIt],
       })
       const c = choose(id, suggested)
       at(tm + 0.02, { type: 'answer', id, choice: c, by: 'human' })
+      // The amount you approved, as you approved it.
+      const m = /\$(\d+(\.\d+)?)/.exec(c)
+      if (c !== stopIt) limit[f.id] = m ? Number(m[1]) : to
       return c
     }
-    // Farmers you stopped: the ask where you stopped each one, and nothing of theirs after it.
+    // Farmers you stopped: nothing of theirs after the minute you stopped them.
+    const cuts: { f: FarmerSetup; tm: number; spentNow: number; task?: string; mine: Set<string> }[] = []
     for (const [id, tm] of Object.entries(input.halts ?? {}) as [FarmerId, number][]) {
       const f = farmers.find((x) => x.id === id)
       if (!f) continue
-      paused.add(f.id)
       const cut = tm * MIN
-      const spentNow = ev.reduce((n, e) => n + (e.type === 'usage' && e.farmer === f.id && e.t <= cut ? e.usd : 0), 0)
+      const spentNow = (past?.spent[f.id] ?? 0) + ev.reduce((n, e) => n + (e.type === 'usage' && e.farmer === f.id && e.t > pastT && e.t <= cut ? e.usd : 0), 0)
       const last = [...ev].reverse().find((e) => e.type === 'task_start' && e.farmer === f.id && e.t <= cut)
       const accepted = new Set(ev.filter((x) => x.type === 'accept' && x.t <= cut).map((x) => (x.type === 'accept' ? x.task : '')))
       const mine = new Set(ev.filter((x) => x.type === 'task_start' && x.farmer === f.id && !accepted.has(x.task)).map((x) => (x.type === 'task_start' ? x.task : '')))
@@ -616,22 +633,36 @@ export function simulateRun(input: SimInput): RunEvent[] {
       })
       ev.length = 0
       ev.push(...keep)
-      // The ask where you stopped it, after the cut, so the cut never takes the ask itself.
-      limitAsk(f, tm, spentNow, haltTotals[f.id] ?? total[f.id] ?? spentNow, last && last.type === 'task_start' ? last.task : undefined)
-      const said = new Set(ev.filter((x) => x.type === 'stop').map((x) => (x.type === 'stop' ? x.task : '')))
-      for (const k of mine) if (!said.has(k)) at(tm + 0.05, { type: 'stop', task: k, reason: `You stopped the ${f.label} at its spend limit. This task stays out of the pull request.` })
+      cuts.push({ f, tm, spentNow, task: last && last.type === 'task_start' ? last.task : undefined, mine })
     }
     ev.sort((a, b) => a.t - b.t)
+    // Raises before a stop are asked again, the same way, so the stop's ask keeps its place in the count.
     for (const e of [...ev]) {
-      if (e.type !== 'usage') continue
+      if (e.type !== 'usage' || e.t <= pastT) continue
       const f = farmers.find((x) => x.id === e.farmer)
       const before = spent[e.farmer] ?? 0
       spent[e.farmer] = before + e.usd
-      if (!f || paused.has(f.id) || before + e.usd <= f.limits.usd + 0.005) continue
-      paused.add(f.id)
+      if (!f || done.has(f.id)) continue
+      const lim = limit[f.id] ?? f.limits.usd
+      if (before + e.usd <= lim + 0.005) continue
       const tm = e.t / MIN - 0.015
-      const c = limitAsk(f, tm, before, total[f.id]!, e.task)
-      if (c === stopIt) return simulateRun({ ...input, halts: { ...input.halts, [f.id]: tm }, haltTotals: { ...input.haltTotals, [f.id]: total[f.id]! } })
+      const whole = haltTotals[f.id] ?? total[f.id]!
+      // Over by a few cents in all: the lead raises it to the next dollar and says so.
+      if (whole - lim < Math.max(0.5, lim * 0.05)) {
+        const to = Math.ceil(whole + 0.01)
+        at(tm, { type: 'auto_fix', task: e.task, what: `The ${f.label} reached its ${fmtFor(whole)(lim)} limit with ${fmtFor(whole)(whole - before)} of work left, so the ${label(lead)} raised it to $${to}.` })
+        limit[f.id] = to
+        continue
+      }
+      const c = limitAsk(f, tm, before, whole, e.task)
+      if (c === stopIt) return simulateRun({ ...input, halts: { ...input.halts, [f.id]: tm }, haltTotals: { ...input.haltTotals, [f.id]: whole } })
+    }
+    // The ask where you stopped each farmer, after the cut, so the cut never takes the ask itself.
+    for (const k of cuts) {
+      // Already asked in the run you watched: that ask stands as it was.
+      if (!(past && k.tm * MIN <= pastT)) limitAsk(k.f, k.tm, k.spentNow, haltTotals[k.f.id] ?? total[k.f.id] ?? k.spentNow, k.task)
+      const said = new Set(ev.filter((x) => x.type === 'stop').map((x) => (x.type === 'stop' ? x.task : '')))
+      for (const t of k.mine) if (!said.has(t)) at(k.tm + 0.05, { type: 'stop', task: t, reason: `You stopped the ${k.f.label} at its spend limit. This task stays out of the pull request.` })
     }
     ev.sort((a, b) => a.t - b.t)
   }
@@ -648,4 +679,14 @@ function cents(n: number) {
 
 function money(n: number) {
   return n >= 10 ? `$${Math.round(n)}` : `$${n.toFixed(2)}`
+}
+
+// Spend limits the plan can keep: each farmer's limit is at least what it spends on the plan's default path,
+// with a margin, so the run only stops on money when something goes differently from the plan.
+export function fitLimits(input: Pick<SimInput, 'goal' | 'farmers' | 'tasks' | 'estimate' | 'singleAgentEstimate'>): FarmerSetup[] {
+  const wide = input.farmers.map((f) => ({ ...f, limits: { ...f.limits, usd: 1e6 } }))
+  const ev = simulateRun({ ...input, farmers: wide })
+  const total: Partial<Record<FarmerId, number>> = {}
+  for (const e of ev) if (e.type === 'usage') total[e.farmer] = (total[e.farmer] ?? 0) + e.usd
+  return input.farmers.map((f) => ({ ...f, limits: { ...f.limits, usd: Math.max(f.limits.usd, Math.ceil(((total[f.id] ?? 0) * 1.15) / 5) * 5) } }))
 }

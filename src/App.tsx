@@ -135,7 +135,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
         <span>{sub}</span>
         {p.approved && !s.done && !st.playing && !pendingAsk(p.events, st.clock, st.viewerAnswers) && !st.openRollback(p) && <span className="tag grey">Paused</span>}
         {p.kind === 'sample' ? (
-          <span className="tag grey" title="Every farmer, cost and check is simulated, and the run replays the same way each time">
+          <span className="tag gold" title="Every farmer, cost and check is simulated, and the run replays the same way each time">
             Simulated sample
           </span>
         ) : (
@@ -576,7 +576,8 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
 
 function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
   const [holding, setHolding] = useState(false)
-  const r = REASON[ask.reason]
+  // Money asks come before the step that would go over, so most are heading over, not over yet.
+  const r = ask.reason === 'cost' && !/has passed/.test(ask.question) ? { ...REASON.cost, label: 'Heading over budget' } : REASON[ask.reason]
   const task = s.tasks.find((t) => t.id === ask.task)
   const dis = ask.reason === 'disagree' ? s.disagreements.filter((x) => x.task === ask.task).slice(-1)[0] : undefined
   const pick = (choice: string) => {

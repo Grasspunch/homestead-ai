@@ -10,6 +10,14 @@ import type { FarmerId, RunState } from '../run/types'
 import { Ico, Portrait, atlasLoaded } from './bits'
 
 const PX = 16
+// The largest pixel scale that shows every farm and the new-farm plot above the Planner's dialogue.
+function fitScale(W: number, H: number, farms: number) {
+  if (W < 700) return 2
+  const slots = farms + 1
+  const cols = Math.min(3, slots)
+  const rows = Math.ceil(slots / 3)
+  return [3, 2.5, 2, 1.5].find((s) => (2 + cols * 9) * PX * s <= W - 16 && (1.5 + rows * 7) * PX * s <= H - 230) ?? 1.5
+}
 const EXAMPLES = ['A support assistant that answers from our help docs', 'Stripe checkout for our pricing page', 'A dashboard of weekly signups']
 
 interface Mini {
@@ -78,7 +86,7 @@ export function Home() {
           const dpr = window.devicePixelRatio || 1
           const W = c.clientWidth
           const H = c.clientHeight
-          const s = W < 700 ? 2 : 3
+          const s = fitScale(W, H, store.projects.length)
           if (s !== S) setS(s)
           c.width = W * dpr
           c.height = H * dpr
@@ -91,7 +99,9 @@ export function Home() {
               const n = Math.abs(Math.sin(x * 12.9 + y * 78.2) * 43758) % 1
               if (n < 0.12) draw(g, `grass_deco_${Math.floor(n * 100) % 12}`, x * PX, y * PX)
             }
-          for (const [n, x, y] of [['tree_big', 27, 0], ['tree_apple', 28, 9], ['bush_0', 0, 12], ['tree_small', 26, 12]] as [string, number, number][]) draw(g, n, x * PX, y * PX)
+          // The trees stand clear of the farms' columns.
+          const edge = 2 + Math.min(3, store.projects.length + 1) * 9
+          for (const [n, x, y] of [['tree_big', 27, 0], ['tree_apple', 28, 9], ['bush_0', 0, 12], ['tree_small', 26, 12]] as [string, number, number][]) draw(g, n, (x > 20 ? Math.max(x, edge + x - 26) : x) * PX, y * PX)
           for (const m of minis(store.projects)) {
             draw(g, `house_${m.p.kind === 'sample' ? 2 : 4}`, m.x * PX, m.y * PX)
             const bx = m.x + 4.4

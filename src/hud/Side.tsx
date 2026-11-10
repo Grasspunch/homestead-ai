@@ -3,7 +3,7 @@ import { CREW } from '../agent/agents'
 import { clip, store, type Project } from '../run/store'
 import type { Autonomy, AutonomyLevel, FarmerId, Moment, RunState, TaskState } from '../run/types'
 import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
-import { Ico, Mark, Portrait, Swatch, mins, usd } from './bits'
+import { Ico, Mark, Portrait, Swatch, cents, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 import { BY_YOU } from '../run/rollback'
 
@@ -66,7 +66,7 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
           <>
             <span className="chip">
               <i className="coin-s" />
-              {usd(t.usd)} so far
+              {cents(t.usd)} so far
             </span>
           </>
         )}
@@ -403,7 +403,8 @@ export function outcome(s: RunState): { line: string; value: string } | null {
   const gap = s.done.usd - s.soloActual.usd
   const cost = Math.abs(gap) < 0.5 ? 'Same cost as one agent' : gap > 0 ? `${usd(gap)} more than one agent` : `${usd(-gap)} less than one agent`
   const sooner = s.soloActual.minutes - s.done.minutes
-  const time = sooner > 0 ? `, ${mins(sooner)} sooner` : ''
+  // The time rests on an assumption, so it says so: one agent's steps run about a third slower.
+  const time = sooner > 0 ? `, ${mins(sooner)} sooner assuming one agent runs a third slower` : ''
   const spent = s.checkUsd !== undefined ? `${usd(s.checkUsd)} of checks` : 'A separate checker'
   return {
     line: `${spent} caught ${checks} problem${checks === 1 ? '' : 's'} before merge. One agent has nobody to catch them.`,
@@ -600,7 +601,7 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
                     {check ? `, checked by the ${s.farmers[check.by]?.label ?? check.by}` : ''}
                   </span>
                 </span>
-                <span className="mono">{usd(t.usd)}</span>
+                <span className="mono">{cents(t.usd)}</span>
               </button>
             )
             return [

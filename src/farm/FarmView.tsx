@@ -116,6 +116,13 @@ export function FarmView(p: FarmViewProps) {
   // When each proof pop first showed, in wall-clock time, so it settles after a few seconds even while the run waits on you.
   const popSeen = useRef(new Map<string, number>())
   const failHold = useRef<{ key: string; at: number; id: string; c: TaskState['checks'][number] } | null>(null)
+  // A new run (the clock going back to the start) shows every proof again.
+  const lastT = useRef(0)
+  if (p.state.t < lastT.current - 1000) {
+    popSeen.current.clear()
+    failHold.current = null
+  }
+  lastT.current = p.state.t
   const [, setPopTick] = useState(0)
   const layout = useMemo(() => {
     // A new plan (nothing in common with the last) starts the order over.
