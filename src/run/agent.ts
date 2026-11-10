@@ -52,15 +52,17 @@ export const isFallbackNote = (note?: string) =>
 const noteOf = (e: unknown) => (e instanceof KeyMissing ? NO_KEY[e.provider] : e instanceof Error ? e.message : String(e))
 
 // `model` is the Planner's model. On Lovable both makers run through Lovable AI; in local dev without it, only Claude.
-async function run<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, model?: string): Promise<AgentAnswer<T>> {
+// `chat`: something you said to a farmer. A canned reply to a real question reads as not listening, so chat calls
+// a real model even with Live mode off, and only falls back to the script, quietly, when it can't.
+async function run<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, model?: string, chat = false): Promise<AgentAnswer<T>> {
   const provider = providerOf(model)
-  if (live && (await probeKeys())[provider]) {
+  if ((live || chat) && (await probeKeys())[provider]) {
     try {
       const data = await liveCall()
       const src = (data as { source?: keyof typeof SOURCE }).source
       return { data, live: true, source: src && SOURCE[src] }
     } catch (e) {
-      return { data: sim(), live: false, error: noteOf(e) }
+      return { data: sim(), live: false, error: live ? noteOf(e) : undefined }
     }
   }
   // A short pause so the simulated Planner paces like a real one.
@@ -73,7 +75,7 @@ export function plan(goal: string, crewSize?: number | FarmerId[], model?: strin
 }
 
 export function route(input: RouteInput, model?: string) {
-  return run<RouteOut>(() => liveRoute(input.message, input.farmers, input.tasks, model), () => simulateRoute(input), 700, model)
+  return run<RouteOut>(() => liveRoute(input.message, input.farmers, input.tasks, model), () => simulateRoute(input), 700, model, true)
 }
 
 // A change to the farm, read by the live Planner when Live mode is on. Off, or when the call fails, the app reads it
@@ -98,7 +100,7 @@ export async function discuss(question: string, talk: Talk, modelOf: (f: string)
   const lower = question.toLowerCase()
   const side = talk.sides.find((s) => lower.includes(s.label.toLowerCase())) ?? talk.sides[0]
   const model = modelOf(side.farmer)
-  const r = await run<{ lines: TalkLine[] }>(() => discussLive(question, talk, model), () => ({ lines: discussSim(question, talk) }), 500, model)
+  const r = await run<{ lines: TalkLine[] }>(() => discussLive(question, talk, model), () => ({ lines: discussSim(question, talk) }), 500, model, true)
   const lines = r.data.lines.filter((l) => talk.sides.some((s) => s.farmer === l.from)).slice(0, 2)
   return { ...r, data: lines.length ? lines : discussSim(question, talk) }
 }

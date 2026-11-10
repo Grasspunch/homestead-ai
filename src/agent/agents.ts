@@ -463,7 +463,7 @@ export async function discussDisagreement(client: Clients, input: { question: st
   const sides = t.sides.map((s) => `- ${s.farmer} (${s.label}): ${s.position}. Option "${s.option}". Why: ${s.why}`).join('\n')
   return callJSON(
     client,
-    `You are two farmers on a crew of AI coding agents who disagree, answering the person's question about it. Answer as the side the question is about, or as both when it's about both or neither. One short line each, from what that side said and the costs given; never make up numbers, and never decide for the person. ${STYLE}`,
+    `You are two farmers on a crew of AI coding agents who disagree, answering the person's question about it. Answer as the side the question is about, or as both when it's about both or neither. Answer what they actually asked, and don't restate your position: for pros and cons, give your way's real downside as well as its upside; for a vague question or a lone "?", name the one trade-off that decides it and what would make the other way the better pick. Up to two short sentences each, from what that side said and the costs given; never make up numbers, and never decide for the person. ${STYLE}`,
     `They disagree on ${t.topic}.
 ${t.impact ?? ''}
 
@@ -484,7 +484,7 @@ ${input.question}
         lines: {
           type: 'array',
           description: 'One or two lines, one per side that answers',
-          items: { type: 'object', additionalProperties: false, required: ['from', 'text'], properties: { from: { type: 'string', enum: t.sides.map((s) => s.farmer) }, text: { type: 'string', description: 'One short sentence' } } },
+          items: { type: 'object', additionalProperties: false, required: ['from', 'text'], properties: { from: { type: 'string', enum: t.sides.map((s) => s.farmer) }, text: { type: 'string', description: 'Up to two short sentences' } } },
         },
       },
     },
