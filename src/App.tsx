@@ -316,7 +316,6 @@ const REASON: Record<Ask['reason'], { label: string; urgency: 'red' | 'honey' | 
 
 function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
   const [holding, setHolding] = useState(false)
-  const f = s.farmers[ask.farmer]
   const r = REASON[ask.reason]
   const task = s.tasks.find((t) => t.id === ask.task)
   const dis = ask.reason === 'disagree' ? s.disagreements.filter((x) => x.task === ask.task).slice(-1)[0] : undefined
@@ -340,7 +339,6 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
           <Ico name={r.icon} tone="light" />
           {r.label}
         </span>
-        <span className="aside">From the {f?.label ?? 'crew'}</span>
       </div>
       {holding ? (
         <p>Holding. Nothing ships until you say so.</p>
@@ -388,7 +386,6 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
               {a}
             </button>
           ))}
-        <span className="end aside-note">The crew waits for you</span>
       </div>
     </Dialogue>
   )

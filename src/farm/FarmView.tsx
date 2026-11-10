@@ -149,7 +149,9 @@ export function FarmView(p: FarmViewProps) {
     const pl = layout.plots.find((x) => x.id === focusId)
     // The farm's own centre, from the house to the last plot column.
     const home = { x: Math.min(layout.w / 2, 15.5), y: 7.2 }
-    const tgt = pl ? { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) } : home
+    // An ask centres its plot exactly in the free space above the dialogue; an opened plot only leans toward it.
+    const asking = !!p.openAsk?.task && pl?.id === p.openAsk.task
+    const tgt = !pl ? home : asking ? { x: pl.x + pl.w / 2, y: pl.y + pl.h / 2 } : { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) }
     c.tx = tgt.x
     c.ty = tgt.y
     c.manual = false
@@ -157,11 +159,11 @@ export function FarmView(p: FarmViewProps) {
       c.cx = tgt.x
       c.cy = tgt.y
     }
-  }, [focusId, layout])
+  }, [focusId, layout, !!p.openAsk])
   const freeRect = () => {
     const w = size.w - (p.side && !narrow ? 470 : 0)
     const top = narrow ? 60 : 80
-    const bottom = narrow ? 250 : 230
+    const bottom = narrow ? 250 : p.openAsk ? 270 : 230
     return { cx: w / 2, cy: top + (size.h - top - bottom) / 2 }
   }
 
