@@ -1,6 +1,6 @@
 // What a check rests on, shown rather than described: the test run, the screenshots, the rollout's numbers.
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import type { Proof, RunState, Screen, Shot, TaskState, TestResult } from '../run/types'
+import type { Metrics, Proof, RunState, Screen, Shot, TaskState, TestResult } from '../run/types'
 import { Mark, Swatch } from './bits'
 import { ERROR_LIMIT } from '../run/simulate'
 import { scenario } from '../run/simPlan'
@@ -80,7 +80,11 @@ export function Rollout({ state, compact = false }: { state: RunState; compact?:
   const t0 = deploys[0].t
   const t1 = Math.max(state.t, pts.length ? pts[pts.length - 1].t : t0 + 1)
   const H = compact ? 90 : 120
-  const max = 0.04
+  // Judged by synthetic tests: the line is failing tests, and one failing test rolls it back.
+  const synth = pts.some((p) => p.metrics.synth) || deploys.some((d) => d.metrics?.synth)
+  const val = (m: Metrics) => (synth ? (m.synth ? m.synth.total - m.synth.pass : 0) : m.errorRate ?? 0)
+  const LIM = synth ? 0.5 : ERROR_LIMIT
+  const max = synth ? 3 : 0.04
   const x = (t: number) => ((t - t0) / Math.max(1, t1 - t0)) * (W - 8) + 4
   const y = (e: number) => H - 14 - (Math.min(e, max) / max) * (H - 24)
   const segs: { stage: string; pts: typeof pts }[] = []
@@ -113,9 +117,9 @@ export function Rollout({ state, compact = false }: { state: RunState; compact?:
   const now = deploys[deploys.length - 1]
   return (
     <div className="rollout" ref={box}>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Error rate during the rollout">
-        <line x1="0" x2={W} y1={y(ERROR_LIMIT)} y2={y(ERROR_LIMIT)} className="limit" />
-        <text x={W - 4} y={y(ERROR_LIMIT) - 4} textAnchor="end" className="axis">rolls back at 2%</text>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={synth ? 'Failing synthetic tests during the rollout' : 'Error rate during the rollout'}>
+        <line x1="0" x2={W} y1={y(LIM)} y2={y(LIM)} className="limit" />
+        <text x={W - 4} y={y(LIM) - 4} textAnchor="end" className="axis">{synth ? 'rolls back on a failing test' : 'rolls back at 2%'}</text>
         {deploys.map((d, i) => (
           <g key={d.t}>
             <line x1={x(d.t)} x2={x(d.t)} y1="4" y2={H - 14} className={d.stage === 'rollback' ? 'mark back' : 'mark'} />
@@ -125,17 +129,26 @@ export function Rollout({ state, compact = false }: { state: RunState; compact?:
           </g>
         ))}
         {segs.map((s, i) => (
-          <polyline key={i} points={s.pts.map((p) => `${x(p.t)},${y(p.metrics.errorRate ?? 0)}`).join(' ')} className={s.pts.some((p) => (p.metrics.errorRate ?? 0) > ERROR_LIMIT) ? 'err bad' : 'err'} />
+          <polyline key={i} points={s.pts.map((p) => `${x(p.t)},${y(val(p.metrics))}`).join(' ')} className={s.pts.some((p) => val(p.metrics) > LIM) ? 'err bad' : 'err'} />
         ))}
         {segs.flatMap((s) => s.pts).map((p) => (
-          <circle key={p.t} cx={x(p.t)} cy={y(p.metrics.errorRate ?? 0)} r="2.5" className={(p.metrics.errorRate ?? 0) > ERROR_LIMIT ? 'dot bad' : 'dot'} />
+          <circle key={p.t} cx={x(p.t)} cy={y(val(p.metrics))} r="2.5" className={val(p.metrics) > LIM ? 'dot bad' : 'dot'} />
         ))}
       </svg>
       {latest && (
         <div className="nums">
-          <span>
-            <b className={(latest.errorRate ?? 0) > ERROR_LIMIT ? 'bad' : ''}>{((latest.errorRate ?? 0) * 100).toFixed(1)}%</b> errors
-          </span>
+          {synth && latest.synth ? (
+            <span>
+              <b className={latest.synth.pass < latest.synth.total ? 'bad' : ''}>
+                {latest.synth.pass} of {latest.synth.total}
+              </b>{' '}
+              synthetic tests passing
+            </span>
+          ) : (
+            <span>
+              <b className={(latest.errorRate ?? 0) > ERROR_LIMIT ? 'bad' : ''}>{((latest.errorRate ?? 0) * 100).toFixed(1)}%</b> errors
+            </span>
+          )}
           <span>
             <b>{((latest.p95ms ?? 0) / 1000).toFixed(1)} s</b> slowest 5%
           </span>

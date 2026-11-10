@@ -8,6 +8,7 @@ import { soloFromRun } from './compare'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
 import { applyEdit, emptyEdit, type KitEdit } from './kit'
+import { readChanges, reshapedOf, type Change, type Proposal, type Scope } from './reshape'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from our help docs, and hands off to a person when it is not sure'
 
@@ -48,6 +49,29 @@ export interface Project {
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean }
+  // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
+  // exactly as it was before it. Scope is kept for a later "every farm"; only "this farm" exists today.
+  reshapes?: ReshapeOn[]
+}
+
+export interface ReshapeOn {
+  id: string
+  title: string
+  request: string
+  changes: Change[]
+  scope: Scope
+  at: number // ms into the run it took effect; 0 from the next run on
+  notify?: 'desktop' | 'toast' // how stage alerts reach you, when one of the changes asks for them
+  before?: { events: RunEvent[]; answers: Record<string, string>; run: Project['run'] } // the run as it was, for Undo
+}
+
+// A request read into changes, waiting on the card for your yes.
+export interface PendingChange {
+  pid: string
+  request: string
+  proposal: Proposal
+  wasPlaying: boolean
+  denied?: boolean // you applied a stage alert and the browser blocked notifications
 }
 
 // The plan's numbers: the run simulated on its default path (every suggested answer), and the same work done by one agent.
@@ -208,7 +232,7 @@ class Store {
   chat: Record<string, ChatLine[]> = {}
   settingsOpen = false
   notifications = false
-  toast: { id: number; text: string } | null = null
+  toast: { id: number; text: string; undo?: string } | null = null
   seen = new Set<string>() // moments you've already read, such as a rollback
   applied = new Set<string>() // usage fixes applied, by key
   kit: Record<string, Partial<Record<FarmerId, KitEdit>>> = {} // your changes to each farmer, per project
@@ -448,6 +472,8 @@ class Store {
     this.kitAt[p.id] = {}
     // Every run shows its own moments again, such as its rollback.
     for (const k of [...this.seen]) if (k.startsWith(`${p.id}:`)) this.seen.delete(k)
+    // Changes you asked for last for the farm: from the start of this run, with nothing earlier to undo to.
+    p.reshapes = (p.reshapes ?? []).map((r) => ({ ...r, at: 0, before: undefined }))
     p.run = { bugFixed: this.nextBugFixed(p), kit: structuredClone(this.kit[p.id] ?? {}), autonomy: { ...p.autonomy }, forecast: this.forecast(p) ?? undefined }
     this.rebuild(p)
     if (this.project()?.id === p.id) this.play()
@@ -487,7 +513,9 @@ class Store {
         const end = duration(p.events)
         // And the clock never passes an ask you haven't answered: it stops on it.
         const next = p.events.find((e) => e.type === 'ask' && e.t > this.clock && !this.viewerAnswers[e.id])
+        const from = this.clock
         this.clock = Math.min(end, next ? next.t : end, this.clock + dt * this.paceTo(p, next ? next.t : end))
+        this.stagesPassed(p, from, this.clock)
         if (this.clock >= end) {
           this.playing = false
           this.finishRun(p)
@@ -537,7 +565,9 @@ class Store {
         ((e.type === 'ask' && !this.viewerAnswers[e.id]) || (e.type === 'deploy' && e.stage === 'rollback') || (e.type === 'check' && !e.pass)),
     )
     // A failed check: land just after it, so its proof is up.
+    const from = this.clock
     this.clock = next ? next.t + (next.type === 'check' ? 1 : 0) : duration(p.events)
+    this.stagesPassed(p, from, this.clock)
     this.drawer = null
     if (!this.playing) this.play()
     this.notify()
@@ -623,7 +653,7 @@ class Store {
     const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.plannedModel ?? f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
     const basis = plan.basis ?? plan.estimate
-    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom } }
+    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []) } }
   }
 
   // What the plan will cost and take, by simulating it on its default path with your current farmers and rules,
@@ -634,7 +664,7 @@ class Store {
     const bugFixed = this.nextBugFixed(p)
     const built = this.inputFor(p, kit, p.autonomy, {}, {}, bugFixed)
     if (!built) return null
-    const key = JSON.stringify([p.id, built.input.farmers, built.input.tasks, p.autonomy, bugFixed, built.input.basis])
+    const key = JSON.stringify([p.id, built.input.farmers, built.input.tasks, p.autonomy, bugFixed, built.input.basis, built.input.reshape])
     const hit = this.forecasts.get(key)
     if (hit) return hit
     const events = simulateRun(built.input)
@@ -709,7 +739,8 @@ class Store {
     // approved. Only the farmers and the plan come from the new run. From now on, the new run takes over.
     if (now > 0 && p.events.length) {
       const old = p.events
-      const head = (e: RunEvent) => e.type === 'goal' || e.type === 'plan' || e.type === 'farmer'
+      // The farmers, the plan and the changes you asked for come from the new run, wherever they sit in time.
+      const head = (e: RunEvent) => e.type === 'goal' || e.type === 'plan' || e.type === 'farmer' || e.type === 'reshape'
       const kept = old.filter((e) => e.t <= now && !head(e) && e.type !== 'done')
       const has = (e: RunEvent) =>
         kept.some((k) =>
@@ -817,6 +848,151 @@ class Store {
   }
 
   // ---- your own project: a live plan you can change and approve ----
+
+  // ---- changing the farm by asking the Planner ----
+
+  pending: PendingChange | null = null
+
+  // Read a message as a change to the farm. Returns false when it isn't one, so it goes to the crew as a note.
+  async proposeChanges(pid: string, text: string, live?: (text: string, ctx: Parameters<typeof readChanges>[1]) => Promise<{ proposal: Proposal | null; note?: string }>): Promise<'card' | 'reply' | false> {
+    const p = this.project(pid)
+    if (!p) return false
+    const ctx = this.reshapeCtx(p)
+    let proposal: Proposal | null = null
+    let note: string | undefined
+    if (live) {
+      const r = await live(text, ctx)
+      proposal = r.proposal
+      note = r.note
+    }
+    if (!proposal) {
+      const r = readChanges(text, ctx)
+      if (r.kind === 'not-a-change') return false
+      if (r.kind === 'none') {
+        this.chatTo(pid, { from: 'you', text: clip(text) })
+        this.chatTo(pid, { from: 'planner', text: r.reply })
+        return 'reply'
+      }
+      proposal = { ...r.proposal, note }
+    }
+    const wasPlaying = this.playing
+    this.pause()
+    this.pending = { pid, request: text, proposal, wasPlaying }
+    this.chatTo(pid, { from: 'you', text: clip(text) })
+    return 'card'
+  }
+
+  reshapeCtx(p: Project) {
+    const s = this.state(p)
+    return {
+      tasks: (s?.tasks ?? []).map((k) => ({ id: k.id, name: k.name, farmer: k.farmer, gate: k.gate, status: k.status })),
+      farmers: Object.values(s?.farmers ?? {}).filter((f): f is NonNullable<typeof f> => !!f).map((f) => f.id),
+      active: (p.reshapes ?? []).flatMap((r) => r.changes),
+    }
+  }
+
+  cancelChanges() {
+    const pd = this.pending
+    this.pending = null
+    if (pd?.wasPlaying) this.play()
+    this.notify()
+  }
+
+  // Apply the rows you kept. A stage alert asks the browser for permission first; blocked, it falls back to a
+  // message in the app, and the card says so before it closes.
+  async applyChanges(rowIds: string[]) {
+    const pd = this.pending
+    const p = pd && this.project(pd.pid)
+    if (!pd || !p) return
+    const rows = pd.proposal.rows.filter((r) => rowIds.includes(r.id))
+    if (!rows.length) return this.cancelChanges()
+    let notify: ReshapeOn['notify']
+    if (rows.some((r) => r.change.kind === 'notifyOn')) {
+      let ok = false
+      try {
+        if (typeof Notification !== 'undefined') ok = (Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission) === 'granted'
+      } catch {
+        ok = false
+      }
+      notify = ok ? 'desktop' : 'toast'
+      if (!ok && !pd.denied) {
+        this.pending = { ...pd, denied: true, proposal: { ...pd.proposal, rows: pd.proposal.rows.filter((r) => rowIds.includes(r.id)) } }
+        this.notify()
+        return
+      }
+    }
+    const done = this.isDone(p)
+    const r: ReshapeOn = {
+      id: `rs-${(p.reshapes?.length ?? 0) + 1}-${Date.now().toString(36)}`,
+      title: pd.proposal.title,
+      request: pd.request,
+      changes: rows.map((x) => x.change),
+      scope: 'farm',
+      at: done ? 0 : Math.round(p.clock ?? 0),
+      notify,
+      before: done ? undefined : { events: p.events, answers: { ...(p.answers ?? {}) }, run: p.run && { ...p.run } },
+    }
+    p.reshapes = [...(p.reshapes ?? []), r]
+    this.pending = null
+    // Run again, or a finished run: the changes start with the next run, and the finished one stays as it was.
+    if (!done && p.approved) this.rebuild(p)
+    const n = rows.length
+    this.chatTo(p.id, { from: 'planner', text: done ? `${r.title} is on from the next run: ${n} change${n === 1 ? '' : 's'}.` : `${r.title} is on: ${n} change${n === 1 ? '' : 's'}, from now.` })
+    this.toast = { id: Date.now(), text: `${r.title} is on.`, undo: r.id }
+    if (pd.wasPlaying && !done) this.play()
+    this.notify()
+    this.persist()
+  }
+
+  // Turn a change off. The latest one comes off exactly: the run goes back to what it was before it.
+  undoChanges(id: string) {
+    const p = this.project()
+    const list = p?.reshapes ?? []
+    const i = list.findIndex((r) => r.id === id)
+    if (!p || i < 0) return
+    const r = list[i]
+    p.reshapes = list.filter((x) => x.id !== id)
+    if (i === list.length - 1 && r.before) {
+      const keep = new Set(r.before.events.filter((e) => e.type === 'ask').map((e) => (e.type === 'ask' ? e.id : '')))
+      const answers = { ...r.before.answers }
+      for (const [k, v] of Object.entries(p.answers ?? {})) if (keep.has(k)) answers[k] = v
+      p.events = r.before.events
+      p.answers = answers
+      p.run = r.before.run
+      // An answer you gave since, different from the old run's own, moves the run on from there as usual.
+      const differs = Object.entries(answers).some(([k, v]) => {
+        const rec = p.events.find((e) => e.type === 'answer' && e.id === k)
+        return rec && rec.type === 'answer' && rec.choice !== v
+      })
+      if (differs) this.rebuild(p)
+      this.setSpeed(p.events)
+    } else if (p.approved && !this.isDone(p)) this.rebuild(p)
+    this.toast = { id: Date.now(), text: `${r.title} is off.` }
+    this.chatTo(p.id, { from: 'planner', text: `${r.title} is off. The farm runs as it did before.` })
+    this.notify()
+    this.persist()
+  }
+
+  // A stage alert for each release moment the clock just passed: 10%, a rollback, 10% again, everyone.
+  private stagesPassed(p: Project, from: number, to: number) {
+    const how = (p.reshapes ?? []).find((r) => r.changes.some((c) => c.kind === 'notifyOn'))?.notify
+    if (!how || to <= from) return
+    // In-app, the stages a skip jumped past share one message, so none is lost.
+    const said: string[] = []
+    for (const e of p.events) {
+      if (e.type !== 'deploy' || e.t <= from || e.t > to) continue
+      const again = e.stage === '10%' && p.events.some((x) => x.type === 'deploy' && x.stage === 'rollback' && x.t < e.t)
+      const text = e.stage === 'rollback' ? 'Rolled back' : e.stage === '100%' ? 'Live for everyone' : again ? 'Live for 10% again' : 'Live for 10% of users'
+      if (how === 'desktop' && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try {
+          new Notification(`${p.name}: ${text}`, { body: e.reason ?? 'The rollout moved to its next stage.', tag: `${p.id}-${e.t}` })
+        } catch {
+          said.push(text)
+        }
+      } else said.push(text)
+    }
+    if (said.length) this.toast = { id: Date.now(), text: `${p.name}: ${said.join(', then ')}` }
+  }
 
   // No two farms share a name: "Support assistant", then "Support assistant 2".
   private uniqueName(name: string, id: string) {

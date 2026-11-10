@@ -4,7 +4,8 @@
 
 import type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
 import type { FarmerId } from './types'
-import { planGoal as livePlan, probeLive, routeMessage as liveRoute } from './live'
+import { planGoal as livePlan, probeLive, reshapeLive, routeMessage as liveRoute } from './live'
+import { changesFromLive, type Ctx as ReshapeCtx, type Proposal } from './reshape'
 import { simulatePlan, simulateRoute } from './simPlan'
 
 const KEY = 'homestead.live'
@@ -55,4 +56,18 @@ export function plan(goal: string, crewSize?: number | FarmerId[]) {
 
 export function route(input: RouteInput) {
   return run<RouteOut>(() => liveRoute(input.message, input.farmers, input.tasks), () => simulateRoute(input), 700)
+}
+
+// A change to the farm, read by the live Planner when Live mode is on. Off, or when the call fails, the app reads it
+// with its own scripted parser, and a failed call says so on the card.
+export async function reshapeRead(message: string, ctx: ReshapeCtx): Promise<{ proposal: Proposal | null; note?: string }> {
+  if (!live) return { proposal: null }
+  if (!(await probeLive())) return { proposal: null, note: 'Live mode is on, but the server has no API key, so I read this myself.' }
+  try {
+    const out = await reshapeLive(message, ctx)
+    const proposal = changesFromLive(out, ctx)
+    return { proposal: proposal && { ...proposal, note: 'Read by the live Planner' } }
+  } catch (e) {
+    return { proposal: null, note: `The live Planner failed (${e instanceof Error ? e.message : String(e)}), so I read this myself.` }
+  }
 }

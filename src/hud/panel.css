@@ -340,3 +340,6 @@ button.crew-x:hover { opacity: 1; }
 .plot-label { width: max-content; }
 .plot-label .plot-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; line-height: 1.15; }
 .pp-roll .rollout text { display: none; }
+/* Plots slide together when you change the farm; labels follow at the same pace. */
+.plot-label { transition: left 400ms cubic-bezier(.2, .7, .3, 1), top 400ms cubic-bezier(.2, .7, .3, 1); }
+@media (prefers-reduced-motion: reduce) { .plot-label { transition: none; } }

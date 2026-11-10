@@ -99,6 +99,45 @@ interface Walker {
   dir: Dir
 }
 
+// When you change the farm, a removed plot goes up in a puff of pixel cloud and the rest slide together.
+// The atlas has no smoke sprite, so the cloud is drawn here, in the same pixel size and palette.
+const POOF_MS = 700
+const SLIDE_MS = 400
+const poofs: { x: number; y: number; w: number; h: number; at: number }[] = []
+let slide: { from: Map<string, { x: number; y: number }>; at: number } | null = null
+const still = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+
+// The plots where they are drawn now: partway along a slide, eased.
+function sliding(layout: Layout, now: number): Layout {
+  if (!slide) return layout
+  const k = Math.min(1, (now - slide.at) / SLIDE_MS)
+  if (k >= 1) {
+    slide = null
+    return layout
+  }
+  const e = 1 - Math.pow(1 - k, 3)
+  const from = slide.from
+  return { ...layout, plots: layout.plots.map((pl) => (from.has(pl.id) ? { ...pl, x: from.get(pl.id)!.x + (pl.x - from.get(pl.id)!.x) * e, y: from.get(pl.id)!.y + (pl.y - from.get(pl.id)!.y) * e } : pl)) }
+}
+
+// A small cloud: five puffs that swell and fade, snapped to a two-pixel grid like the sprites.
+function poof(g: CanvasRenderingContext2D, cx: number, cy: number, size: number, k: number) {
+  const puffs = [[0, 0, 1], [-0.55, 0.15, 0.75], [0.55, 0.1, 0.8], [-0.25, -0.4, 0.7], [0.3, -0.35, 0.65]]
+  const a = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4
+  for (const pass of [0, 1]) {
+    g.globalAlpha = a
+    g.fillStyle = pass === 0 ? '#c9b18e' : '#fff6e4'
+    for (const [ox, oy, sc] of puffs) {
+      const r = size * sc * (0.32 + 0.4 * Math.min(1, k * 1.6)) - (pass === 0 ? 0 : 2)
+      const px = cx + ox * size * (0.9 + k * 0.9)
+      const py = cy + oy * size * (0.9 + k * 0.9) - k * 6
+      for (let y = -r; y <= r; y += 2)
+        for (let x = -r; x <= r; x += 2) if (x * x + y * y <= r * r) g.fillRect(Math.round((px + x) / 2) * 2, Math.round((py + y) / 2) * 2, 2, 2)
+    }
+  }
+  g.globalAlpha = 1
+}
+
 export function FarmView(p: FarmViewProps) {
   const wrap = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -242,6 +281,26 @@ export function FarmView(p: FarmViewProps) {
     return { cx: w / 2, cy: top + Math.max(0, size.h - top - bottom) / 2 }
   }
 
+  // A plot that left the plan goes up in a poof, and the rest slide to their new places.
+  const placed = useRef<{ plots: Map<string, Plot>; tasks: Map<string, string> } | null>(null)
+  useEffect(() => {
+    const now = performance.now()
+    const before = placed.current
+    const plots = new Map(layout.plots.map((pl) => [pl.id, pl]))
+    const tasks = new Map(p.state.tasks.map((t) => [t.id, `${t.doneWhen}|${t.farmer}`]))
+    placed.current = { plots, tasks }
+    if (!before || p.planning || still() || ![...plots.keys()].some((id) => before.plots.has(id))) return
+    for (const [id, pl] of before.plots) if (!plots.has(id)) poofs.push({ x: pl.x, y: pl.y, w: pl.w, h: pl.h, at: now })
+    // A plot that changed what it is (a new done-when, a new farmer) puffs once where it stands.
+    for (const [id, was] of before.tasks) if (tasks.has(id) && tasks.get(id) !== was && plots.has(id)) poofs.push({ ...plots.get(id)!, at: now })
+    const from = new Map<string, { x: number; y: number }>()
+    for (const [id, pl] of plots) {
+      const old = before.plots.get(id)
+      if (old && (old.x !== pl.x || old.y !== pl.y)) from.set(id, { x: old.x, y: old.y })
+    }
+    if (from.size) slide = { from, at: now }
+  }, [layout, p.state.tasks.map((t) => t.id + t.doneWhen + t.farmer).join()])
+
   // Every new plot (a task split in two mid-run) stakes itself out over a moment.
   useEffect(() => {
     const now = performance.now()
@@ -267,7 +326,7 @@ export function FarmView(p: FarmViewProps) {
       k.oy = Math.round(fr.cy - k.cy * PX * k.s)
       if (labels.current) labels.current.style.transform = `translate(${k.ox}px, ${k.oy}px)`
       const c = canvas.current
-      if (c) paint(c, props.current, layout, k, walkers.current, born.current, hover.current, now, dt, hearts.current)
+      if (c) paint(c, props.current, sliding(layout, now), k, walkers.current, born.current, hover.current, now, dt, hearts.current)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -719,6 +778,16 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
     })
   })
   drawList.sort((a, b) => a.y - b.y).forEach((d) => d.fn())
+  // Plots that just left the plan, in a puff.
+  for (let i = poofs.length - 1; i >= 0; i--) {
+    const q = poofs[i]
+    const k = (now - q.at) / POOF_MS
+    if (k >= 1) {
+      poofs.splice(i, 1)
+      continue
+    }
+    poof(g, (q.x + q.w / 2) * PX, (q.y + q.h / 2) * PX, Math.min(q.w, q.h) * PX * 0.42, k)
+  }
 }
 
 function stage(t: TaskState) {

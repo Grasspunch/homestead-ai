@@ -59,6 +59,7 @@ export interface Metrics {
   errorRate?: number
   p95ms?: number
   answerScore?: number
+  synth?: { pass: number; total: number } // synthetic tests in prod, when the rollout is judged by them
 }
 
 export type RunEvent =
@@ -98,6 +99,8 @@ export type RunEvent =
   | { t: number; type: 'deploy'; stage: DeployStage; url?: string; reason?: string; metrics?: Metrics }
   | { t: number; type: 'monitor'; stage: '10%' | '100%'; metrics: Metrics }
   | { t: number; type: 'replan'; reason: string; tasks: PlanTask[] }
+  // You changed the farm by asking the Planner: what it took out and what it changed, from this moment.
+  | { t: number; type: 'reshape'; titles: string[]; removed: string[]; skipped: string[]; off: FarmerId[]; owner: Record<string, FarmerId>; doneWhen: Record<string, string>; synthetics: boolean; everyone: boolean; noReview: boolean }
   // You stopped a task: it stays out of the pull request.
   | { t: number; type: 'stop'; task: string; reason: string }
   | { t: number; type: 'done'; usd: number; minutes: number; asks: number; autoFixes: number; actions: number }
@@ -177,6 +180,8 @@ export interface RunState {
   activity: ActivityLine[]
   done?: { usd: number; minutes: number; asks: number; autoFixes: number; actions: number }
   actions: number
+  // The changes you asked the Planner for, once they took effect.
+  reshape?: { titles: string[]; skipped: string[]; synthetics: boolean; everyone: boolean; noReview: boolean; off: FarmerId[] }
 }
 
 // How often the crew stops for you: each kind of moment either asks you or is handled by the crew.

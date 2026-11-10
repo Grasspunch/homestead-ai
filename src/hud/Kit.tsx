@@ -226,6 +226,56 @@ export function Kit() {
         </div>
       </Sec>
 
+      <Sec title="Change card" note="Asking the Planner to change the farm brings one card per request. One row per change, all checked; untick any you want kept. A row that removes a safety step says what you lose in berry ink. Applied, the request becomes a gold chip under the title with × to turn it off, and the toast carries Undo.">
+        <div className="kp-ask">
+          <div className="portrait">
+            <Portrait farmer="planner" />
+          </div>
+          <div className="body paper bubble kp-askbody" data-tail="left">
+            <div className="who">
+              <b>Planner</b>
+              <span className="urgency honey">
+                <Ico name="star" tone="light" />
+                Incident mode
+              </span>
+            </div>
+            <p>Make these 3 changes to the farm?</p>
+            <ul className="change-rows" aria-label="Changes">
+              {[
+                ['The Deployer is off, so the Builder pushes to main', 'Nobody but the author watches the release', true],
+                ['Ship to everyone, no 10% stage', 'No 10% stage, so no automatic rollback', true],
+                ['Skip “Check it end to end”', 'Nothing checks the tasks together before release', false],
+              ].map(([what, loss, on]) => (
+                <li key={what as string} className={on ? 'on' : ''}>
+                  <label>
+                    <input type="checkbox" defaultChecked={on as boolean} />
+                    <span className="what">{what}</span>
+                    <span className="loss">{loss}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div className="row">
+              <button className="btn">
+                <Ico name="check" />
+                Apply 2 changes
+              </button>
+              <button className="btn tan">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div className="row" style={{ marginTop: 14, gap: 10, alignItems: 'center' }}>
+          <span className="tag gold reshape-chip">
+            Incident mode
+            <button aria-label="Turn off Incident mode">×</button>
+          </span>
+          <div className="toast paper with-undo" style={{ position: 'static', transform: 'none', animation: 'none' }}>
+            Incident mode is on.
+            <button className="toast-undo">Undo</button>
+          </div>
+        </div>
+      </Sec>
+
       <Sec title="Rows" note="Lists are ruled, never boxed. Name in body ink, the line under it in description ink.">
         <div className="list" style={{ maxWidth: 520 }}>
           <div>

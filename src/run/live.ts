@@ -2,7 +2,8 @@
 // There is no recorded fallback for 'plan': a recorded plan can't match an arbitrary goal,
 // so a failed call throws and the caller shows the error.
 
-import type { AgentTask, PlanOut, RouteInput, RouteOut } from '../agent/agents'
+import type { AgentTask, PlanOut, ReshapeOut, RouteInput, RouteOut } from '../agent/agents'
+import type { Ctx as ReshapeCtx } from './reshape'
 
 export type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
 
@@ -42,7 +43,7 @@ async function call<T>(task: AgentTask, input: Record<string, unknown>): Promise
   }
   if (!res.ok || !body || body.data === undefined) {
     const why = body?.error ?? (res.ok ? 'The agent sent back no answer.' : `The agent server answered ${res.status}.`)
-    throw new Error(task === 'plan' ? `Couldn't make a plan: ${why}` : `Couldn't route the message: ${why}`)
+    throw new Error(task === 'plan' ? `Couldn't make a plan: ${why}` : task === 'reshape' ? `Couldn't read the change: ${why}` : `Couldn't route the message: ${why}`)
   }
   return { ...body.data, tokens: body.tokens ?? 0, model: body.model }
 }
@@ -54,4 +55,8 @@ export function planGoal(goal: string, crewSize?: number | string[]): Promise<Li
 
 export function routeMessage(message: string, farmers: RouteInput['farmers'], tasks: RouteInput['tasks']): Promise<LiveResult<RouteOut>> {
   return call<RouteOut>('route', { message, farmers, tasks })
+}
+
+export function reshapeLive(message: string, ctx: ReshapeCtx): Promise<LiveResult<ReshapeOut>> {
+  return call<ReshapeOut>('reshape', { message, ctx })
 }

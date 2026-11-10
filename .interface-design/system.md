@@ -91,3 +91,12 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - Both Simulated tags (your farms and the sample) use the gold tag.
 - Home picks the largest scale (3, 2.5, 2 or 1.5) that shows every farm and the new-farm plot above the dialogue.
 - Done's time gain says "assuming one agent runs a third slower".
+
+## Changing the farm
+- Ask the Planner in the talk bar, at any time, to change how the farm runs. A request that reads as a change gets one change card in the Planner's bubble; anything else goes to the crew as a note.
+- The change card follows the ask: Planner header, an honey urgency tag naming the change ("Incident mode", "Synthetic checks", "Stage alerts"), one question, then one row per change. Every row is checked. An unticked row greys and strikes through.
+- A row that removes a safety step has one loss line under it in berry ink, the reading font at meta size. No helper sentences.
+- Buttons: "Apply N changes" (cream) and Cancel (tan). The count follows the ticks; at zero Apply is disabled.
+- If the browser blocks notifications, the card says so in its question line and Apply becomes "Apply with in-app messages".
+- An applied request is a gold chip hanging just under the title, with × to turn it off, so the title keeps its status. The toast says "X is on." with an Undo link. Undo of the latest change restores the run exactly.
+- A removed plot goes up in a pixel cloud (drawn in code, 2 px grid, the pack's tan and cream, 700 ms) and the rest slide to their places over 400 ms, eased out. A plot whose done-when or farmer changed puffs once where it stands. Under prefers-reduced-motion there is no poof and no slide.

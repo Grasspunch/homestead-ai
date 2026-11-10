@@ -214,6 +214,13 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
       case 'monitor':
         s.monitor.push({ t: e.t, stage: e.stage, metrics: e.metrics })
         break
+      case 'reshape': {
+        const gone = new Set(e.removed)
+        s.tasks = s.tasks.filter((k) => !gone.has(k.id)).map((k) => ({ ...k, doneWhen: e.doneWhen[k.id] ?? k.doneWhen, farmer: e.owner[k.id] ?? k.farmer }))
+        for (const f of e.off) s.farmers[f] = undefined
+        s.reshape = { titles: e.titles, skipped: e.skipped, synthetics: e.synthetics, everyone: e.everyone, noReview: e.noReview, off: e.off }
+        break
+      }
       case 'replan': {
         const before = new Map(s.tasks.map((k) => [k.id, k]))
         s.tasks = e.tasks.map<TaskState>((p) => {

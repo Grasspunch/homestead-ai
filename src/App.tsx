@@ -9,7 +9,7 @@ import { Ico, LimitField, Mark, Portrait, Sign, Swatch, mins, usd, type IconName
 import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
-import { getLiveMode, route, setLiveMode } from './run/agent'
+import { getLiveMode, reshapeRead, route, setLiveMode } from './run/agent'
 import { planInto } from './run/planning'
 import { scenario } from './run/simPlan'
 import { pendingAsk } from './run/reduce'
@@ -52,8 +52,13 @@ export function App() {
       {st.screen.kind === 'home' ? <Home /> : <Farm />}
       {st.settingsOpen && <Settings />}
       {st.toast && (
-        <div key={st.toast.id} className="toast paper" role="status">
+        <div key={st.toast.id} className={`toast paper${st.toast.undo ? ' with-undo' : ''}`} role="status">
           {st.toast.text}
+          {st.toast.undo && (
+            <button className="toast-undo" onClick={() => store.undoChanges(st.toast!.undo!)}>
+              Undo
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -103,6 +108,8 @@ function Farm() {
       {d?.kind === 'control' && <ControlPanel p={p} />}
       {!p.approved ? (
         <PlanDialogue p={p} s={s} side={side} />
+      ) : st.pending?.pid === p.id ? (
+        <ChangeCard side={side} />
       ) : ask ? (
         <AskDialogue key={ask.id} s={s} ask={ask} side={side} />
       ) : rolled ? (
@@ -134,6 +141,18 @@ function Top({ p, s }: { p: Project; s: RunState }) {
         <b>{p.name}</b>
         <span>{sub}</span>
         {p.approved && !s.done && !st.playing && !pendingAsk(p.events, st.clock, st.viewerAnswers) && !st.openRollback(p) && <span className="tag grey">Paused</span>}
+        {!!p.reshapes?.length && (
+          <div className="reshapes">
+            {p.reshapes.map((r) => (
+              <span key={r.id} className="tag gold reshape-chip" title={r.changes.length + ' changes you asked for: ' + r.request}>
+                {r.title}
+                <button onClick={() => store.undoChanges(r.id)} aria-label={`Turn off ${r.title}`}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         {p.kind === 'sample' ? (
           <span className="tag gold" title="Every farmer, cost and check is simulated, and the run replays the same way each time">
             Simulated sample
@@ -383,6 +402,8 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
   const cause = s.activity.find((a) => a.t > t && a.kind !== 'ask' && /error|time out|timeout/i.test(a.text))
   const shipper = (s.tasks.find((x) => x.gate)?.farmer ?? 'deployer') as FarmerId
   const mine = s.deploy[i]?.reason === BY_YOU
+  // Judged by synthetic tests: the failing reading, said as the card's own measure.
+  const synthFail = /synthetic test failed/i.test(s.deploy[i]?.reason ?? '') ? /(\d+ of \d+ passing)/.exec(s.deploy[i]?.reason ?? '')?.[1] : undefined
   // Your rollback: the reading when you rolled it back, the same one the chart's numbers show.
   const atRollback = [...s.monitor].reverse().find((m) => m.t <= t && (!before || m.t >= before.t))?.metrics.errorRate ?? before?.metrics?.errorRate ?? 0
   const done = () => {
@@ -402,7 +423,13 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
         </span>
       </div>
       <p>
-        {mine ? <>Rolled back as you asked, with errors at <b>{(atRollback * 100).toFixed(1)}%</b>.</> : <>Errors reached <b>{(peak * 100).toFixed(1)}%</b>, so I rolled back by myself.</>}{' '}
+        {mine ? (
+          <>Rolled back as you asked, with errors at <b>{(atRollback * 100).toFixed(1)}%</b>.</>
+        ) : synthFail ? (
+          <>A synthetic test failed, <b>{synthFail}</b>, so I rolled back by myself.</>
+        ) : (
+          <>Errors reached <b>{(peak * 100).toFixed(1)}%</b>, so I rolled back by myself.</>
+        )}{' '}
         {mine ? <>It was live for {everyone ? 'every user' : '1 in 10 users'} for {live} min.</> : everyone ? <>Every user saw it for {live} min.</> : <>1 in 10 users saw it for {live} min. Nobody else did.</>}
       </p>
       {cause && !mine && <p className="impact">{cause.text}</p>}
@@ -733,6 +760,15 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
   )
 }
 
+// What the changes you asked for left out of this run, said plainly at the end.
+function skippedLine(s: RunState) {
+  const r = s.reshape
+  if (!r) return ''
+  const out = [...r.skipped.map((n) => `“${n}”`), ...(r.noReview ? ['the pull request review'] : []), ...(r.everyone ? ['the 10% stage'] : []), ...(r.off.includes('deployer') ? ['the Deployer'] : [])]
+  const list = out.length > 1 ? `${out.slice(0, -1).join(', ')} and ${out[out.length - 1]}` : out[0]
+  return [out.length ? `Skipped, as you asked: ${list}.` : '', r.synthetics ? 'The rollout was judged by synthetic tests.' : ''].filter(Boolean).join(' ')
+}
+
 // What shipped and where it is now: every task or only some, and live, at 10%, rolled back or not shipped.
 function doneLead(s: RunState) {
   const work = s.tasks.filter((t) => !t.gate)
@@ -745,6 +781,57 @@ function doneLead(s: RunState) {
   return cut ? `All ${work.length} tasks are in, ${cut} of them cut short by you, and ${where}.` : `Everything is in and ${where}.`
 }
 
+// Your request, read into changes: one row each, all on, and you take off any you want kept as it is.
+function ChangeCard({ side }: { side: boolean }) {
+  const st = useStore()
+  const pd = st.pending!
+  const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(pd.proposal.rows.map((r) => [r.id, true])))
+  const [busy, setBusy] = useState(false)
+  const n = pd.proposal.rows.filter((r) => on[r.id]).length
+  return (
+    <Dialogue farmer="planner" side={side}>
+      <div className="who">
+        <b>Planner</b>
+        <span className="urgency honey">
+          <Ico name="star" tone="light" />
+          {pd.proposal.title}
+        </span>
+      </div>
+      <p>{pd.denied ? 'This browser blocks notifications, so each stage will show here as a message instead.' : `Make ${pd.proposal.rows.length === 1 ? 'this change' : `these ${pd.proposal.rows.length} changes`} to the farm?`}</p>
+      {pd.proposal.note && <p className="sureness">{pd.proposal.note}</p>}
+      <ul className="change-rows" aria-label="Changes">
+        {pd.proposal.rows.map((r) => (
+          <li key={r.id} className={on[r.id] ? 'on' : ''}>
+            <label>
+              <input type="checkbox" checked={!!on[r.id]} disabled={pd.denied} onChange={(e) => setOn({ ...on, [r.id]: e.target.checked })} />
+              <span className="what">{r.label}</span>
+              {r.loss && <span className="loss">{r.loss}</span>}
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="row">
+        <button
+          className="btn"
+          disabled={!n || busy}
+          autoFocus
+          onClick={async () => {
+            setBusy(true)
+            await store.applyChanges(pd.proposal.rows.filter((r) => on[r.id]).map((r) => r.id))
+            setBusy(false)
+          }}
+        >
+          <Ico name="check" />
+          {pd.denied ? `Apply with in-app messages` : `Apply ${n} change${n === 1 ? '' : 's'}`}
+        </button>
+        <button className="btn tan" onClick={() => store.cancelChanges()}>
+          Cancel
+        </button>
+      </div>
+    </Dialogue>
+  )
+}
+
 function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }) {
   const st = useStore()
   const [text, setText] = useState('')
@@ -755,8 +842,14 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
     const msg = text.trim()
     if (!msg) return
     setText('')
-    store.chatTo(p.id, { from: 'you', text: msg })
     setBusy(true)
+    // A request to change the farm gets the change card; anything else goes to the crew as a note.
+    const asked = await store.proposeChanges(p.id, msg, reshapeRead)
+    if (asked) {
+      setBusy(false)
+      return
+    }
+    store.chatTo(p.id, { from: 'you', text: msg })
     const farmers = Object.values(s.farmers).filter((f): f is NonNullable<typeof f> => !!f).map((f) => ({ id: f.id, label: f.label }))
     const r = await route({ message: msg, farmers, tasks: s.tasks.map((t) => ({ id: t.id, name: t.name, farmer: t.farmer })) })
     setBusy(false)
@@ -774,6 +867,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
           {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caughtLine(s)}, and you made {s.asks.filter((a) => a.answer).length} call{s.asks.filter((a) => a.answer).length === 1 ? '' : 's'}.
         </p>
       ) : null}
+      {s.done && skippedLine(s) && <p className="impact">{skippedLine(s)}</p>}
       {s.done && outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
       {!s.done && (
         lines.length > 0 && (
@@ -809,7 +903,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
             }}
           >
             <span className="field">
-              <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder="Tell the crew something, for example: make the widget friendlier" aria-label="Message the crew" />
+              <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder="Tell the crew something, or ask the Planner to change the farm" aria-label="Message the crew" />
             </span>
             <button className="btn" type="submit" disabled={busy}>
               <Ico name="chat" />

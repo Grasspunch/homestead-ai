@@ -11,6 +11,7 @@
 import type { Autonomy, Estimate, FarmerId, FarmerSetup, PlanTask, Proof, RunEvent, Screen, TestResult } from './types'
 import { AUTONOMY_PRESETS } from './types'
 import { scenario } from './simPlan'
+import type { Reshaped } from './reshape'
 import { MODELS } from './kit'
 
 const MIN = 60_000
@@ -112,12 +113,18 @@ export interface SimInput {
   // a stop re-runs the simulation so nothing after it involves that farmer.
   halts?: Partial<Record<FarmerId, number>>
   haltTotals?: Partial<Record<FarmerId, number>> // what each stopped farmer would have spent without the stop
+  // Changes you asked the Planner for (reshape.ts): skipped tasks, no review, no Deployer, straight to everyone,
+  // synthetic tests as the rollout's measure. They change what the crew does, not just its labels.
+  reshape?: Reshaped
 }
 
 export const SEND_BACK = 'Send back'
 
 export function simulateRun(input: SimInput): RunEvent[] {
-  const { goal, farmers } = input
+  const { goal } = input
+  const rs = input.reshape
+  // The Deployer turned off: off the crew, and its release work goes to the Builder.
+  const farmers = rs?.noDeployer ? input.farmers.filter((f) => f.id !== 'deployer') : input.farmers
   // Each task draws from its own seed, so an answer on one task never moves what another did before it.
   let r = rng(hash(goal + input.tasks.map((t) => t.id).join()))
   const ev: RunEvent[] = []
@@ -126,8 +133,17 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const label = (id: FarmerId) => farmers.find((f) => f.id === id)?.label ?? 'The farmer'
   const checker: FarmerId = has('tester') ? 'tester' : farmers[0]?.id ?? 'builder'
   const lead: FarmerId = has('planner') ? 'planner' : farmers[0]?.id ?? 'builder'
-  let plan = [...input.tasks]
-  const auto = input.autonomy ?? AUTONOMY_PRESETS.matters
+  const shipper: FarmerId = has('builder') ? 'builder' : lead
+  const owner: Record<string, FarmerId> = {}
+  let plan = input.tasks
+    .filter((t) => !rs?.skip.includes(t.id))
+    .map((t) => {
+      const moved = rs?.noDeployer && t.farmer === 'deployer'
+      if (moved) owner[t.id] = shipper
+      return { ...t, farmer: moved ? shipper : t.farmer, doneWhen: rs?.doneWhen[t.id] ?? t.doneWhen }
+    })
+  // No review: the release merges by itself, as with shipping set to "just do it".
+  const auto = rs?.noReview ? { ...(input.autonomy ?? AUTONOMY_PRESETS.matters), ship: 'auto' as const } : input.autonomy ?? AUTONOMY_PRESETS.matters
   // With "May deploy" off, every release asks you: the merge, the ship again after a rollback, and 10% to everyone.
   const asks = (m: keyof Autonomy) => auto[m] === 'ask' || ((m === 'ship' || m === 'reship') && !!input.deployAsks)
   const sc = scenario(goal).script
@@ -300,7 +316,11 @@ export function simulateRun(input: SimInput): RunEvent[] {
         } else {
           at(tt + 0.15, { type: 'auto_fix', task: task.id, what: `${task.name} was heading to ${money(projected)}, over its ${money(budget)}. The ${label(lead)} split it in two, which saves about ${money(projected - budget - rest$)}.` })
         }
-        if (c === suggested) {
+        if (c === suggested && rs?.skip.includes(`${task.id}-rest`)) {
+          // Split, and the hard cases skipped: the first part stays on budget and they are left out.
+          note = 'Split in two; the hard cases were skipped when you changed the plan'
+          extra += 0.4
+        } else if (c === suggested) {
           const rest: PlanTask = { id: `${task.id}-rest`, name: 'Hard cases', farmer: 'builder', doneWhen: `The cases left out of ${lower(task.name)} pass their own tests`, gate: false }
           const gateAt = plan.findIndex((t) => t.gate || t.id === 'e2e-check')
           plan = [...plan.slice(0, gateAt < 0 ? plan.length : gateAt), rest, ...plan.slice(gateAt < 0 ? plan.length : gateAt)]
@@ -420,7 +440,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (asks('ship') || stopped.size > 0) {
       for (let round = 0; ; round++) {
         const id = `ask-${++askN}`
-        const suggested = isShip ? 'Merge and ship to 10%' : 'Go ahead'
+        const suggested = isShip ? (rs?.everyone ? 'Merge and ship to everyone' : 'Merge and ship to 10%') : 'Go ahead'
         at(reviewAt + 0.3, {
           type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible',
           confidence: isShip && !stopped.size && input.bugFixed ? 'high' : 'medium',
@@ -436,9 +456,13 @@ export function simulateRun(input: SimInput): RunEvent[] {
               ? `The pull request has ${shipped()} of ${built()} tasks, ${commits()} commits, and every check passed. ${stopped.size} stopped task${stopped.size === 1 ? '' : 's'} stay${stopped.size === 1 ? 's' : ''} out. Ship it without ${stopped.size === 1 ? 'it' : 'them'}?`
               : `${round ? 'The pull request is ready again' : 'The pull request is ready'}: ${commits()} commits, and every check passed.`
             : `${task.name} reaches real people. Go ahead?`,
-          impact: isShip ? `Merging puts it in front of 10% of users first. If errors pass ${ERROR_LIMIT * 100}%, I roll back by myself.` : 'This one is hard to undo.',
+          impact: isShip
+            ? rs?.everyone
+              ? 'Merging puts it in front of every user at once. There is no 10% stage to roll back from.'
+              : `Merging puts it in front of 10% of users first. ${rs?.synthetics ? 'If a synthetic test fails' : `If errors pass ${ERROR_LIMIT * 100}%`}, I roll back by myself.`
+            : 'This one is hard to undo.',
           suggested,
-          alternatives: isShip ? [SEND_BACK, 'Ship to everyone', 'Not yet'] : ['Not yet'],
+          alternatives: isShip ? (rs?.everyone ? [SEND_BACK, 'Not yet'] : [SEND_BACK, 'Ship to everyone', 'Not yet']) : ['Not yet'],
         })
         const c = choose(id, suggested)
         at(reviewAt + 1.5, { type: 'answer', id, choice: c, by: 'human' })
@@ -466,16 +490,25 @@ export function simulateRun(input: SimInput): RunEvent[] {
           reviewAt = t0 + 2.3
           continue
         }
-        everyone = c === 'Ship to everyone'
+        everyone = c === 'Ship to everyone' || c === 'Merge and ship to everyone'
         break
       }
     } else if (isShip) {
-      at(start + 1.5, { type: 'auto_fix', task: task.id, what: `Every check passed, so the ${label(f)} merged the pull request by itself (${commits()} commits) and shipped to 10% first.` })
+      const to = rs?.everyone ? 'shipped to everyone at once' : 'shipped to 10% first'
+      at(start + 1.5, {
+        type: 'auto_fix', task: task.id,
+        what: rs?.noReview && rs.noDeployer
+          ? `No review: the ${label(f)} pushed ${commits()} commits straight to main and ${to}.`
+          : rs?.noReview
+            ? `No review: the ${label(f)} merged the pull request by itself (${commits()} commits) and ${to}.`
+            : `Every check passed, so the ${label(f)} merged the pull request by itself (${commits()} commits) and ${to}.`,
+      })
     }
+    if (rs?.everyone) everyone = true
     const shipStart = reviewAt
     let t = shipStart + 1.7
     if (isShip) {
-      at(t - 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: `Merged the pull request (${commits()} commits)` })
+      at(t - 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: rs?.noDeployer && rs.noReview ? `Pushed straight to main (${commits()} commits)` : `Merged the pull request (${commits()} commits)` })
     }
     for (const line of steps(task, f)) {
       at(t, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: line })
@@ -491,15 +524,28 @@ export function simulateRun(input: SimInput): RunEvent[] {
 
     // Rollout: 10% (or everyone, if you said so), watch, it goes bad, roll back by itself, fix, ship again.
     // The bug lives in this release only the first time: on a later run of the same farm it was fixed last time.
+    // Judged by synthetic tests, the rollback comes on the first failing test, not on the error rate.
+    // With no 10% stage at all, nothing rolls back: everyone sees it until the fix goes out.
+    const synth = !!rs?.synthetics
+    const S = 12
+    const mx = (errorRate: number, p95ms: number, answerScore: number, pass = S) => ({ errorRate, p95ms, answerScore, ...(synth ? { synth: { pass, total: S } } : {}) })
+    const direct = !!rs?.everyone
     if (!input.bugFixed) {
     const first = everyone ? '100%' : '10%'
     at(t, { type: 'progress', task: task.id, value: 0.3 })
-    at(t + 0.1, { type: 'deploy', stage: first, metrics: { errorRate: 0.003, p95ms: 1700, answerScore: 0.91 } })
-    const bad = [0.003, 0.004, rb.peak * 0.3, rb.peak * 0.6, rb.peak]
-    bad.forEach((e, i) => at(t + 0.6 + i * 0.6, { type: 'monitor', stage: first, metrics: { errorRate: e, p95ms: 1700 + i * 900, answerScore: 0.91 - i * 0.01 } }))
+    at(t + 0.1, { type: 'deploy', stage: first, metrics: mx(0.003, 1700, 0.91) })
+    const bad = synth ? [0.003, 0.004, rb.peak * 0.3] : [0.003, 0.004, rb.peak * 0.3, rb.peak * 0.6, rb.peak]
+    const passing = (i: number) => (synth && i === bad.length - 1 ? S - 1 : S)
+    bad.forEach((e, i) => at(t + 0.6 + i * 0.6, { type: 'monitor', stage: first, metrics: mx(e, 1700 + i * 900, 0.91 - i * 0.01, passing(i)) }))
     t += 0.6 + bad.length * 0.6
-    at(t, { type: 'deploy', stage: 'rollback', reason: everyone ? `Errors reached ${peak} for every user, over the ${ERROR_LIMIT * 100}% limit` : `Errors reached ${peak} for the 10%, over the ${ERROR_LIMIT * 100}% limit` })
-    at(t + 0.05, { type: 'auto_fix', task: task.id, what: everyone ? `Rolled back by itself when errors reached ${peak}. Every user saw the errors for about 3 minutes.` : `Rolled back by itself when errors reached ${peak}. Nobody else was affected.` })
+    const what = synth ? `a synthetic test failed (${S - 1} of ${S} passing)` : `errors reached ${peak}`
+    if (direct) {
+      // Nothing to roll back to a smaller group from: the fix goes forward, to everyone.
+      at(t + 0.05, { type: 'auto_fix', task: task.id, what: `No 10% stage, so nothing rolled back: every user saw it when ${what}, for about 4 min until the ${label(has('builder') ? 'builder' : f)} pushed a fix.` })
+    } else {
+      at(t, { type: 'deploy', stage: 'rollback', reason: synth ? `A synthetic test failed for ${everyone ? 'every user' : 'the 10%'}: ${S - 1} of ${S} passing` : everyone ? `Errors reached ${peak} for every user, over the ${ERROR_LIMIT * 100}% limit` : `Errors reached ${peak} for the 10%, over the ${ERROR_LIMIT * 100}% limit` })
+      at(t + 0.05, { type: 'auto_fix', task: task.id, what: everyone ? `Rolled back by itself when ${what}. Every user saw it for about 3 minutes.` : `Rolled back by itself when ${what}. Nobody else was affected.` })
+    }
     at(t + 0.1, { type: 'progress', task: task.id, value: 0.1 })
     at(t + 0.6, { type: 'tool', farmer: f, task: task.id, tool: 'read', summary: `Read the errors: ${rb.cause}` })
     usage(t + 0.61, f, task.id, usdPer(f) * 0.1, 'read')
@@ -508,25 +554,27 @@ export function simulateRun(input: SimInput): RunEvent[] {
     usage(t + 1.41, fixer, task.id, usdPer(fixer) * 0.3, 'retry')
     at(t + 2.2, { type: 'check', task: task.id, by: checkerOf(fixer), pass: true, notes: rb.check, evidence: [`${rb.file}: ${rb.tests.length} passed`], proof: { kind: 'unit', tests: rb.tests.map((name, i) => ({ name, pass: true, ms: 900 + i * 300 })) } })
     t += 2.6
-    if (asks('reship')) {
+    if (direct) {
+      // The fix goes straight to everyone too.
+    } else if (asks('reship')) {
       const id = `ask-${++askN}`
-      at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'risk', confidence: 'high', basis: `${rb.tests.length} new tests reproduce the rollback and now pass.`, question: 'Fixed what caused the rollback. Ship to 10% again?', impact: 'Same rule as before: if errors pass 2%, I roll back by myself.', suggested: 'Ship to 10% again', alternatives: ['Not yet'] })
+      at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'risk', confidence: 'high', basis: `${rb.tests.length} new tests reproduce the rollback and now pass.`, question: 'Fixed what caused the rollback. Ship to 10% again?', impact: synth ? 'Same rule as before: if a synthetic test fails, I roll back by myself.' : 'Same rule as before: if errors pass 2%, I roll back by myself.', suggested: 'Ship to 10% again', alternatives: ['Not yet'] })
       at(t + 1, { type: 'answer', id, choice: choose(id, 'Ship to 10% again'), by: 'human' })
       t += 1.1
     } else {
       at(t, { type: 'auto_fix', task: task.id, what: `Fixed what caused the rollback, so the ${label(f)} shipped to 10% again by itself.` })
     }
     }
-    if (!(input.bugFixed && everyone)) {
+    if (!(input.bugFixed && everyone) && !direct) {
     at(t, { type: 'progress', task: task.id, value: 0.5 })
-    at(t + 0.1, { type: 'deploy', stage: '10%', metrics: { errorRate: 0.002, p95ms: 1600, answerScore: 0.92 } })
+    at(t + 0.1, { type: 'deploy', stage: '10%', metrics: mx(0.002, 1600, 0.92) })
     const good = [0.002, 0.003, 0.002, 0.003]
-    good.forEach((e, i) => at(t + 0.6 + i * 0.6, { type: 'monitor', stage: '10%', metrics: { errorRate: e, p95ms: 1600 + i * 40, answerScore: 0.92 } }))
+    good.forEach((e, i) => at(t + 0.6 + i * 0.6, { type: 'monitor', stage: '10%', metrics: mx(e, 1600 + i * 40, 0.92) }))
     t += 0.6 + good.length * 0.6
     if (input.deployAsks) {
       const id = `ask-${++askN}`
       const go = 'Ship to everyone'
-      at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible', confidence: 'high', basis: '4 readings in a row at 0.3% errors or less.', question: `10% has been clean for ${Math.round(good.length * 0.6)} min, with errors at 0.3%. Ship to everyone?`, impact: 'Every user gets it. If errors pass 2%, I roll back by myself.', suggested: go, alternatives: ['Stay at 10%'] })
+      at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible', confidence: 'high', basis: synth ? `4 readings in a row with all ${S} synthetic tests passing.` : '4 readings in a row at 0.3% errors or less.', question: synth ? `10% has been clean for ${Math.round(good.length * 0.6)} min, with ${S} of ${S} synthetic tests passing. Ship to everyone?` : `10% has been clean for ${Math.round(good.length * 0.6)} min, with errors at 0.3%. Ship to everyone?`, impact: synth ? 'Every user gets it. If a synthetic test fails, I roll back by myself.' : 'Every user gets it. If errors pass 2%, I roll back by myself.', suggested: go, alternatives: ['Stay at 10%'] })
       const c = choose(id, go)
       at(t + 1, { type: 'answer', id, choice: c, by: 'human' })
       t += 1.1
@@ -535,16 +583,17 @@ export function simulateRun(input: SimInput): RunEvent[] {
         continue
       }
     } else {
-      at(t, { type: 'auto_fix', task: task.id, what: `10% stayed under ${ERROR_LIMIT * 100}% errors, so the ${label(f)} shipped to everyone by itself.` })
+      at(t, { type: 'auto_fix', task: task.id, what: synth ? `10% kept all ${S} synthetic tests passing, so the ${label(f)} shipped to everyone by itself.` : `10% stayed under ${ERROR_LIMIT * 100}% errors, so the ${label(f)} shipped to everyone by itself.` })
     }
     }
     at(t, { type: 'progress', task: task.id, value: 0.8 })
-    at(t + 0.1, { type: 'deploy', stage: '100%', metrics: { errorRate: 0.003, p95ms: 1650, answerScore: 0.92 } })
-    ;[0.003, 0.004, 0.003].forEach((e, i) => at(t + 0.6 + i * 0.6, { type: 'monitor', stage: '100%', metrics: { errorRate: e, p95ms: 1650 + i * 30, answerScore: 0.92 } }))
+    at(t + 0.1, { type: 'deploy', stage: '100%', metrics: mx(0.003, 1650, 0.92) })
+    ;[0.003, 0.004, 0.003].forEach((e, i) => at(t + 0.6 + i * 0.6, { type: 'monitor', stage: '100%', metrics: mx(e, 1650 + i * 30, 0.92) }))
     t += 2.4
     at(t, { type: 'task_built', task: task.id })
-    at(t + 0.2, { type: 'check', task: task.id, by: checkerOf(f), pass: true, notes: `Live for everyone, errors 0.3%, under the ${ERROR_LIMIT * 100}% limit`, evidence: ['deploy/metrics.json'], proof: { kind: 'rollout' } })
-    finish(task, t + 0.2, 'Live for everyone, errors 0.3%', ['deploy/metrics.json'])
+    const live = synth ? `Live for everyone, ${S} of ${S} synthetic tests passing in prod` : `Live for everyone, errors 0.3%, under the ${ERROR_LIMIT * 100}% limit`
+    at(t + 0.2, { type: 'check', task: task.id, by: checkerOf(f), pass: true, notes: live, evidence: [synth ? 'deploy/synthetics.json' : 'deploy/metrics.json'], proof: { kind: 'rollout' } })
+    finish(task, t + 0.2, synth ? `Live for everyone, ${S} of ${S} synthetic tests passing` : 'Live for everyone, errors 0.3%', [synth ? 'deploy/synthetics.json' : 'deploy/metrics.json'])
   }
 
   // Checking, planning and asking cost something too: the checker reads the work, the lead re-plans.
@@ -553,6 +602,11 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (e.type === 'check') usage(e.t / MIN - 0.02, e.by, e.task, usdPer(e.by) * (e.proof?.kind === 'screens' ? 0.12 : 0.07), 'read')
     if (e.type === 'replan') usage(e.t / MIN - 0.02, lead, plan[0]?.id ?? '', usdPer(lead) * 0.1, 'read')
     if (e.type === 'ask') usage(e.t / MIN - 0.02, e.farmer, e.task ?? '', usdPer(e.farmer) * 0.03, 'read')
+  }
+  // When the changes you asked for took effect: what they took out and changed, for the farm to show.
+  if (rs) {
+    const nameOf = (id: string) => input.tasks.find((k) => k.id === id)?.name ?? (/-rest$/.test(id) ? 'Hard cases' : id)
+    ev.push({ t: Math.max(rs.at, Math.round(0.06 * MIN)), type: 'reshape', titles: rs.titles, removed: [...rs.skip], skipped: rs.skip.map(nameOf), off: rs.noDeployer ? ['deployer'] : [], owner, doneWhen: rs.doneWhen, synthetics: rs.synthetics, everyone: rs.everyone, noReview: rs.noReview })
   }
   const sp = split as Split | null
   if (sp) {

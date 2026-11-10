@@ -4,6 +4,7 @@
 // The caller passes in an Anthropic client, which keeps this file free of runtime-specific imports.
 
 import type { Estimate, FarmerId, FarmerSetup, PlanTask } from '../run/types'
+import { reshapeSchema, type Ctx as ReshapeCtx } from '../run/reshape'
 
 export const MODEL = 'claude-opus-5-5'
 // Routing a message is a quick pick from a short list, so it runs on the cheap model.
@@ -231,9 +232,38 @@ Pick the farmer, the task it is about (or null), and write one short sentence to
   return { ...out, data: task ? { ...rest, task } : rest }
 }
 
+// ---- Changing the farm ----------------------------------------------------------------
+
+export interface ReshapeOut {
+  title: string
+  reply: string
+  changes: Record<string, unknown>[]
+}
+
+// A request to change how the farm runs ("I'm in an incident, skip the deployer"), as a list of typed changes.
+// The schema only allows the changes the app can make, on this farm's own tasks; the app checks them again.
+export async function reshapeFarm(client: ClaudeClient, input: { message: string; ctx: ReshapeCtx }): Promise<AgentResult<ReshapeOut>> {
+  const tasks = input.ctx.tasks.map((t) => `- ${t.id}: ${t.name} (${t.farmer}${t.gate ? ', the release' : ''}${t.status ? `, ${t.status}` : ''})`).join('\n')
+  return callJSON<ReshapeOut>(
+    client,
+    `You are the Planner for a crew of AI coding agents. The person asks to change how their farm runs. Turn the request into the smallest list of typed changes that does what they asked, and nothing they didn't. Anything they say to keep (for example "don't skip the tester") stays out of the list. removeTask skips a task; removeFarmer turns the Deployer off so the Builder pushes to main; setAutonomy ship auto removes the pull request review; setRollout everyone ships to every user with no 10% stage; setRolloutCheck synthetics judges the rollout by synthetic tests in prod; setDoneWhen changes a task's done-when; notifyOn stage sends a desktop notification at each rollout stage. If nothing fits, return no changes and say in reply what you can change. ${STYLE}`,
+    `The crew: ${input.ctx.farmers.join(', ')}
+
+The tasks:
+${tasks || '(none yet)'}
+
+The person's request:
+<message>
+${input.message}
+</message>`,
+    reshapeSchema(input.ctx),
+    ROUTE_MODEL,
+  )
+}
+
 // ---- Entry point used by /api/agent ---------------------------------------------------
 
-export type AgentTask = 'plan' | 'route'
+export type AgentTask = 'plan' | 'route' | 'reshape'
 
 export async function runAgent(client: ClaudeClient, task: AgentTask, input: Record<string, unknown>): Promise<AgentResult<unknown>> {
   switch (task) {
@@ -251,6 +281,12 @@ export async function runAgent(client: ClaudeClient, task: AgentTask, input: Rec
         farmers: Array.isArray(input.farmers) ? (input.farmers as RouteInput['farmers']) : [],
         tasks: Array.isArray(input.tasks) ? (input.tasks as RouteInput['tasks']) : [],
       })
+    }
+    case 'reshape': {
+      const message = typeof input.message === 'string' ? input.message.trim() : ''
+      const ctx = input.ctx as ReshapeCtx | undefined
+      if (!message || !ctx || !Array.isArray(ctx.tasks) || !Array.isArray(ctx.farmers)) throw new Error('A message and the farm are needed to change it.')
+      return reshapeFarm(client, { message, ctx })
     }
     default:
       throw new Error(`Unknown task: ${String(task)}`)
