@@ -571,10 +571,20 @@ function emote(g: CanvasRenderingContext2D, fx: number, fy: number, what: Emote,
   }
   const m: Record<Exclude<Emote, 'dots'>, [number, number]> = { alert: [5, 8], notes: [8, 8], zzz: [9, 8], check: [0, 8], x: [3, 8], coin: [6, 10], read: [7, 5] }
   const [c, r] = m[what]
-  // The cross fills its whole cell, so it's drawn a little smaller to clear the bubble's lower edge.
-  const sz = what === 'x' ? 11 : 13
-  g.drawImage(IMG.emoji, c * 32, r * 32, 32, 32, bx + 1.5 + (13 - sz) / 2, by + 1 + (13 - sz) / 2 - (what === 'x' ? 0.5 : 0), sz, sz)
+  // The ! and the cross fill more of their cells than the check does, so they're cut to their ink and
+  // fitted into the box the check's ink takes up (about 11 by 9), centred on the same point.
+  const ink = INK[what]
+  if (ink) {
+    const [x0, y0, w, h] = ink
+    const k = Math.min(11.4 / w, 9 / h)
+    g.drawImage(IMG.emoji, c * 32 + x0, r * 32 + y0, w, h, bx + 8 - (w * k) / 2, by + 7.9 - (h * k) / 2, w * k, h * k)
+    return
+  }
+  g.drawImage(IMG.emoji, c * 32, r * 32, 32, 32, bx + 1.5, by + 1, 13, 13)
 }
+
+// The inked part of an emote's 32px cell, as x, y, width and height, measured from emoji.png.
+const INK: Partial<Record<Emote, [number, number, number, number]>> = { alert: [11, 0, 10, 32], x: [3, 3, 26, 26] }
 
 // A heart rises from a chicken you clicked and fades.
 function heart(g: CanvasRenderingContext2D, x: number, y: number, age: number) {
