@@ -9,7 +9,8 @@ import { Ico, LimitField, Mark, Portrait, Sign, Swatch, mins, usd, type IconName
 import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
-import { getLiveMode, reshapeRead, route, setLiveMode } from './run/agent'
+import { NO_KEY, getLiveMode, reshapeRead, route, setLiveMode } from './run/agent'
+import { probeKeys, type Keys } from './run/live'
 import type { Scope } from './run/reshape'
 import { planInto } from './run/planning'
 import { scenario } from './run/simPlan'
@@ -19,7 +20,7 @@ import { SEND_BACK } from './run/simulate'
 import { BY_YOU } from './run/rollback'
 import type { Ask, FarmerId, RunState } from './run/types'
 import { FARMER_ORDER } from './run/types'
-import { MODELS, applyEdit } from './run/kit'
+import { MODELS, MODEL_GROUPS, applyEdit } from './run/kit'
 
 export function App() {
   const st = useStore()
@@ -278,20 +279,24 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
   const one = fc?.solo
   const setCrew = (next: FarmerId[]) => planInto(p, next)
   const missing = FARMER_ORDER.filter((x) => !s.farmers[x])
+  // No key for the Planner's provider: the plan is simulated, and the tag says which key.
+  const noKey = !!p.liveNote && Object.values(NO_KEY).includes(p.liveNote)
+  const pl = s.farmers.planner ? setupOf('planner') : undefined
   return (
     <Dialogue farmer="planner" side={side} dock>
       <div className="who">
         <b>Planner</b>
         <span className="tag grey">Plan</span>
         {p.plannedLive && (
-          <span className="tag sky" title="This plan came from a live call to Claude Opus 5.5">
-            Planned live by Claude
+          <span className="tag sky" title={`This plan came from a live call to ${pl?.model ?? 'Claude Opus 5.5'}`}>
+            Planned live by {pl?.agent === 'codex' ? 'Codex' : 'Claude'}
           </span>
         )}
-        {!p.plannedLive && p.liveNote && <span className="tag red">Live call failed</span>}
+        {!p.plannedLive && noKey && <span className="tag gold">{p.liveNote}</span>}
+        {!p.plannedLive && p.liveNote && !noKey && <span className="tag red">Live call failed</span>}
         {!p.plannedLive && !p.liveNote && <DemoTag goal={p.goal} />}
       </div>
-      {!p.plannedLive && p.liveNote && <p className="impact">This plan is simulated, because the live call failed: {p.liveNote}</p>}
+      {!p.plannedLive && p.liveNote && !noKey && <p className="impact">This plan is simulated, because the live call failed: {p.liveNote}</p>}
       {p.reshapes?.find((r) => r.flow)?.flow && <p className="plan-flow">With your flow: {p.reshapes.find((r) => r.flow)!.flow!.join(', ')}.</p>}
       <p className="plan-lead">
         {ids.length > 1 ? (
@@ -345,10 +350,14 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
                   })
                 }}
               >
-                {MODELS.map((m) => (
-                  <option key={m.model} value={m.model}>
-                    {m.label}
-                  </option>
+                {MODEL_GROUPS.map((g) => (
+                  <optgroup key={g.provider} label={g.label}>
+                    {MODELS.filter((m) => m.provider === g.provider).map((m) => (
+                      <option key={m.model} value={m.model}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <LimitField unit="$" label={`${f.label}'s spend limit`} value={f.limits.usd} onChange={(v) => store.editKit(p.id, id, (k) => (k.limits = { ...f.limits, usd: v }))} />
@@ -701,7 +710,7 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
 }
 
 // How sure the farmer is of its suggestion, and what that rests on.
-const SURE = { high: 'Sure', medium: 'Fairly sure', low: 'Unsure' } as const
+const SURE = { high: 'Sure', medium: 'Fairly sure', low: 'Your call' } as const
 function Sureness({ ask }: { ask: Ask }) {
   if (!ask.confidence) return null
   return (
@@ -854,6 +863,8 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const lines = (st.chat[p.id] ?? []).slice(-2)
+  // Live calls run on the Planner's own model: Claude, or Codex if you switched it.
+  const plannerModel = s.farmers.planner ? applyEdit(s.farmers.planner, st.kit[p.id]?.planner).model : undefined
   const input = useRef<HTMLInputElement>(null)
   const send = async (offer?: string) => {
     const msg = (offer ?? text).trim()
@@ -861,17 +872,18 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
     if (offer === undefined) setText('')
     setBusy(true)
     // A request to change the farm gets the change card; anything else goes to the crew as a note.
-    const asked = await store.proposeChanges(p.id, msg, reshapeRead)
+    const asked = await store.proposeChanges(p.id, msg, (t, c) => reshapeRead(t, c, plannerModel))
     if (asked) {
       setBusy(false)
       return
     }
     store.chatTo(p.id, { from: 'you', text: msg })
     const farmers = Object.values(s.farmers).filter((f): f is NonNullable<typeof f> => !!f).map((f) => ({ id: f.id, label: f.label }))
-    const r = await route({ message: msg, farmers, tasks: s.tasks.map((t) => ({ id: t.id, name: t.name, farmer: t.farmer })) })
+    const r = await route({ message: msg, farmers, tasks: s.tasks.map((t) => ({ id: t.id, name: t.name, farmer: t.farmer })) }, plannerModel)
     setBusy(false)
     store.noteFor(p.id, r.data.to, msg)
     store.chatTo(p.id, { from: 'planner', text: r.data.reply, to: r.data.to })
+    if (r.error) store.say(r.error)
   }
   return (
     <Dialogue farmer="planner" side={side}>
@@ -946,6 +958,15 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
 function Settings() {
   const st = useStore()
   const [live, setLive] = useState(getLiveMode())
+  // Which keys the server has, yes or no. The values never leave the server.
+  const [keys, setKeys] = useState<Keys | null>(null)
+  useEffect(() => {
+    let on = true
+    probeKeys().then((k) => on && setKeys(k))
+    return () => {
+      on = false
+    }
+  }, [])
   return (
     <div className="pop wood" role="dialog" aria-label="Settings">
       <h3 className="px-s">Settings</h3>
@@ -959,9 +980,22 @@ function Settings() {
         <span className={`switch${live ? ' on' : ''}`} />
         <span>
           Live mode
-          <small>On, the Planner calls Claude with the server’s API key. Off, it’s simulated and free.</small>
+          <small>On, the Planner calls Claude or Codex with the server’s keys. Off, it’s simulated and free.</small>
         </span>
       </button>
+      <dl className="keys" aria-label="Server keys">
+        {(
+          [
+            ['anthropic', 'Anthropic key (Claude)'],
+            ['openai', 'OpenAI key (Codex)'],
+          ] as const
+        ).map(([k, label]) => (
+          <div key={k}>
+            <dt>{label}</dt>
+            <dd className={keys?.[k] ? 'yes' : 'no'}>{keys ? (keys[k] ? 'Yes' : 'No') : '…'}</dd>
+          </div>
+        ))}
+      </dl>
       <button className="toggle" onClick={() => store.enableNotifications(!st.notifications)}>
         <span className={`switch${st.notifications ? ' on' : ''}`} />
         <span>

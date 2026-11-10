@@ -406,7 +406,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         const id = `ask-${++askN}`
         at(end + 0.7, {
           type: 'ask', id, farmer: 'designer', task: task.id, reason: 'disagree',
-          confidence: 'medium', basis: 'My way meets the done-when as written.',
+          confidence: 'low', basis: `Both ways meet the goal, ${task.doneWhen.charAt(0).toLowerCase() + task.doneWhen.slice(1)}. It comes down to which matters more to you.`,
           question: `The Builder and I disagree on ${d.topic}.`,
           impact: d.impact,
           suggested: d.designer.option, alternatives: [d.builder.option],
