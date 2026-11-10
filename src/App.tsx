@@ -4,7 +4,7 @@ import './hud/panel.css'
 import { useEffect, useRef, useState } from 'react'
 import { FarmView } from './farm/FarmView'
 import { Home } from './hud/Home'
-import { Ico, Portrait, Swatch, mins, usd } from './hud/bits'
+import { Ico, LimitField, Portrait, Swatch, mins, usd } from './hud/bits'
 import { FarmerPage } from './hud/FarmerPage'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel } from './hud/Side'
 import { getLiveMode, route, setLiveMode } from './run/agent'
@@ -12,6 +12,8 @@ import { planInto } from './run/planning'
 import { pendingAsk } from './run/reduce'
 import { store, useStore, type Project } from './run/store'
 import type { Ask, FarmerId, RunState } from './run/types'
+import { FARMER_ORDER } from './run/types'
+import { MODELS, applyEdit } from './run/kit'
 
 export function App() {
   const st = useStore()
@@ -137,7 +139,7 @@ function Dialogue({ farmer, side, children }: { farmer: FarmerId; side: boolean;
 
 function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }) {
   const [text, setText] = useState('')
-  const crew = Object.values(s.farmers).filter(Boolean).length
+  const st = useStore()
   if (p.planning)
     return (
       <Dialogue farmer="planner" side={side}>
@@ -167,8 +169,17 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         </div>
       </Dialogue>
     )
-  const est = s.estimate
   const one = s.singleAgentEstimate
+  const ids = FARMER_ORDER.filter((x) => s.farmers[x])
+  const edits = st.kit[p.id] ?? {}
+  const setupOf = (id: FarmerId) => applyEdit(s.farmers[id]!, edits[id])
+  // Your model choices move the price: each farmer's share scales with its model's rate.
+  const rate = (m: string) => MODELS.find((x) => x.model === m)?.rate ?? 1
+  const est = s.estimate && {
+    minutes: s.estimate.minutes,
+    usd: ids.reduce((n, id) => n + (s.farmers[id]!.limits.usd / 1.3) * (rate(setupOf(id).model) / rate(s.farmers[id]!.model) - 1), s.estimate.usd),
+  }
+  const setCrew = (next: FarmerId[]) => planInto(p, next)
   return (
     <Dialogue farmer="planner" side={side}>
       <div className="who">
@@ -176,37 +187,133 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         <span className="tag grey">Plan</span>
         <span className="aside">Nothing runs until you approve</span>
       </div>
-      <p>
-        <b>{s.tasks.length} tasks</b> for a crew of <b>{crew}</b>. Click a plot or a farmer to change it, or tell me what to change.
+      <p className="plan-lead">
+        {ids.length > 1 ? (
+          <>
+            I’d use this crew of <b>{ids.length}</b>: <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>.
+            {one && est && <> One agent alone takes {mins(one.minutes)} for {usd(one.usd)}, with nobody checking its work.</>}
+          </>
+        ) : (
+          <>
+            One agent, everything in a row: <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>.
+          </>
+        )}
       </p>
+      <div className="plan-grid">
+        <section>
+          <h4>Crew</h4>
+          <div className="crew-list">
+            {ids.map((id) => {
+              const f = setupOf(id)
+              return (
+                <div key={id} className="crew-row">
+                  <button className="crew-name" onClick={() => store.setDrawer({ kind: 'farmer', id })} title="Everything it carries">
+                    <Swatch farmer={id} />
+                    <b>{f.label}</b>
+                  </button>
+                  <select
+                    className="pick"
+                    value={f.model}
+                    aria-label={`${f.label}'s model`}
+                    onChange={(e) => {
+                      const m = MODELS.find((x) => x.model === e.target.value)!
+                      store.editKit(p.id, id, (k) => {
+                        const base = s.farmers[id]!
+                        k.model = m.model === base.model ? undefined : m.model
+                        k.agent = m.model === base.model ? undefined : m.agent
+                      })
+                    }}
+                  >
+                    {MODELS.map((m) => (
+                      <option key={m.model} value={m.model}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                  <LimitField unit="$" label={`${f.label}'s spend limit`} value={f.limits.usd} onChange={(v) => store.editKit(p.id, id, (k) => (k.limits = { ...f.limits, usd: v }))} />
+                  {id !== 'builder' ? (
+                    <button className="crew-x" aria-label={`Drop the ${f.label}`} onClick={() => setCrew(ids.filter((x) => x !== id))}>
+                      <Ico name="cross" size={14} />
+                    </button>
+                  ) : (
+                    <span className="crew-x" />
+                  )}
+                  {f.why && <span className="why">{f.why}</span>}
+                </div>
+              )
+            })}
+            {FARMER_ORDER.filter((x) => !s.farmers[x]).map((id) => (
+              <button key={id} className="crew-add" onClick={() => setCrew([...ids, id])}>
+                <Ico name="plus" size={14} />
+                Add the {id.charAt(0).toUpperCase() + id.slice(1)}
+              </button>
+            ))}
+          </div>
+        </section>
+        <section>
+          <h4>Tasks, and when each is done</h4>
+          <div className="task-list">
+            {s.tasks.map((t) => (
+              <div key={t.id} className="task-row">
+                <div className="task-top">
+                  <button className="task-name" onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
+                    {t.name}
+                  </button>
+                  <select
+                    className="pick"
+                    value={t.farmer}
+                    aria-label={`Who does ${t.name}`}
+                    onChange={(e) =>
+                      store.editPlan(p.id, (tasks) => {
+                        const x = tasks.find((k) => k.id === t.id)
+                        if (x) x.farmer = e.target.value as FarmerId
+                      })
+                    }
+                  >
+                    {ids.map((x) => (
+                      <option key={x} value={x}>
+                        {s.farmers[x]!.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <label className="done-when">
+                  <span>Done when</span>
+                  <input
+                    defaultValue={t.doneWhen}
+                    key={t.doneWhen}
+                    aria-label={`${t.name} is done when`}
+                    onBlur={(e) => {
+                      const v = e.target.value.trim()
+                      if (v && v !== t.doneWhen)
+                        store.editPlan(p.id, (tasks) => {
+                          const x = tasks.find((k) => k.id === t.id)
+                          if (x) x.doneWhen = v
+                        })
+                    }}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
       <div className="row plan-row">
-        <div className="crew-size" role="group" aria-label="Crew size">
-          Crew
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button key={n} aria-pressed={crew === n} onClick={() => crew !== n && planInto(p, n)}>
-              {n}
-            </button>
-          ))}
-        </div>
         <div className="stops">
           Stops for you
           <LevelPicker p={p} compact />
-          <button className="link" onClick={() => store.setDrawer({ kind: 'control' })}>
-            Details
-          </button>
         </div>
-      </div>
-      <div className="row">
         <form
-          className="field paper"
+          className="field paper grow-form-field"
           onSubmit={(e) => {
             e.preventDefault()
             if (!text.trim()) return
-            planInto(p, crew, text.trim())
+            planInto(p, ids, text.trim())
             setText('')
           }}
         >
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Change the plan, for example: no Designer, I have the screens" aria-label="Change the plan" />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Or tell me, for example: I have the screens already" aria-label="Change the plan" />
         </form>
         <button
           className="btn"
@@ -216,15 +323,10 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           }}
         >
           <Ico name="play" />
-          Approve and start
-          {est && <small>{mins(est.minutes)}, {usd(est.usd)}</small>}
+          Approve
+          {est && <small>{usd(est.usd)}</small>}
         </button>
       </div>
-      {one && est && crew > 1 && (
-        <p className="vs">
-          One agent alone: <b>{mins(one.minutes)}</b>, <b>{usd(one.usd)}</b>. This crew finishes {Math.max(0, Math.round(one.minutes - est.minutes))} min sooner for {usd(Math.max(0, est.usd - one.usd))} more.
-        </p>
-      )}
     </Dialogue>
   )
 }

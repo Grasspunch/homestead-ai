@@ -11,6 +11,7 @@ interface Draft {
   context: Partial<Record<FarmerId, string[]>>
 }
 
+const USD_SCALE = 15
 const SHIP = { id: 'ship', name: 'Ship to users', farmer: 'deployer' as FarmerId, doneWhen: 'Live for 10% with errors under 2%, then for everyone', gate: true, mins: 8, usd: 0.3 }
 
 function draft(goal: string): Draft {
@@ -65,6 +66,14 @@ function draft(goal: string): Draft {
 
 const PRIORITY: FarmerId[] = ['builder', 'tester', 'planner', 'designer', 'deployer']
 
+const WHY: Record<FarmerId, string> = {
+  planner: 'Splits the work, prices it and passes your messages on. Needs judgment, so Opus.',
+  builder: 'Writes most of the code. Sol is as good at code as Opus here and costs a quarter less.',
+  designer: 'Screens and copy need taste, so Opus. Checks its own screens on phone and desktop.',
+  tester: 'Checks the others against each done-when. Kept apart so nobody grades its own work.',
+  deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own.',
+}
+
 function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boolean): FarmerSetup {
   const label = CREW[id].label
   const opus = solo || id === 'planner' || id === 'designer'
@@ -82,24 +91,27 @@ function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boole
     model: opus ? 'Claude Opus 5.5' : 'Sol 6.1',
     context: base[id].context,
     constraints: base[id].constraints,
-    limits: { usd: Math.ceil(usd * 1.3 * 2) / 2, minutes: Math.ceil((minutes * 1.3) / 5) * 5 },
+    limits: { usd: Math.ceil(usd * 1.3), minutes: Math.ceil((minutes * 1.3) / 5) * 5 },
+    why: solo ? 'Does everything in a row. Cheapest to run, slowest to finish.' : WHY[id],
   }
 }
 
-export function simulatePlan(goal: string, crewSize?: number): PlanOut {
+export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): PlanOut {
   const d = draft(goal)
   // Default crew: everyone with work, plus the Tester and Planner who check it.
   const wanted = new Set<FarmerId>(['builder', 'tester', 'planner', ...d.tasks.map((t) => t.farmer)])
   let crew = PRIORITY.filter((id) => wanted.has(id))
-  if (crewSize !== undefined) crew = PRIORITY.slice(0, Math.max(1, Math.min(5, Math.round(crewSize))))
+  if (Array.isArray(crewSize)) crew = PRIORITY.filter((id) => id === 'builder' || crewSize.includes(id))
+  else if (crewSize !== undefined) crew = PRIORITY.slice(0, Math.max(1, Math.min(5, Math.round(crewSize))))
   const solo = crew.length === 1
   const fallback = (f: FarmerId): FarmerId => (crew.includes(f) ? f : 'builder')
 
-  const tasks = d.tasks.map((t) => ({ ...t, farmer: fallback(t.farmer), gate: !!t.gate }))
+  // Drafts price each task in Sonnet-hour units; a real crew on Opus and Sol spends about this much.
+  const tasks = d.tasks.map((t) => ({ ...t, usd: t.usd * USD_SCALE, farmer: fallback(t.farmer), gate: !!t.gate }))
   // A Tester on the crew gets its own task: the end-to-end check before shipping.
   if (crew.includes('tester')) {
     const i = tasks.findIndex((t) => t.gate)
-    tasks.splice(i < 0 ? tasks.length : i, 0, { id: 'e2e-check', name: 'Check it end to end', farmer: 'tester', doneWhen: 'Every done-when passes in one end-to-end run', gate: false, mins: 7, usd: 0.4, after: tasks.filter((t) => !t.gate).map((t) => t.id) })
+    tasks.splice(i < 0 ? tasks.length : i, 0, { id: 'e2e-check', name: 'Check it end to end', farmer: 'tester', doneWhen: 'Every done-when passes in one end-to-end run', gate: false, mins: 7, usd: 0.4 * USD_SCALE, after: tasks.filter((t) => !t.gate).map((t) => t.id) })
   }
 
   // Crew time: the longest chain, since farmers work in parallel. One agent: everything in a row.
@@ -112,7 +124,7 @@ export function simulatePlan(goal: string, crewSize?: number): PlanOut {
     busy[t.farmer] = finish[t.id]
   }
   const sum = (k: 'mins' | 'usd') => tasks.reduce((s, t) => s + t[k], 0)
-  const handoffs = solo ? 0 : 0.15 * (crew.length - 1)
+  const handoffs = solo ? 0 : 0.15 * USD_SCALE * (crew.length - 1)
   const estimate: Estimate = solo
     ? { usd: +sum('usd').toFixed(2), minutes: Math.round(sum('mins')) }
     : { usd: +(sum('usd') + handoffs).toFixed(2), minutes: Math.round(Math.max(...Object.values(finish)) + 4) }
@@ -120,7 +132,7 @@ export function simulatePlan(goal: string, crewSize?: number): PlanOut {
 
   const farmers = crew.map((id) => {
     const mine = tasks.filter((t) => t.farmer === id)
-    return setup(id, d, Math.max(0.5, mine.reduce((s, t) => s + t.usd, 0) || 0.5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo)
+    return setup(id, d, Math.max(5, mine.reduce((s, t) => s + t.usd, 0) || 5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo)
   })
   return {
     name: d.name,

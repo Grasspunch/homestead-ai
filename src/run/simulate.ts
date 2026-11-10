@@ -176,21 +176,22 @@ export function simulateRun(input: SimInput): RunEvent[] {
       if (task === pricey && i === 1) {
         // Too expensive: about half done, most of its money gone. The Planner asks to split it.
         const budget = Math.ceil(spent * 1.15 * 20) / 20
-        const projected = spent * 2.1
+        const projected = spent * 3.4
+        const rest$ = usdPer * 0.9
         let split = tt + 0.1
         if (asks('cost')) {
           const id = `ask-${++askN}`
           at(tt + 0.1, {
             type: 'ask', id, farmer: lead, task: task.id, reason: 'cost',
             question: `${task.name} is costing more than planned. It has used ${money(spent)} of its ${money(budget)} and is about half done.`,
-            impact: `At this rate it ends near ${money(projected)}. Splitting it keeps the first part on budget and moves the hard cases into their own task.`,
+            impact: `At this rate it ends near ${money(projected)}. Splitting it keeps this part on budget and gives the hard cases their own ${money(rest$)}, about ${money(projected - budget - rest$)} less.`,
             suggested: 'Split it in two',
             alternatives: [`Raise its limit to ${money(projected)}`, 'Stop it here'],
           })
           at(tt + 1.2, { type: 'answer', id, choice: 'Split it in two', by: 'human' })
           split = tt + 1.2
         } else {
-          at(tt + 0.15, { type: 'auto_fix', task: task.id, what: `${task.name} was heading to ${money(projected)}, over its ${money(budget)}. The ${label(lead)} split it in two to keep the first part on budget.` })
+          at(tt + 0.15, { type: 'auto_fix', task: task.id, what: `${task.name} was heading to ${money(projected)}, over its ${money(budget)}. The ${label(lead)} split it in two, which saves about ${money(projected - budget - rest$)}.` })
         }
         const rest: PlanTask = { id: `${task.id}-rest`, name: `Hard cases: ${lower(task.name)}`, farmer: 'builder', doneWhen: 'The cases left out of the first part pass their own tests', gate: false }
         const gateAt = plan.findIndex((t) => t.gate || t.id === 'e2e-check')
@@ -320,5 +321,5 @@ export function simulateRun(input: SimInput): RunEvent[] {
 }
 
 function money(n: number) {
-  return `$${n.toFixed(2)}`
+  return n >= 10 ? `$${Math.round(n)}` : `$${n.toFixed(2)}`
 }

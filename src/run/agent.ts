@@ -3,6 +3,7 @@
 // which uses the deployment's ANTHROPIC_API_KEY. A failed live call falls back to the simulation.
 
 import type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
+import type { FarmerId } from './types'
 import { planGoal as livePlan, probeLive, routeMessage as liveRoute } from './live'
 import { simulatePlan, simulateRoute } from './simPlan'
 
@@ -48,7 +49,7 @@ async function run<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number):
   return { data: sim(), live: false, error: live ? 'Live mode is on, but the server has no API key.' : undefined }
 }
 
-export function plan(goal: string, crewSize?: number) {
+export function plan(goal: string, crewSize?: number | FarmerId[]) {
   return run<PlanOut>(() => livePlan(goal, crewSize), () => simulatePlan(goal, crewSize), 1800)
 }
 

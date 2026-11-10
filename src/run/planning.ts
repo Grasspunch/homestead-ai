@@ -1,8 +1,9 @@
 // Asks the Planner (simulated, or live in Live mode) for a plan and puts it on the farm.
 import { plan as askPlan } from './agent'
 import { store, type Project } from './store'
+import type { FarmerId } from './types'
 
-export async function planInto(p: Project, crewSize?: number, change?: string) {
+export async function planInto(p: Project, crewSize?: number | FarmerId[], change?: string) {
   p.planning = true
   p.error = undefined
   store.notify()

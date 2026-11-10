@@ -1,5 +1,7 @@
 // What a check rests on, shown rather than described: the test run, the screenshots, the rollout's numbers.
-import type { Proof, RunState, Shot, TestResult } from '../run/types'
+import type { CSSProperties } from 'react'
+import type { Proof, RunState, Shot, TaskState, TestResult } from '../run/types'
+import { Swatch } from './bits'
 import { ERROR_LIMIT } from '../run/simulate'
 
 export function Tests({ tests, kind }: { tests: TestResult[]; kind: 'unit' | 'integration' }) {
@@ -156,5 +158,85 @@ export function Rollout({ state, compact = false }: { state: RunState; compact?:
         </div>
       )}
     </div>
+  )
+}
+
+type Check = TaskState['checks'][number]
+
+const WHO: Record<string, string> = { planner: 'Planner', builder: 'Builder', designer: 'Designer', tester: 'Tester', deployer: 'Deployer' }
+
+// What a check rests on, in a few characters, under the plot's name.
+export function proofStamp(t: TaskState) {
+  const c = t.checks[t.checks.length - 1]
+  if (!c) return null
+  const pr = c.proof
+  const tests = pr?.tests
+  const failed = tests?.filter((x) => !x.pass).length ?? 0
+  const word = !pr
+    ? c.pass ? 'checked' : 'failed'
+    : pr.kind === 'screens'
+      ? c.pass ? `${pr.shots?.length ?? 2} screens ok` : 'screen broken'
+      : pr.kind === 'rollout'
+        ? c.pass ? 'live, errors ok' : 'errors high'
+        : failed ? `${failed} of ${tests!.length} failing` : `${tests!.length} ${pr.kind === 'integration' ? 'e2e' : 'tests'} pass`
+  return (
+    <span className={`plot-proof${c.pass ? '' : ' bad'}`}>
+      <i aria-hidden>{c.pass ? '✓' : '✗'}</i>
+      {word}
+    </span>
+  )
+}
+
+// A check that just happened, popped over its plot: the test seeds, the screenshots or the live line.
+export function ProofPop({ check, state, style, onOpen }: { check: Check; state: RunState; style: CSSProperties; onOpen: () => void }) {
+  const pr = check.proof
+  const chat = /support|assistant|chat/i.test(state.goal)
+  const tests = pr?.tests ?? []
+  const failed = tests.filter((x) => !x.pass)
+  return (
+    <button
+      className={`proof-pop paper${check.pass ? '' : ' bad'}`}
+      style={style}
+      onClick={(e) => {
+        e.stopPropagation()
+        onOpen()
+      }}
+      onPointerUp={(e) => e.stopPropagation()}
+      aria-label={`${WHO[check.by]} checked: ${check.notes}`}
+    >
+      <span className="pp-head">
+        <Swatch farmer={check.by} />
+        <b>{WHO[check.by]}</b>
+        <span className={check.pass ? 'ok' : 'bad'}>{check.pass ? 'passed' : 'failed'}</span>
+      </span>
+      {pr?.kind === 'screens' && pr.shots ? (
+        <span className="pp-shots">
+          <Screens shots={pr.shots} chat={chat} />
+        </span>
+      ) : pr?.kind === 'rollout' ? (
+        <span className="pp-roll">
+          <Rollout state={state} compact />
+        </span>
+      ) : tests.length ? (
+        <>
+          <span className="seeds" aria-hidden>
+            {tests.map((x, i) => (
+              <i key={x.name} className={x.pass ? "ok" : "bad"} style={{ animationDelay: `${i * 40}ms` }} />
+            ))}
+          </span>
+          <span className="pp-line">
+            {failed.length ? (
+              <span className="mono bad">{failed[0].error ?? failed[0].name}</span>
+            ) : (
+              <>
+                {tests.length} of {tests.length} {pr?.kind === 'integration' ? 'end-to-end runs' : 'tests'} pass
+              </>
+            )}
+          </span>
+        </>
+      ) : (
+        <span className="pp-line">{check.notes}</span>
+      )}
+    </button>
   )
 }

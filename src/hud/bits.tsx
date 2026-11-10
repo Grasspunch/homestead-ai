@@ -64,3 +64,26 @@ export function Swatch({ farmer }: { farmer: FarmerId }) {
 export const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`
 export const mins = (n: number) => (n >= 60 ? `${Math.floor(n / 60)} h ${Math.round(n % 60)} min` : `${Math.round(n)} min`)
 export const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n))
+
+// A limit you type: "$ 53" or "50 min". Saves on Enter or when you leave the field.
+export function LimitField({ value, unit, label, min = 1, onChange }: { value: number; unit: '$' | 'min'; label: string; min?: number; onChange: (v: number) => void }) {
+  const commit = (el: HTMLInputElement) => {
+    const v = Math.round(Number(el.value.replace(/[^0-9.]/g, '')))
+    if (Number.isFinite(v) && v >= min && v !== value) onChange(v)
+    else el.value = String(Math.round(value))
+  }
+  return (
+    <label className="limit-field">
+      {unit === '$' && <span>$</span>}
+      <input
+        key={value}
+        defaultValue={Math.round(value)}
+        inputMode="numeric"
+        aria-label={label}
+        onBlur={(e) => commit(e.currentTarget)}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+      />
+      {unit === 'min' && <span>min</span>}
+    </label>
+  )
+}

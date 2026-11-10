@@ -20,6 +20,7 @@ export interface FarmerSetup {
   context: string[]
   constraints: string[]
   limits: Limits
+  why?: string // why the Planner put it on this crew, on this model
 }
 
 export interface PlanTask {

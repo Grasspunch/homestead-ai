@@ -4,7 +4,7 @@ import { store, useStore, type Project } from '../run/store'
 import { MODELS, RULES, SKILLS, applyEdit, contextTokens, defaultRules, emptyEdit, type KitItem } from '../run/kit'
 import type { FarmerId, RunState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
-import { Ico, Portrait, Swatch, mins, tokens, usd } from './bits'
+import { Ico, LimitField, Portrait, Swatch, tokens, usd } from './bits'
 
 // Which skill a tool line is using, so the page can light it up while it runs.
 function inUse(line: string | undefined, items: KitItem[]): string | undefined {
@@ -141,18 +141,14 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
             <section>
               <h3>Limits</h3>
               <div className="limits">
-                <Stepper
-                  label="Spend"
-                  value={usd(f.limits.usd)}
-                  onDown={() => set((e) => (e.limits = { ...f.limits, usd: Math.max(0.5, +(f.limits.usd - 0.5).toFixed(2)) }))}
-                  onUp={() => set((e) => (e.limits = { ...f.limits, usd: +(f.limits.usd + 0.5).toFixed(2) }))}
-                />
-                <Stepper
-                  label="Time"
-                  value={mins(f.limits.minutes)}
-                  onDown={() => set((e) => (e.limits = { ...f.limits, minutes: Math.max(5, f.limits.minutes - 5) }))}
-                  onUp={() => set((e) => (e.limits = { ...f.limits, minutes: f.limits.minutes + 5 }))}
-                />
+                <span className="limit-pair">
+                  Spend
+                  <LimitField unit="$" label="Spend limit" value={f.limits.usd} onChange={(v) => set((e) => (e.limits = { ...f.limits, usd: v }))} />
+                </span>
+                <span className="limit-pair">
+                  Time
+                  <LimitField unit="min" label="Time limit" min={5} value={f.limits.minutes} onChange={(v) => set((e) => (e.limits = { ...f.limits, minutes: v }))} />
+                </span>
               </div>
               {p.approved && (
                 <div className="bar" style={{ marginTop: 8 }}>
@@ -263,21 +259,6 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
           )}
         </footer>
       </section>
-    </div>
-  )
-}
-
-function Stepper({ label, value, onDown, onUp }: { label: string; value: string; onDown: () => void; onUp: () => void }) {
-  return (
-    <div className="stepper">
-      <span className="sub">{label}</span>
-      <button className="btn tan xs" onClick={onDown} aria-label={`Less ${label.toLowerCase()}`}>
-        <Ico name="minus" size={14} />
-      </button>
-      <b>{value}</b>
-      <button className="btn tan xs" onClick={onUp} aria-label={`More ${label.toLowerCase()}`}>
-        <Ico name="plus" size={14} />
-      </button>
     </div>
   )
 }

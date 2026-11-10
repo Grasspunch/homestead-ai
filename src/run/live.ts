@@ -47,7 +47,8 @@ async function call<T>(task: AgentTask, input: Record<string, unknown>): Promise
   return { ...body.data, tokens: body.tokens ?? 0, model: body.model }
 }
 
-export function planGoal(goal: string, crewSize?: number): Promise<LiveResult<PlanOut>> {
+export function planGoal(goal: string, crewSize?: number | string[]): Promise<LiveResult<PlanOut>> {
+  if (Array.isArray(crewSize)) return call<PlanOut>('plan', { goal: `${goal}\n\nUse exactly this crew: ${crewSize.join(', ')}.`, crewSize: crewSize.length })
   return call<PlanOut>('plan', crewSize === undefined ? { goal } : { goal, crewSize })
 }
 

@@ -7,6 +7,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { draw, hasFrame } from '../map/atlas'
 import { atlasLoaded } from '../hud/bits'
 import { TINT } from '../run/crew'
+import { store } from '../run/store'
+import { ProofPop, proofStamp } from '../hud/Proof'
 import type { FarmerId, RunState, TaskState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
 
@@ -244,6 +246,24 @@ export function FarmView(p: FarmViewProps) {
     <div ref={wrap} className="map-layer" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onClick} onPointerLeave={() => (hover.current = null)} style={{ touchAction: 'none' }}>
       <canvas ref={canvas} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} aria-label="The farm" role="img" />
       <div ref={labels} className="plot-labels">
+      {!p.planning &&
+        layout.plots.map((pl) => {
+          // A check that just landed pops up over its plot with what it rests on, then settles into the label.
+          // Only the latest one, so two never stack.
+          const t = p.state.tasks.find((x) => x.id === pl.id)
+          const c = t?.checks[t.checks.length - 1]
+          const latest = Math.max(...p.state.tasks.map((x) => x.checks[x.checks.length - 1]?.t ?? -1))
+          if (!t || !c || c.t !== latest || p.state.t - c.t > 7000 * store.speed) return null
+          return (
+            <ProofPop
+              key={`${pl.id}-${c.t}`}
+              check={c}
+              state={p.state}
+              style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y - 0.7) * T }}
+              onOpen={() => p.onTask(pl.id)}
+            />
+          )
+        })}
       {layout.plots.map((pl) => {
         const t = p.state.tasks.find((x) => x.id === pl.id)
         if (!t) return null
@@ -265,6 +285,7 @@ export function FarmView(p: FarmViewProps) {
                 <i style={{ width: `${Math.round(t.progress * 100)}%`, background: t.status === 'wilted' || (t.gate && p.state.deploy[p.state.deploy.length - 1]?.stage === 'rollback' && t.status !== 'ripe') ? 'var(--berry)' : 'var(--leaf)' }} />
               </span>
             )}
+            {!p.planning && proofStamp(t)}
           </button>
         )
       })}
