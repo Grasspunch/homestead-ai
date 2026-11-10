@@ -1923,7 +1923,9 @@ function dependencyPath(ctx: CanvasRenderingContext2D, e: Engine, toScreen: (x: 
   ctx.closePath()
   ctx.fill()
   // What the dependency is, on a plate at the top of the curve.
-  const text = fixed ? 'Reads its hours from the schedule' : 'Hours sheet out of date'
+  // Neutral until the crow catches the mismatch, so the Valleys page doesn't give the catch away.
+  const caught = e.asks.some((a) => a.id === 'crow')
+  const text = fixed ? 'Hours from the staff schedule' : caught ? 'Hours sheet out of date' : 'Shares hours'
   ctx.font = `700 13px ${SANS}`
   const w = Math.ceil(ctx.measureText(text).width) + 16
   const lx = Math.round(mx - w / 2)
