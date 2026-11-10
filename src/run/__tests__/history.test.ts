@@ -183,11 +183,13 @@ describe('answering in your own words', () => {
   it('says it cannot tell rather than guessing', () => {
     expect(readAnswer('hmm, what about the docs?', opts[0], opts)).toBeNull()
   })
-  it('every ask carries how sure it is and why', () => {
+  it('every ask but a disagreement carries how sure it is and why', () => {
     const ev = simulateRun({ goal: GOAL, ...simulatePlan(GOAL), autonomy: AUTONOMY_PRESETS.often })
     const asks = ev.filter((e) => e.type === 'ask')
     expect(asks.length).toBeGreaterThan(3)
-    for (const a of asks) if (a.type === 'ask') expect(a.confidence && a.basis).toBeTruthy()
+    // A disagreement is the user's call between two sides, so it carries no sureness of its own.
+    for (const a of asks) if (a.type === 'ask' && a.reason !== 'disagree') expect(a.confidence && a.basis).toBeTruthy()
+    for (const a of asks) if (a.type === 'ask' && a.reason === 'disagree') expect(a.confidence).toBeUndefined()
   })
 })
 
