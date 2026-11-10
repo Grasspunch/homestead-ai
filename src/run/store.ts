@@ -33,6 +33,7 @@ export interface Project {
   level: AutonomyLevel | 'custom'
   autonomy: Autonomy
   liveNote?: string // why a live call fell back to the simulation
+  plannedLive?: boolean // the plan came from the real Planner, not the simulation
   sentBack?: { task: string; note: string; t: number }[] // work you sent back, in order, with the run time you did it
 }
 

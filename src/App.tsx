@@ -213,12 +213,19 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
       <div className="who">
         <b>Planner</b>
         <span className="tag grey">Plan</span>
-        {!scenario(p.goal).matched && (
+        {p.plannedLive && (
+          <span className="tag sky" title="This plan came from a live call to Claude Opus 5.5">
+            Planned live by Claude
+          </span>
+        )}
+        {!p.plannedLive && p.liveNote && <span className="tag red">Live call failed</span>}
+        {!p.plannedLive && !p.liveNote && !scenario(p.goal).matched && (
           <span className="tag gold" title="Your goal matches none of the sample projects, so the farmers act out a generic app">
             Demo scenario
           </span>
         )}
       </div>
+      {!p.plannedLive && p.liveNote && <p className="impact">This plan is simulated, because the live call failed: {p.liveNote}</p>}
       <p className="plan-lead">
         {ids.length > 1 ? (
           <>

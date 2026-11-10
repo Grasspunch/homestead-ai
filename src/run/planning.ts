@@ -12,6 +12,7 @@ export async function planInto(p: Project, crewSize?: number | FarmerId[], chang
     const r = await askPlan(goal, crewSize)
     store.setPlan(p.id, r.data.name, r.data.farmers, r.data.tasks, r.data.estimate, r.data.singleAgentEstimate)
     p.liveNote = r.error
+    p.plannedLive = r.live
     if (r.error) store.say(r.error)
   } catch (e) {
     store.planFailed(p.id, e instanceof Error ? e.message : String(e))
