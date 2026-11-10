@@ -263,7 +263,7 @@ export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): Plan
 }
 
 const ROUTES: [RegExp, FarmerId, string][] = [
-  [/(colou?r|font|button|layout|screen|copy|design|look|mobile|phone)/i, 'designer', 'since it is about how it looks'],
+  [/(colou?r|font|button|layout|screen|copy|design|look|mobile|phone|widget|friendl|tone|wording|style)/i, 'designer', 'since it is about how it looks and reads'],
   [/(test|bug|broken|fail|check|flaky)/i, 'tester', 'since it is about whether it works'],
   [/(deploy|ship|release|rollback|prod|live)/i, 'deployer', 'since it is about shipping'],
   [/(code|api|endpoint|database|refactor|build|function|error)/i, 'builder', 'since it is a code change'],
@@ -276,6 +276,9 @@ export function simulateRoute(input: RouteInput): RouteOut {
   const label = input.farmers.find((f) => f.id === to)?.label ?? CREW[to].label
   const words = input.message.toLowerCase()
   const task = input.tasks.find((t) => t.farmer === to && words.includes(t.name.toLowerCase().split(' ').slice(-1)[0]))?.id ?? input.tasks.find((t) => t.farmer === to)?.id
-  const reply = hit ? `Handed to the ${label}, ${hit[2]}.` : `I'll take this one, since it is about the plan.`
+  const on = input.tasks.find((t) => t.id === task)?.name
+  const reply = hit
+    ? `Passed to the ${label}${on ? ` for “${on}”` : ''}, ${hit[2]}. It's on the ${label}'s page under Your notes.`
+    : `That's about the plan, so I've kept it myself. It's on my page under Your notes.`
   return task ? { to, task, reply } : { to, reply }
 }

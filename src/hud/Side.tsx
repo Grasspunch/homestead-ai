@@ -369,7 +369,7 @@ function fixes(s: RunState): Fix[] {
   if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', farmer: 'designer', title: 'Run the Designer on Claude Sonnet 5.5', why: 'Its screenshot checks don’t need the bigger model.', saves: designer.usd * 0.5, model: 'Claude Sonnet 5.5' })
   for (const r of s.replans) {
     const t = s.tasks.find((x) => r.added.includes(x.id))
-    if (t) out.push({ key: `split-${t.id}`, farmer: 'planner', title: `Plan "${t.name.split(': ')[1] ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.' })
+    if (t) out.push({ key: `split-${t.id}`, farmer: 'planner', title: `Plan "${s.tasks.find((x) => `${x.id}-rest` === t.id)?.name ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.' })
   }
   return out
 }
@@ -401,7 +401,7 @@ export function outcome(s: RunState): { line: string; value: string } | null {
   const checks = caught(s).filter((x) => x.kind === 'check').length
   if (!checks) return null
   const gap = s.done.usd - s.soloActual.usd
-  const cost = Math.abs(gap) < 1 ? 'Same cost as one agent' : gap > 0 ? `${usd(gap)} more than one agent` : `${usd(-gap)} less than one agent`
+  const cost = Math.abs(gap) < 0.5 ? 'Same cost as one agent' : gap > 0 ? `${usd(gap)} more than one agent` : `${usd(-gap)} less than one agent`
   const sooner = s.soloActual.minutes - s.done.minutes
   const time = sooner > 0 ? `, ${mins(sooner)} sooner` : ''
   const spent = s.checkUsd !== undefined ? `${usd(s.checkUsd)} of checks` : 'A separate checker'

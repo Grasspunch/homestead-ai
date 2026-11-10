@@ -115,6 +115,7 @@ export function FarmView(p: FarmViewProps) {
   const known = useRef<string[]>([])
   // When each proof pop first showed, in wall-clock time, so it settles after a few seconds even while the run waits on you.
   const popSeen = useRef(new Map<string, number>())
+  const failHold = useRef<{ key: string; at: number; id: string; c: TaskState['checks'][number] } | null>(null)
   const [, setPopTick] = useState(0)
   const layout = useMemo(() => {
     // A new plan (nothing in common with the last) starts the order over.
@@ -295,6 +296,20 @@ export function FarmView(p: FarmViewProps) {
   }
 
   const T = PX * cam.s
+  const popShown = () => {
+    let latest: { id: string; c: TaskState['checks'][number] } | null = null
+    for (const x of p.state.tasks) {
+      const c = x.checks[x.checks.length - 1]
+      if (c && c.t <= p.state.t && (!latest || c.t > latest.c.t)) latest = { id: x.id, c }
+    }
+    const now = performance.now()
+    if (latest && !latest.c.pass && failHold.current?.key !== `${latest.id}-${latest.c.t}`) {
+      failHold.current = { key: `${latest.id}-${latest.c.t}`, at: now, id: latest.id, c: latest.c }
+      setTimeout(() => setPopTick((n) => n + 1), 4100)
+    }
+    const held = failHold.current && now - failHold.current.at < 4000 && p.state.t >= failHold.current.c.t ? failHold.current : null
+    return held ?? latest
+  }
   return (
     <div ref={wrap} className="map-layer" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onClick} onPointerLeave={() => (hover.current = null)} style={{ touchAction: 'none' }}>
       <canvas ref={canvas} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} aria-label="The farm" role="img" />
@@ -302,11 +317,13 @@ export function FarmView(p: FarmViewProps) {
       {!p.planning &&
         layout.plots.map((pl) => {
           // A check that just landed pops up over its plot with what it rests on, then settles into the label.
-          // Only the latest one, so two never stack.
+          // Only one at a time, so two never stack: the latest, except that a failed check stays up for at least
+          // 4 seconds even when the next check lands sooner.
+          const shown = popShown()
+          if (!shown || shown.id !== pl.id) return null
           const t = p.state.tasks.find((x) => x.id === pl.id)
-          const c = t?.checks[t.checks.length - 1]
-          const latest = Math.max(...p.state.tasks.map((x) => x.checks[x.checks.length - 1]?.t ?? -1))
-          if (!t || !c || c.t !== latest || p.state.t < c.t) return null
+          const c = shown.c
+          if (!t) return null
           const key = `${pl.id}-${c.t}`
           const now = performance.now()
           if (!popSeen.current.has(key)) {
@@ -332,14 +349,14 @@ export function FarmView(p: FarmViewProps) {
           <button
             key={pl.id}
             className={`plot-label${p.planning ? ' ghost' : ''}${sel ? ' sel' : ''}${t.status === 'accepted' ? ' done' : ''}`}
-            style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y + pl.h + 1) * T + 2, fontSize: 13, maxWidth: (pl.w + 2.1) * T }}
+            style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y + pl.h + 1) * T + 2, fontSize: 13, maxWidth: (pl.w + 3) * T }}
             onClick={(e) => {
               e.stopPropagation()
               p.onTask(pl.id)
             }}
             onPointerUp={(e) => e.stopPropagation()}
           >
-            <span className="plot-name">{t.name}</span>
+            <span className="plot-name" title={t.name}>{t.name}</span>
             {p.planning && <span className="plot-when">Done when {t.doneWhen.charAt(0).toLowerCase() + t.doneWhen.slice(1)}</span>}
             {!p.planning && t.status !== 'waiting' && (
               <span className="plot-bar" aria-hidden>

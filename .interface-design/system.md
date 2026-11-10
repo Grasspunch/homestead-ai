@@ -69,3 +69,9 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - The top bar status is short: "3 of 6 tasks done" (work tasks, the same count as the pull request), then "Done, live", "Live, 2 of 5 tasks", "Rolled back" or "Not shipped".
 - While the run plays and nothing is open, the top bar shows a skip button: "Skip to the next thing that needs you".
 - Free-text echoes are clipped to 80 characters.
+
+## Checkpoint 17
+- The skip button keeps its place in the top bar, disabled while an ask or a rollback is open, so Play/Pause never moves.
+- A grey "Paused" tag sits in the title when you paused the run yourself.
+- Plot labels stay on one line, with an ellipsis and the full name on hover; the split task is just "Hard cases".
+- Notes you send the crew show at the top of that farmer page under "Your notes".

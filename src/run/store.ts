@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react'
 import { duration, pendingAsk, reduce } from './reduce'
 import { SEND_BACK, simulateRun } from './simulate'
 import { liveStage, rollBack } from './rollback'
-import { simulatePlan } from './simPlan'
+import { scenario, simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
@@ -56,46 +56,65 @@ export interface Forecast {
   solo: Estimate
 }
 
-// Which option a free-text answer means.
-// - Any negation ("don't merge yet", "no, don't split it") never matches an option by its words: it means hold or
-//   stop, so it takes the ask's hold option, then its stop option, or nothing.
+// Which option a free-text answer means. It only ever picks one of the ask's options, and errs toward asking again.
+// - A question ("should we split it", "what does that cost?") is not an answer.
+// - A no (no, not, never, any n't or its spelling without the apostrophe, "rather not") never matches an option by
+//   its words: it holds when the ask can hold, takes Stop only when you say stop, and otherwise asks again.
+// - An amount that isn't one of the options ("raise it to $100") is never rounded to one: you're told and asked again.
 // - Otherwise naming an option's own words wins, then a plain yes takes the suggestion.
-// Returns null when it can't tell; the ask stays open.
-const NEGATION = /\b(no|nope|not|never|dont|do not|doesnt|wont|stop|wait|hold|later|cancel|halt|leave it)\b/
-// A no: a negation word, but not a question ("what if we don't…?") and not "not sure".
-export function saysNo(text: string) {
-  const t = ` ${text.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9%$? ]+/g, ' ')} `
-  if (/\?|\b(what|how|why|can you|could you|explain|not sure|not certain)\b/.test(t)) return false
-  return NEGATION.test(t)
+const CONTRACTED = /\b(dont|dnt|didnt|doesnt|shouldnt|wouldnt|couldnt|cant|cannot|isnt|arent|wasnt|werent|wont|havent|hasnt|hadnt|mustnt|neednt|aint)\b/
+const NEGATION = /\b(no|nah|nope|not|never|stop|wait|hold|later|cancel|halt|leave it|rather not)\b/
+const QUESTION = /\?|^\s*(should|shall|do|does|did|can|could|would|will|is|are|what|how|why|when|which)\b|\b(what|how|why|explain|can you|could you)\b/i
+const norm = (text: string) => ` ${text.toLowerCase().replace(/n[’']t\b/g, 'nt').replace(/[’']/g, '').replace(/[^a-z0-9%$. ]+/g, ' ')} `
+
+export type Reading = { choice: string } | { none: 'question' | 'no' | 'amount' | 'unclear'; amount?: string }
+
+export function readAnswerWhy(text: string, suggested: string, options: string[]): Reading {
+  if (QUESTION.test(text.trim())) return { none: 'question' }
+  // "not just 10%" and "not only" widen, they don't refuse.
+  const t = norm(text).replace(/\bnot (just|only)\b/g, ' ')
+  const rather = /\brather\b/.test(t) && /\b(not|didnt|wouldnt|dont)\b/.test(t)
+  const no = rather || CONTRACTED.test(t) || NEGATION.test(t)
+  if (no) {
+    const stop = options.find((o) => /^stop/i.test(o))
+    const sayStop = /\bstop\b/.test(t) && !/\b(dont|dnt|do not|not|never|didnt|shouldnt|wouldnt) stop\b/.test(t)
+    if (stop && sayStop) return { choice: stop }
+    const hold = options.find((o) => /^not yet/i.test(o))
+    return hold ? { choice: hold } : { none: 'no' }
+  }
+  // An amount you typed must be one of the options' amounts.
+  const typed = t.match(/\$?\b\d+(\.\d+)?\b/g)?.filter((n) => n.includes('$') || /dollar|limit|raise|\$/.test(t))
+  if (typed?.length) {
+    const amounts = options.flatMap((o) => o.match(/\$\d+(\.\d+)?/g) ?? []).map((a) => Number(a.slice(1)))
+    const wanted = typed.map((n) => Number(n.replace('$', '')))
+    if (!wanted.every((w) => amounts.includes(w))) return { none: 'amount', amount: `$${wanted.find((w) => !amounts.includes(w))}` }
+  }
+  const words = (o: string) => o.toLowerCase().replace(/[^a-z0-9%$ ]+/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !['again', 'with', 'here', 'your', 'from', 'that', 'this'].includes(w))
+  const scored = options.map((o) => ({ o, n: words(o).filter((w) => t.includes(` ${w}`)).length })).sort((a, b) => b.n - a.n)
+  if (scored[0]?.n && scored[0].n > (scored[1]?.n ?? 0)) return { choice: scored[0].o }
+  if (/\b(yes|yep|yeah|sure|ok|okay|go|go ahead|do it|fine|sounds good|agreed)\b/.test(t)) return { choice: suggested }
+  return { none: 'unclear' }
 }
 
 export function readAnswer(text: string, suggested: string, options: string[]): string | null {
-  // A question is not an answer.
-  if (/\?|\b(what|how|why|can you|could you|explain)\b/i.test(text)) return null
-  const t = ` ${text.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9%$ ]+/g, ' ')} `
-  if (saysNo(text)) {
-    // "Stop" picks the stop option only when you say stop, and not "don't stop".
-    const stop = options.find((o) => /^stop/i.test(o))
-    if (stop && /\bstop\b/.test(t) && !/\b(dont|do not|not|never) stop\b/.test(t)) return stop
-    // Otherwise a no holds, when the ask can hold. If it can't, you're asked again.
-    return options.find((o) => /^(not yet|stay)/i.test(o)) ?? null
-  }
-  // Any negation left ("not sure, don't split") never matches an option by its words.
-  if (NEGATION.test(t)) return null
-  const words = (o: string) => o.toLowerCase().replace(/[^a-z0-9%$ ]+/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !['again', 'with', 'here', 'your', 'from', 'that', 'this'].includes(w))
-  const scored = options.map((o) => ({ o, n: words(o).filter((w) => t.includes(` ${w}`)).length })).sort((a, b) => b.n - a.n)
-  if (scored[0]?.n && scored[0].n > (scored[1]?.n ?? 0)) return scored[0].o
-  if (/\b(yes|yep|yeah|sure|ok|okay|go|go ahead|do it|fine|sounds good|agreed)\b/.test(t)) return suggested
-  return null
+  const r = readAnswerWhy(text, suggested, options)
+  return 'choice' in r ? r.choice : null
 }
 
-// An option that's hard to undo: from free text, it's confirmed before it happens.
+// A no, for the Planner's reply when nothing matched.
+export function saysNo(text: string) {
+  const r = readAnswerWhy(text, '', [])
+  return 'none' in r && r.none === 'no'
+}
+
+// From free text, anything hard to undo, anything that moves money, and staying at 10% is confirmed first.
+// Only a hold ("Not yet") isn't: it changes nothing.
 export function needsConfirm(choice: string, reason?: string) {
-  if (/^(not yet|stay)/i.test(choice)) return false
-  return reason === 'irreversible' || /\b(ship|merge|deploy|release|everyone|stop|leave|keep it small)\b/i.test(choice)
+  if (/^not yet/i.test(choice)) return false
+  return reason === 'irreversible' || /\$|\b(ship|merge|deploy|release|everyone|stop|stay|leave|keep it small|raise|limit)\b/i.test(choice)
 }
 
-export type InWords = { kind: 'answered' | 'hold' | 'confirm'; choice: string } | { kind: 'none'; negated: boolean }
+export type InWords = { kind: 'answered' | 'hold' | 'confirm'; choice: string } | { kind: 'none'; why: 'question' | 'no' | 'amount' | 'unclear'; amount?: string }
 
 // Long answers are quoted short.
 export const clip = (text: string, n = 80) => (text.length > n ? `${text.slice(0, n - 1).trimEnd()}…` : text)
@@ -163,6 +182,57 @@ class Store {
   notify() {
     this.version++
     for (const fn of this.listeners) fn()
+    this.persistSoon()
+  }
+
+  // Your farms survive a reload: saved to this browser at most once a second, and on leaving the page.
+  private static KEY = 'homestead.v3.farms'
+  private saveAt = 0
+  private saveTimer: ReturnType<typeof setTimeout> | null = null
+  private persistSoon() {
+    if (this.saveTimer) return
+    const wait = Math.max(0, 1000 - (Date.now() - this.saveAt))
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null
+      this.persist()
+    }, wait)
+  }
+  persist() {
+    this.saveAt = Date.now()
+    try {
+      if (typeof localStorage === 'undefined') return
+      const data = { v: 1, projects: this.projects, kit: this.kit, kitAt: this.kitAt, chat: this.chat, crewNotes: this.crewNotes, crewSize: this.crewSize, seen: [...this.seen], screen: this.screen }
+      localStorage.setItem(Store.KEY, JSON.stringify(data))
+    } catch {
+      // Storage full or blocked: the farms still work, they just won't survive a reload.
+    }
+  }
+  // Returns true when saved farms were found.
+  restore(): boolean {
+    try {
+      if (typeof localStorage === 'undefined') return false
+      const raw = localStorage.getItem(Store.KEY)
+      if (!raw) return false
+      const d = JSON.parse(raw)
+      if (d?.v !== 1 || !Array.isArray(d.projects) || !d.projects.length) return false
+      this.projects = (d.projects as Project[]).map((p) =>
+        // A plan that was still being made when the page closed: say so, and offer to try again.
+        p.planning ? { ...p, planning: false, error: p.events.some((e) => e.type === 'plan') ? undefined : 'Planning stopped when the page closed.' } : p,
+      )
+      this.kit = d.kit ?? {}
+      this.kitAt = d.kitAt ?? {}
+      this.chat = d.chat ?? {}
+      this.crewNotes = d.crewNotes ?? {}
+      this.crewSize = d.crewSize ?? {}
+      this.seen = new Set(d.seen ?? [])
+      this.sampleLoading = false
+      const screen = d.screen as Screen | undefined
+      if (screen?.kind === 'farm' && this.projects.some((p) => p.id === screen.project)) this.open(screen.project)
+      else this.notify()
+      return true
+    } catch {
+      return false
+    }
   }
 
   project(id?: string) {
@@ -198,6 +268,7 @@ class Store {
 
   // The sample farm: a simulated crew run of a plan for SAMPLE_GOAL.
   loadSample() {
+    if (this.restore()) return
     const plan = simulatePlan(SAMPLE_GOAL)
     const events = simulateRun({ goal: SAMPLE_GOAL, ...plan })
     this.projects = [
@@ -305,12 +376,27 @@ class Store {
     return this.stretch.speed
   }
 
-  // Jump to the next thing that needs you: the next ask, or the end.
+  // Jump to the next thing worth seeing: the next ask, a release rolling back, a check failing, or the end.
+  // Never past one: it does nothing while an ask or a rollback is open, so a double click can't skip two.
+  canSkip(p = this.project()) {
+    if (!p?.approved || this.isDone(p)) return false
+    if (pendingAsk(p.events, this.clock, this.viewerAnswers)) return false
+    return !this.openRollback(p)
+  }
+  openRollback(p: Project) {
+    const rb = [...p.events].reverse().find((e) => e.type === 'deploy' && e.t <= this.clock)
+    return !!rb && rb.type === 'deploy' && rb.stage === 'rollback' && !this.seen.has(`${p.id}:${rb.t}`)
+  }
   skipToNext() {
     const p = this.project()
-    if (!p?.approved || this.isDone(p)) return
-    const next = p.events.find((e) => e.type === 'ask' && e.t > this.clock && !this.viewerAnswers[e.id])
-    this.clock = next ? next.t : duration(p.events)
+    if (!p || !this.canSkip(p)) return
+    const next = p.events.find(
+      (e) =>
+        e.t > this.clock &&
+        ((e.type === 'ask' && !this.viewerAnswers[e.id]) || (e.type === 'deploy' && e.stage === 'rollback') || (e.type === 'check' && !e.pass)),
+    )
+    // A failed check: land just after it, so its proof is up.
+    this.clock = next ? next.t + (next.type === 'check' ? 1 : 0) : duration(p.events)
     this.drawer = null
     if (!this.playing) this.play()
     this.notify()
@@ -346,11 +432,12 @@ class Store {
   answerInWords(askId: string, text: string): InWords {
     const p = this.project()
     const ask = p?.events.find((e) => e.type === 'ask' && e.id === askId)
-    if (!p || !ask || ask.type !== 'ask') return { kind: 'none', negated: false }
+    if (!p || !ask || ask.type !== 'ask') return { kind: 'none', why: 'unclear' }
     // Sending work back needs a task and a note, so it goes through its own form.
     const options = [ask.suggested, ...(ask.alternatives ?? [])].filter((o) => !/^show me/i.test(o) && o !== SEND_BACK)
-    const choice = readAnswer(text, ask.suggested, options)
-    if (!choice) return { kind: 'none', negated: saysNo(text) }
+    const r = readAnswerWhy(text, ask.suggested, options)
+    if (!('choice' in r)) return { kind: 'none', why: r.none, amount: r.amount }
+    const choice = r.choice
     if (/^not yet/i.test(choice)) {
       this.chatTo(p.id, { from: 'you', text: clip(text) })
       this.chatTo(p.id, { from: 'planner', text: 'Holding. Nothing moves on this until you say so.' })
@@ -417,11 +504,21 @@ class Store {
     const { planned, farmers } = built
     let events = simulateRun(built.input)
     // An ask you've answered keeps the words you answered: a later change (a model, say) never rewrites it.
-    const said = new Map(p.events.filter((e): e is Extract<RunEvent, { type: 'ask' }> => e.type === 'ask' && !!answers[e.id]).map((e) => [e.id, e]))
+    // An ask already on screen keeps its numbers too, until you answer it.
+    const now = p.clock ?? 0
+    const said = new Map(p.events.filter((e): e is Extract<RunEvent, { type: 'ask' }> => e.type === 'ask' && (!!answers[e.id] || e.t <= now)).map((e) => [e.id, e]))
     events = events.map((e) => {
       const was = e.type === 'ask' ? said.get(e.id) : undefined
       return was && e.type === 'ask' ? { ...e, question: was.question, impact: was.impact, suggested: was.suggested, alternatives: was.alternatives, confidence: was.confidence, basis: was.basis } : e
     })
+    // A change mid-run can move a new ask (a farmer reaching its limit sooner) to before now. It never lands in
+    // the past: it and everything after it start from now.
+    for (let i = 0; i < 10; i++) {
+      const late = events.find((e) => e.type === 'ask' && e.t < now && !answers[e.id] && !said.has(e.id))
+      if (!late) break
+      const shift = now + 1000 - late.t
+      events = events.map((e) => (e.t >= late.t && e.type !== 'goal' && e.type !== 'plan' && e.type !== 'farmer' ? { ...e, t: e.t + shift } : e)).sort((a, b) => a.t - b.t)
+    }
     // The plan shows the forecast made when the run started.
     if (run.forecast) {
       const fc = run.forecast
@@ -513,7 +610,9 @@ class Store {
   newProject(goal: string): Project {
     const id = `own-${Date.now().toString(36)}`
     const p: Project = { id, name: 'New project', goal, kind: 'own', events: [{ t: 0, type: 'goal', text: goal }], approved: false, planning: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters } }
-    this.projects = [...this.projects, p]
+    // A farm of your own for the sample's kind of app takes the sample's place, so Home never shows two.
+    const same = scenario(goal).name === scenario(SAMPLE_GOAL).name
+    this.projects = [...this.projects.filter((x) => !(same && x.kind === 'sample')), p]
     this.open(id)
     return p
   }
@@ -580,6 +679,14 @@ class Store {
       p.run.kit = structuredClone(this.kit[id])
       this.rebuild(p)
     } else if (p?.approved && this.isDone(p)) this.say('Saved for the next run. This one is finished.')
+    this.notify()
+  }
+
+  // Notes you sent the crew, by farmer: shown on that farmer's page.
+  crewNotes: Record<string, Partial<Record<FarmerId, string[]>>> = {}
+  noteFor(id: string, farmer: FarmerId, text: string) {
+    const k = (this.crewNotes[id] ??= {})
+    k[farmer] = [...(k[farmer] ?? []), text]
     this.notify()
   }
 

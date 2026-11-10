@@ -225,7 +225,15 @@ export function simulateRun(input: SimInput): RunEvent[] {
           const suggested = 'Go ahead, test everything'
           at(tt + 0.1, {
             type: 'ask', id, farmer: f, task: task.id, reason: 'big', touches, files,
-            confidence: files > 15 ? 'low' : 'medium', basis: files > 15 ? `${files} files is a big change; the tests of all ${touches.length + 1} tasks would show if it breaks one.` : `The ${touches.length + 1} tasks it reaches have their own tests to run before and after.`,
+            // How sure: how many of the tasks it reaches already have a passing check, so a break would show.
+            ...(() => {
+              const passing = touches.filter((id) => ev.some((x) => x.type === 'check' && x.task === id && x.pass && x.t <= tt * MIN)).length
+              const share = touches.length ? passing / touches.length : 0
+              return {
+                confidence: share >= 0.75 ? 'high' : share >= 0.34 ? 'medium' : 'low',
+                basis: `${passing} of the ${touches.length} tasks it reaches already pass their checks, so a break there would show.`,
+              }
+            })(),
             question: `To finish “${task.name}” cleanly, I want to ${sc.refactor.what}. That changes ${files} files across ${touches.length + 1} tasks.`,
             impact: 'The other tasks’ code moves with it. I’d run every test before and after.',
             suggested, alternatives: ['Keep it small, no refactor'],
@@ -261,7 +269,9 @@ export function simulateRun(input: SimInput): RunEvent[] {
           const id = `ask-${++askN}`
           at(tt + 0.1, {
             type: 'ask', id, farmer: lead, task: task.id, reason: 'cost',
-            confidence: projected > budget * 2 ? 'high' : 'medium', basis: `From what it has spent at about half done: ${money(spent)}, on course for ${(projected / budget).toFixed(1)} times its budget.`,
+            // How sure: how much of the task it has seen. Its hard cases are still ahead, and cost the most.
+            confidence: (i + 1) / lines.length >= 0.75 ? 'high' : (i + 1) / lines.length >= 0.5 ? 'medium' : 'low',
+            basis: `From ${i + 1} of its ${lines.length} steps. The hard cases are in the steps left, and cost the most.`,
             question: `${task.name} is costing more than planned. It has used ${money(spent)} of its ${money(budget)} and is about half done.`,
             impact: `At this rate it ends near ${money(projected)}. Splitting it keeps this part on budget and gives the hard cases their own ${money(rest$)}, about ${money(projected - budget - rest$)} less.`,
             suggested,
@@ -274,7 +284,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
           at(tt + 0.15, { type: 'auto_fix', task: task.id, what: `${task.name} was heading to ${money(projected)}, over its ${money(budget)}. The ${label(lead)} split it in two, which saves about ${money(projected - budget - rest$)}.` })
         }
         if (c === suggested) {
-          const rest: PlanTask = { id: `${task.id}-rest`, name: `Hard cases: ${lower(task.name)}`, farmer: 'builder', doneWhen: 'The cases left out of the first part pass their own tests', gate: false }
+          const rest: PlanTask = { id: `${task.id}-rest`, name: 'Hard cases', farmer: 'builder', doneWhen: `The cases left out of ${lower(task.name)} pass their own tests`, gate: false }
           const gateAt = plan.findIndex((t) => t.gate || t.id === 'e2e-check')
           plan = [...plan.slice(0, gateAt < 0 ? plan.length : gateAt), rest, ...plan.slice(gateAt < 0 ? plan.length : gateAt)]
           at(at$ + 0.05, { type: 'replan', reason: `Split ${lower(task.name)} in two, so the first part stays on budget`, tasks: plan })
@@ -564,7 +574,6 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const cut = tm * MIN
       const spentNow = ev.reduce((n, e) => n + (e.type === 'usage' && e.farmer === f.id && e.t <= cut ? e.usd : 0), 0)
       const last = [...ev].reverse().find((e) => e.type === 'task_start' && e.farmer === f.id && e.t <= cut)
-      limitAsk(f, tm, spentNow, haltTotals[f.id] ?? total[f.id] ?? spentNow, last && last.type === 'task_start' ? last.task : undefined)
       const accepted = new Set(ev.filter((x) => x.type === 'accept' && x.t <= cut).map((x) => (x.type === 'accept' ? x.task : '')))
       const mine = new Set(ev.filter((x) => x.type === 'task_start' && x.farmer === f.id && !accepted.has(x.task)).map((x) => (x.type === 'task_start' ? x.task : '')))
       const keep = ev.filter((x) => {
@@ -575,6 +584,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
       })
       ev.length = 0
       ev.push(...keep)
+      // The ask where you stopped it, after the cut, so the cut never takes the ask itself.
+      limitAsk(f, tm, spentNow, haltTotals[f.id] ?? total[f.id] ?? spentNow, last && last.type === 'task_start' ? last.task : undefined)
       const said = new Set(ev.filter((x) => x.type === 'stop').map((x) => (x.type === 'stop' ? x.task : '')))
       for (const k of mine) if (!said.has(k)) at(tm + 0.05, { type: 'stop', task: k, reason: `You stopped the ${f.label} at its spend limit. This task stays out of the pull request.` })
     }

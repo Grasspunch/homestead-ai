@@ -78,6 +78,18 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
 
         <div className="page-grid">
           <div className="col">
+            {(st.crewNotes[p.id]?.[id] ?? []).length > 0 && (
+              <section>
+                <h3>Your notes</h3>
+                <div className="list">
+                  {st.crewNotes[p.id]![id]!.map((n, i) => (
+                    <div key={i}>
+                      <span className="grow">{n}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
             <section>
               <h3>Its tasks</h3>
               <div className="list">

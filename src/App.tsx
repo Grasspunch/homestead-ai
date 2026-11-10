@@ -122,6 +122,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
       <div className="title paper">
         <b>{p.name}</b>
         <span>{sub}</span>
+        {p.approved && !s.done && !st.playing && !pendingAsk(p.events, st.clock, st.viewerAnswers) && !st.openRollback(p) && <span className="tag grey">Paused</span>}
         {p.kind === 'sample' ? (
           <span className="tag grey" title="Every farmer, cost and check is simulated, and the run replays the same way each time">
             Sample, replays the same run
@@ -153,11 +154,10 @@ function Top({ p, s }: { p: Project; s: RunState }) {
               <button className="btn white top-ico" onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
                 <Ico name={st.playing ? 'pause' : 'play'} size={32} />
               </button>
-              {!pendingAsk(p.events, st.clock, st.viewerAnswers) && (
-                <button className="btn white top-ico" onClick={() => store.skipToNext()} aria-label="Skip to the next thing that needs you" title="Skip to the next thing that needs you">
-                  <Ico name="skip" size={32} />
-                </button>
-              )}
+              {/* Always in the same place, so Play/Pause never moves under the cursor. */}
+              <button className="btn white top-ico" disabled={!st.canSkip(p)} onClick={() => store.skipToNext()} aria-label="Skip to the next thing that needs you" title="Skip to the next thing that needs you">
+                <Ico name="skip" size={32} />
+              </button>
             </>
           )}
         </>
@@ -265,7 +265,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
               <>
                 , against one Sonnet agent alone:{' '}
                 {one.minutes > est.minutes ? <b className="gain">{mins(one.minutes - est.minutes)} sooner</b> : <b>{mins(est.minutes - one.minutes)} slower</b>}
-                {Math.abs(est.usd - one.usd) < 1 ? ', at the same cost' : est.usd > one.usd ? <>, and <b>{usd(est.usd - one.usd)} more</b></> : <>, and <b>{usd(one.usd - est.usd)} less</b></>}
+                {Math.abs(est.usd - one.usd) < 0.5 ? ', at the same cost' : est.usd > one.usd ? <>, and <b>{usd(est.usd - one.usd)} more</b></> : <>, and <b>{usd(one.usd - est.usd)} less</b></>}
                 {s.farmers.tester ? ', with every task checked by someone else' : ''}.
               </>
             ) : (
@@ -678,7 +678,17 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
     const msg = text.trim()
     if (!msg) return
     const r = store.answerInWords(ask.id, msg)
-    setMiss(r.kind === 'none' ? (r.negated ? 'Got it, not that. Which of these instead?' : `I can’t match “${clip(msg)}” to one of these options, so this stays open. Pick one, or tell me again.`) : '')
+    const why =
+      r.kind !== 'none'
+        ? ''
+        : r.why === 'no'
+          ? 'Got it, not that. Which of these instead?'
+          : r.why === 'question'
+            ? 'That reads as a question, so nothing has changed. Pick one of these, or tell me which.'
+            : r.why === 'amount'
+              ? `${r.amount} isn’t one of these options, so nothing has changed. Pick one, or tell me which.`
+              : `I can’t match “${clip(msg)}” to one of these options, so this stays open. Pick one, or tell me again.`
+    setMiss(why)
     if (r.kind === 'none') return
     setText('')
     if (r.kind === 'confirm') setConfirm({ text: msg, choice: r.choice })
@@ -737,6 +747,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
     const farmers = Object.values(s.farmers).filter((f): f is NonNullable<typeof f> => !!f).map((f) => ({ id: f.id, label: f.label }))
     const r = await route({ message: msg, farmers, tasks: s.tasks.map((t) => ({ id: t.id, name: t.name, farmer: t.farmer })) })
     setBusy(false)
+    store.noteFor(p.id, r.data.to, msg)
     store.chatTo(p.id, { from: 'planner', text: r.data.reply, to: r.data.to })
   }
   return (

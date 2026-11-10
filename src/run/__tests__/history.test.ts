@@ -4,7 +4,7 @@ import { simulateRun } from '../simulate'
 import { duration, reduce } from '../reduce'
 import { checkCost } from '../compare'
 import { BY_YOU } from '../rollback'
-import { needsConfirm, readAnswer, store, type Project } from '../store'
+import { needsConfirm, readAnswer, readAnswerWhy, store, type Project } from '../store'
 import { AUTONOMY_PRESETS, type RunEvent } from '../types'
 
 const GOAL = 'Build an AI support assistant that answers from our help docs'
@@ -231,10 +231,16 @@ describe('checkpoint 15 fixes', () => {
     const ev = simulateRun({ goal: GOAL, ...simulatePlan(GOAL) })
     const a = ev.find((e) => e.type === 'ask' && e.reason === 'cost' && !e.limitFor)
     if (!a || a.type !== 'ask') throw new Error('no cost ask')
-    const spent = /used \$([\d.]+) of its \$([\d.]+)/.exec(a.question)!
-    const ends = Number(/ends near \$([\d.]+)/.exec(a.impact!)![1])
-    const times = Number(/for ([\d.]+) times/.exec(a.basis!)![1])
-    expect(Math.abs(times - ends / Number(spent[2]))).toBeLessThan(0.2)
+    const steps = ev.filter((e) => e.type === 'tool' && e.task === a.task && e.t < a.t).length
+    expect(a.basis).toContain(`From ${steps} of its`)
+  })
+
+  it('confidence varies with the data, not the kind of ask', () => {
+    const kinds = new Set<string>()
+    for (const goal of [GOAL, 'Stripe checkout for our pricing page', 'A dashboard of weekly signups'])
+      for (const bugFixed of [false, true])
+        for (const e of simulateRun({ goal, ...simulatePlan(goal), bugFixed, autonomy: AUTONOMY_PRESETS.often })) if (e.type === 'ask' && e.confidence) kinds.add(e.confidence)
+    expect(kinds.size).toBeGreaterThanOrEqual(2)
   })
 
   it('a stopped farmer is not left working', () => {
@@ -246,5 +252,72 @@ describe('checkpoint 15 fixes', () => {
     const ev = simulateRun({ ...base, choices: { [limit.type === 'ask' ? limit.id : '']: 'Stop it here' } })
     const s = reduce(ev, limit.t + 5 * 60_000, {}, true)
     expect(s.farmers.builder?.state).not.toBe('working')
+  })
+})
+
+describe('checkpoint 16: every phrasing from the report', () => {
+  const cost = ['Split it in two', 'Raise its limit to $29', 'Stop it here']
+  const pr = ['Merge and ship to 10%', 'Ship to everyone', 'Not yet']
+  const promote = ['Ship to everyone', 'Stay at 10%']
+  it('reads contractions and "rather" as a no, and never picks what they name', () => {
+    for (const t of ["You shouldn't raise its limit", "I'd rather you didn't raise it", 'dnt split it', 'I would rather not split it', "can't raise it", 'wont split', "didn't want to split"])
+      expect(readAnswer(t, cost[0], cost)).toBeNull()
+    expect(readAnswer("you shouldn't merge", pr[0], pr)).toBe('Not yet')
+  })
+  it('reads a leading should, shall, do, can or could as a question', () => {
+    for (const t of ['should we split it', 'shall I raise it', 'do we split it', 'can we split it', 'could you split it', 'would splitting help'])
+      expect(readAnswerWhy(t, cost[0], cost)).toEqual({ none: 'question' })
+  })
+  it('never rounds a typed amount to another option', () => {
+    expect(readAnswerWhy('raise it to $100', cost[0], cost)).toEqual({ none: 'amount', amount: '$100' })
+    expect(readAnswer('raise it to $29', cost[0], cost)).toBe('Raise its limit to $29')
+  })
+  it('"not just 10%" widens, and money and Stay picks are always confirmed', () => {
+    expect(readAnswer('ship to everyone, not just 10%', promote[0], promote)).toBe('Ship to everyone')
+    expect(needsConfirm('Stay at 10%', 'irreversible')).toBe(true)
+    expect(needsConfirm('Stay at 10%')).toBe(true)
+    expect(needsConfirm('Raise its limit to $29', 'cost')).toBe(true)
+    expect(needsConfirm('Not yet')).toBe(false)
+    expect(readAnswer('yes, split it', cost[0], cost)).toBe('Split it in two')
+  })
+})
+
+describe('checkpoint 16: a model change mid-run', () => {
+  it('never puts a new ask in the past, and keeps the open ask’s numbers', () => {
+    const goal = 'A dashboard of weekly signups'
+    const p = store.newProject(goal)
+    const plan = simulatePlan(goal)
+    store.setPlan(p.id, plan.name, plan.farmers, plan.tasks, plan.estimate, plan.singleAgentEstimate)
+    store.approve(p.id)
+    const first = p.events.find((e) => e.type === 'ask')!
+    if (first.type !== 'ask') throw new Error()
+    store.answer(first.id, first.suggested)
+    p.clock = first.t + 6 * 60_000
+    for (const f of ['builder', 'designer'] as const)
+      store.editKit(p.id, f, (e) => {
+        e.model = 'Claude Opus 5.5'
+      })
+    const answered = p.answers ?? {}
+    const past = p.events.filter((e) => e.type === 'ask' && e.t < p.clock! && !answered[e.id])
+    // At most the one ask open now, and it is still unanswered in the log until you answer it.
+    for (const a of past) expect(p.events.some((e) => e.type === 'answer' && e.id === (a.type === 'ask' ? a.id : '') && e.t < p.clock!)).toBe(false)
+  })
+})
+
+describe('checkpoint 16: decisions are counted where you made them', () => {
+  it('a Stop it here answer is one of your decisions', () => {
+    const goal = 'Stripe checkout for our pricing page'
+    const plan = simulatePlan(goal)
+    const farmers = plan.farmers.map((f) => (f.id === 'builder' ? { ...f, limits: { ...f.limits, usd: 6 } } : f))
+    const base = { goal, ...plan, farmers, autonomy: AUTONOMY_PRESETS.matters }
+    const limit = simulateRun(base).find((e) => e.type === 'ask' && e.limitFor === 'builder')!
+    const id = limit.type === 'ask' ? limit.id : ''
+    const ev = simulateRun({ ...base, choices: { [id]: 'Stop it here' } })
+    const answers: Record<string, string> = { [id]: 'Stop it here' }
+    for (const e of ev) if (e.type === 'answer' && e.id !== id) answers[e.id] = e.choice
+    const s = reduce(ev, Number.MAX_SAFE_INTEGER, answers)
+    const decided = s.asks.filter((a) => a.answer)
+    expect(decided.map((a) => a.answer!.choice)).toContain('Stop it here')
+    expect(decided.length).toBe(Object.keys(answers).filter((k) => s.asks.some((a) => a.id === k)).length)
   })
 })
