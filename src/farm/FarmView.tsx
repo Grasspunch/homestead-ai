@@ -85,6 +85,7 @@ export interface FarmViewProps {
   onMail(): void
   onCoins(): void
   onChest(): void
+  hide?: { proofPops?: boolean; bubbles?: boolean; plotLabels?: boolean; chickens?: boolean } // parts you asked the Planner to hide
 }
 
 interface Cam {
@@ -384,7 +385,7 @@ export function FarmView(p: FarmViewProps) {
     for (const pl of layout.plots) if (t.x > pl.x - 2.2 && t.x < pl.x + pl.w + 1 && t.y > pl.y - 1.2 && t.y < pl.y + pl.h + 1.9) return `t:${pl.id}`
     if (near(t, { x: MAILBOX.x + 0.5, y: MAILBOX.y - 0.6 }, 0.9)) return 'mail'
     if (near(t, { x: CHEST.x + 0.5, y: CHEST.y + 0.3 }, 0.8)) return 'chest'
-    for (let i = 0; i < CHICKENS.length; i++) if (near(t, { x: CHICKENS[i].x, y: CHICKENS[i].y - 0.4 }, 0.6)) return `c:${i}`
+    if (!props.current.hide?.chickens) for (let i = 0; i < CHICKENS.length; i++) if (near(t, { x: CHICKENS[i].x, y: CHICKENS[i].y - 0.4 }, 0.6)) return `c:${i}`
     return null
   }
 
@@ -431,6 +432,7 @@ export function FarmView(p: FarmViewProps) {
       <canvas ref={canvas} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} aria-label="The farm" role="img" />
       <div ref={labels} className="plot-labels">
       {!p.planning &&
+        !p.hide?.proofPops &&
         layout.plots.map((pl) => {
           // A check that just landed pops up over its plot with what it rests on, then settles into the label.
           // Only one at a time, so two never stack: the latest, except that a failed check stays up for at least
@@ -460,7 +462,7 @@ export function FarmView(p: FarmViewProps) {
         })}
       {layout.plots.map((pl) => {
         const t = p.state.tasks.find((x) => x.id === pl.id)
-        if (!t) return null
+        if (!t || p.hide?.plotLabels) return null
         const sel = p.selected?.kind === 'task' && p.selected.id === pl.id
         return (
           <button
@@ -708,7 +710,7 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
   spr(g, 'well', 2, 8)
   spr(g, 'workstation', 5, 9.4)
   // Chickens stand still and peck now and then; a clicked one floats a heart.
-  CHICKENS.forEach((c, i) => {
+  if (!p.hide?.chickens) CHICKENS.forEach((c, i) => {
     const pecking = Math.floor(now / 500 + i * 3) % 7 === 0
     spr(g, `chicken_${pecking ? 1 : 0}`, c.x, c.y, { flip: c.flip })
     const at = hearts.get(i)
@@ -762,7 +764,7 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
     // One emote per plot when no farmer speaks for it.
     const rolledBack = pl.gate && lastDeploy?.stage === 'rollback' && t.status !== 'ripe' && t.status !== 'accepted'
     const plotEmote: Emote | null = t.status === 'wilted' || rolledBack ? 'x' : t.status === 'ripe' || (t.status === 'accepted' && !lastDeploy) ? 'check' : t.status === 'checking' ? 'read' : null
-    if (plotEmote) emote(g, pl.x + pl.w / 2, pl.y + 1.3, plotEmote, now)
+    if (plotEmote && !p.hide?.bubbles) emote(g, pl.x + pl.w / 2, pl.y + 1.3, plotEmote, now)
   }
   // A big change: every plot whose code it reaches glows with it, in time with its own plot.
   if (p.openAsk?.touches?.length) {
@@ -813,7 +815,7 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
           g.fill()
         }
         charAt(g, fx, fy, anim, dir, now, idx, { tint: TINT[id], alpha: 'alpha' in pose ? pose.alpha : 1 })
-        if ('emote' in pose && pose.emote && anim !== 'walk') emote(g, fx, fy, pose.emote, now)
+        if ('emote' in pose && pose.emote && anim !== 'walk' && !p.hide?.bubbles) emote(g, fx, fy, pose.emote, now)
       },
     })
   })

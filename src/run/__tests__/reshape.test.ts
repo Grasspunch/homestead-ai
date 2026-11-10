@@ -323,3 +323,34 @@ describe('the release with the Deployer off', () => {
   })
 })
 
+
+describe('changing the screen', () => {
+  const only = (text: string, c = ctx) => {
+    const r = readChanges(text, c)
+    return r.kind === 'changes' ? r.proposal.rows.map((x) => x.change) : r
+  }
+  it('the pull request button is the screen, not the review, even with the review already off', () => {
+    const c = only("I don't find the pull request button helpful at the top, can you remove it?", { ...ctx, active: [{ kind: 'setAutonomy', moment: 'ship', value: 'auto' }] })
+    expect(c).toEqual([{ kind: 'ui', el: 'pr', show: false }])
+  })
+  it('hides and brings back other parts', () => {
+    expect(only('hide the check pop-ups')).toEqual([{ kind: 'ui', el: 'proofPops', show: false }])
+    expect(only('get rid of the chickens')).toEqual([{ kind: 'ui', el: 'chickens', show: false }])
+    expect(only('bring back the spend counter', { ...ctx, active: [{ kind: 'ui', el: 'spend', show: false }] })).toEqual([{ kind: 'ui', el: 'spend', show: true }])
+  })
+  it('the review is still the review', () => {
+    expect(has(kinds('skip the pull request review'), 'setAutonomy')).toBe(true)
+    expect(has(kinds('skip the pull request review'), 'ui')).toBe(false)
+  })
+  it('a part it already hid says so, and one it doesn’t know gets the list', () => {
+    const r = readChanges('remove the pull request button', { ...ctx, active: [{ kind: 'ui', el: 'pr', show: false }] })
+    expect(r.kind === 'none' && r.reply).toMatch(/already hidden/)
+    const u = readChanges('move the settings button to the left', ctx)
+    expect(u.kind === 'none' && u.reply).toMatch(/I can hide or bring back/)
+  })
+  it('the live Planner can hide a part too', () => {
+    const p = changesFromLive({ changes: [{ kind: 'ui', el: 'inbox', show: false }, { kind: 'ui', el: 'nope', show: false }] }, ctx)
+    expect(p?.rows.map((r) => r.change)).toEqual([{ kind: 'ui', el: 'inbox', show: false }])
+    expect(p?.rows[0].scope).toBe('every')
+  })
+})

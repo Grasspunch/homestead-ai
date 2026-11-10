@@ -3,6 +3,7 @@
 // A request becomes a list of typed changes. The card shows each one as a row you can uncheck; the ones you keep
 // change the run itself, from now on, and last for the farm until you turn them off.
 import type { FarmerId } from './types'
+import { SCREEN, UI_PARTS, uiChangesIn, uiPart, type UiId } from './ui'
 
 // The kinds of change the Planner can make today. Each is one row on the card.
 export type Change =
@@ -13,6 +14,7 @@ export type Change =
   | { kind: 'setRolloutCheck'; check: 'synthetics' } // the rollout is judged by synthetic tests in prod
   | { kind: 'setDoneWhen'; task: string; doneWhen: string }
   | { kind: 'notifyOn'; on: 'stage' } // a desktop notification at each stage of the rollout
+  | { kind: 'ui'; el: UiId; show: boolean } // hide a part of the screen, or bring it back
 
 // Where a change applies. Only "this farm" ships today; "every farm" is kept for later.
 export type Scope = 'farm' | 'every'
@@ -38,7 +40,7 @@ export interface FlowItem {
 
 // The Planner's suggestion: anything that removes a safety step, incident mode included, and the success
 // criteria last for this farm; a preference like stage alerts is for every farm.
-export const suggestScope = (c: Change): Scope => (c.kind === 'notifyOn' ? 'every' : 'farm')
+export const suggestScope = (c: Change): Scope => (c.kind === 'notifyOn' || c.kind === 'ui' ? 'every' : 'farm')
 
 // A change in a few words, as the plan names your flow.
 export function shortOf(c: Change, name: (id: string) => string = (x) => x): string {
@@ -57,6 +59,8 @@ export function shortOf(c: Change, name: (id: string) => string = (x) => x): str
       return 'synthetic done-when'
     case 'notifyOn':
       return 'stage alerts'
+    case 'ui':
+      return `${c.show ? 'show' : 'no'} ${uiPart(c.el)?.name ?? c.el}`
   }
 }
 
@@ -130,7 +134,14 @@ export function readChanges(text: string, ctx: Ctx): Reading {
   const unnecessary = () => ctx.tasks.filter((k) => !k.gate && (k.id === 'e2e-check' || /-rest$/.test(k.id)) && k.status !== 'accepted')
   let incident = false
   let matched = false
+  // The screen: a part named anywhere in the request, hidden or brought back. Those clauses are about the screen,
+  // not the run, so "remove the pull request button" never turns off the review.
+  const ui = uiChangesIn(t)
+  if (ui) for (const u of ui) want.push({ kind: 'ui', el: u.el, show: u.show })
+  if (ui) matched = true
+  const aboutScreen = (c: string) => !!ui && UI_PARTS.some((p) => p.words.test(c))
   for (const c of clauses) {
+    if (aboutScreen(c)) continue
     const no = KEEP.test(c)
     const skip = /\b(skip|skipping|drop|remove|cut|without|no|turn off|switch off|bypass|ditch|lose)\b/.test(c)
     if (/\b(incident|outage|emergency|sev ?[0-2]|hotfix|on fire|asap)\b/.test(c) && !no) incident = true
@@ -194,18 +205,23 @@ export function readChanges(text: string, ctx: Ctx): Reading {
     return true
   })
   if (!changes.length) {
+    if (ui) return { kind: 'none', reply: `The ${ui.map((u) => uiPart(u.el)?.name).join(' and ')} ${ui.length > 1 ? 'are' : 'is'} already ${ui[0].show ? 'showing' : 'hidden'}.`, chips: [] }
     if (matched) return { kind: 'none', reply: 'That is already how this farm runs, so nothing changes.', chips: [] }
+    // About the screen, but no part of it I know: say what I can hide.
+    if (SCREEN.test(t) && /\b(remove|hide|get rid of|take away|move|change|show|bring back|make|resize|rename|recolou?r)\b/.test(t))
+      return { kind: 'none', reply: `I can hide or bring back these parts of the screen: ${UI_PARTS.map((p) => `the ${p.name}`).join(', ')}. I can’t move or restyle them yet.`, chips: [] }
     if (/\b(skip|change|switch|turn off|remove|stop|instead|notify|deploy|push|ship|page|paging|on ?call|pager|slack|email|rolls? back|rollback|when it)\b/.test(t)) return { kind: 'none', reply: CAN_DO, ...nearest(t, ctx) }
     return { kind: 'not-a-change' }
   }
   return { kind: 'changes', proposal: { title: titleOf(changes, incident), rows: rowsFor(changes, ctx) } }
 }
 
-export const key = (c: Change) => `${c.kind}:${'task' in c ? c.task : 'farmer' in c ? c.farmer : ''}`
+export const key = (c: Change) => `${c.kind}:${'task' in c ? c.task : 'farmer' in c ? c.farmer : 'el' in c ? `${c.el}:${c.show ? 'show' : 'hide'}` : ''}`
 
 function titleOf(changes: Change[], incident: boolean) {
   if (incident || (changes.some((c) => c.kind === 'setRollout') && changes.some((c) => c.kind === 'setAutonomy'))) return 'Incident mode'
   if (changes.every((c) => c.kind === 'notifyOn')) return 'Stage alerts'
+  if (changes.every((c) => c.kind === 'ui')) return changes.length === 1 ? `${(changes[0] as { show: boolean }).show ? 'Shown' : 'Hidden'} ${uiShort((changes[0] as { el: UiId }).el)}` : 'Screen changes'
   if (changes.some((c) => c.kind === 'setRolloutCheck')) return 'Synthetic checks'
   if (changes.every((c) => c.kind === 'removeTask')) return changes.length === 1 ? 'Skipped task' : 'Skipped tasks'
   return 'Changed plan'
@@ -235,6 +251,10 @@ export function rowsFor(changes: Change[], ctx: Ctx): ChangeRow[] {
         return { id, change: c, label: `“${name(c.task)}” is done when ${c.doneWhen.charAt(0).toLowerCase()}${c.doneWhen.slice(1)}` }
       case 'notifyOn':
         return { id, change: c, label: 'A desktop notification at each rollout stage' }
+      case 'ui': {
+        const part = uiPart(c.el)
+        return { id, change: c, label: `${c.show ? 'Show' : 'Hide'} the ${part?.name ?? c.el}`, loss: c.show ? undefined : part?.instead }
+      }
     }
   }
 }
@@ -280,6 +300,7 @@ export function changesFromLive(out: { title?: string; changes?: unknown[] }, ct
     if (c.kind === 'setRolloutCheck') ok.push({ kind: 'setRolloutCheck', check: 'synthetics' })
     if (c.kind === 'setDoneWhen' && typeof c.task === 'string' && typeof c.doneWhen === 'string' && ctx.tasks.some((k) => k.id === c.task)) ok.push({ kind: 'setDoneWhen', task: c.task, doneWhen: c.doneWhen.slice(0, 120) })
     if (c.kind === 'notifyOn') ok.push({ kind: 'notifyOn', on: 'stage' })
+    if (c.kind === 'ui' && typeof c.el === 'string' && uiPart(c.el)) ok.push({ kind: 'ui', el: c.el as UiId, show: c.show === true })
   }
   const active = new Set((ctx.active ?? []).map(key))
   const seen = new Set<string>()
@@ -316,9 +337,13 @@ export function reshapeSchema(ctx: Ctx) {
             obj('setRolloutCheck', { check: { type: 'string', enum: ['synthetics'] } }),
             obj('setDoneWhen', { task: { type: 'string', enum: taskIds.length ? taskIds : ['none'] }, doneWhen: { type: 'string' } }),
             obj('notifyOn', { on: { type: 'string', enum: ['stage'] } }),
+            obj('ui', { el: { type: 'string', enum: UI_PARTS.map((p) => p.id), description: UI_PARTS.map((p) => `${p.id}: the ${p.name}`).join('; ') }, show: { type: 'boolean', description: 'true brings it back, false hides it' } }),
           ],
         },
       },
     },
   }
 }
+
+// A part of the screen in a word or two, for a chip's title.
+const uiShort = (id: UiId) => ({ pr: 'PR button', inbox: 'inbox', spend: 'spend', skip: 'skip', home: 'home button', sampleTag: 'tag', chips: 'chips', progress: 'task count', proofPops: 'pop-ups', bubbles: 'bubbles', plotLabels: 'labels', chickens: 'chickens' })[id]

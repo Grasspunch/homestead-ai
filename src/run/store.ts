@@ -254,6 +254,14 @@ class Store {
   private lastAsk: string | null = null
   private listeners = new Set<() => void>()
 
+  // Whether you asked the Planner to hide a part of the screen. This farm's changes come first, then Your flow,
+  // so a part you hid for every farm is hidden on farms you made before, too. The latest change wins.
+  uiHidden(el: string, p = this.project()): boolean {
+    const mine = (p?.reshapes ?? []).flatMap((r) => r.changes).filter((c) => c.kind === 'ui' && c.el === el)
+    const last = mine[mine.length - 1] ?? [...this.flow].reverse().find((f) => f.on && f.change.kind === 'ui' && f.change.el === el)?.change
+    return !!last && last.kind === 'ui' && !last.show
+  }
+
   say(text: string) {
     this.toast = { id: Date.now(), text }
     this.notify()
@@ -992,10 +1000,12 @@ class Store {
     }
     this.pending = null
     // Run again, or a finished run: the changes start with the next run, and the finished one stays as it was.
-    if (!done && p.approved) this.rebuild(p)
+    const screenOnly = rows.every((x) => x.change.kind === 'ui')
+    if (!done && p.approved && !screenOnly) this.rebuild(p)
     const n = rows.length
     const flowNote = every.length ? (every.length === n ? ' It’s in your flow for every new farm.' : ` ${every.length} of them ${every.length === 1 ? 'is' : 'are'} in your flow for every new farm.`) : ''
-    this.chatTo(p.id, { from: 'planner', text: (done ? `${r.title} is on from the next run: ${n} change${n === 1 ? '' : 's'}.` : `${r.title} is on: ${n} change${n === 1 ? '' : 's'}, from now.`) + flowNote })
+    if (screenOnly) this.chatTo(p.id, { from: 'planner', text: `Done: ${rows.map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join(', ')}${every.length ? ', on every farm' : ' on this farm'}. Ask me to bring it back any time.` })
+    else this.chatTo(p.id, { from: 'planner', text: (done ? `${r.title} is on from the next run: ${n} change${n === 1 ? '' : 's'}.` : `${r.title} is on: ${n} change${n === 1 ? '' : 's'}, from now.`) + flowNote })
     // No toast: it would cover the plots. The new chip carries Undo for a few seconds instead.
     this.fresh = { id: r.id, until: Date.now() + Store.FRESH_MS }
     setTimeout(() => this.notify(), Store.FRESH_MS + 50)

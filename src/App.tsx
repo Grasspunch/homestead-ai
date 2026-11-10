@@ -99,6 +99,7 @@ function Farm() {
         onMail={() => store.setDrawer({ kind: 'inbox' })}
         onCoins={() => store.setDrawer({ kind: 'usage' })}
         onChest={() => store.setDrawer({ kind: 'summary' })}
+        hide={{ proofPops: st.uiHidden('proofPops'), bubbles: st.uiHidden('bubbles'), plotLabels: st.uiHidden('plotLabels'), chickens: st.uiHidden('chickens') }}
       />
       <Top p={p} s={s} />
       <InboxYields win={st.settingsOpen ? 'settings' : st.pending?.pid === p.id ? 'change' : ask ? `ask:${ask.id}` : rolled ? `rollback:${rolled.t}` : trust ? 'trust' : null} />
@@ -146,14 +147,16 @@ function Top({ p, s }: { p: Project; s: RunState }) {
   const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? (left ? `${where}, ${work.length - left} of ${work.length} tasks` : `Done, ${where.toLowerCase()}`) : `${workDone} of ${work.length} tasks done`
   return (
     <header className="top">
-      <button className="btn white top-ico" onClick={() => store.home()} aria-label="Your farms">
-        <Ico name="home" size={32} />
-      </button>
+      {!st.uiHidden('home') && (
+        <button className="btn white top-ico" onClick={() => store.home()} aria-label="Your farms">
+          <Ico name="home" size={32} />
+        </button>
+      )}
       <div className="title paper">
         <b>{p.name}</b>
-        <span>{sub}</span>
+        {!st.uiHidden('progress') && <span>{sub}</span>}
         {p.approved && !s.done && !st.playing && !pendingAsk(p.events, st.clock, st.viewerAnswers) && !st.openRollback(p) && <span className="tag grey">Paused</span>}
-        {p.approved && !!p.reshapes?.length && (
+        {p.approved && !!p.reshapes?.length && !st.uiHidden('chips') && (
           <div className="reshapes">
             {p.reshapes.map((r) => (
               <span key={r.id} className={`tag gold reshape-chip${st.fresh?.id === r.id && Date.now() < st.fresh.until ? ' fresh' : ''}`} title={r.changes.length + ' changes you asked for: ' + r.request}>
@@ -171,7 +174,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
             ))}
           </div>
         )}
-        {p.kind === 'sample' ? (
+        {st.uiHidden('sampleTag') ? null : p.kind === 'sample' ? (
           <span className="tag gold" title="Simulated: every run plays out the same way">
             Simulated sample
           </span>
@@ -188,24 +191,26 @@ function Top({ p, s }: { p: Project; s: RunState }) {
               Run again
             </button>
           )}
-          <button className="btn white top-ico top-pr" onClick={() => store.setDrawer({ kind: 'summary' })}>
-            Pull request
-          </button>
-          <button className="btn white top-ico inbox-btn" onClick={() => store.setDrawer({ kind: 'inbox' })} aria-label={open ? `Inbox, ${open} need you` : 'Inbox'}>
+          {!st.uiHidden('pr') && (
+            <button className="btn white top-ico top-pr" onClick={() => store.setDrawer({ kind: 'summary' })}>
+              Pull request
+            </button>
+          )}
+          {!st.uiHidden('inbox') && <button className="btn white top-ico inbox-btn" onClick={() => store.setDrawer({ kind: 'inbox' })} aria-label={open ? `Inbox, ${open} need you` : 'Inbox'}>
             <i className="mail-ico" />
             {open > 0 && <span className="badge">{open}</span>}
-          </button>
-          <button className="btn white top-ico top-coin" onClick={() => store.setDrawer({ kind: 'usage' })} aria-label={`Spend so far, ${usd(s.usage.usd)}`}>
+          </button>}
+          {!st.uiHidden('spend') && <button className="btn white top-ico top-coin" onClick={() => store.setDrawer({ kind: 'usage' })} aria-label={`Spend so far, ${usd(s.usage.usd)}`}>
             <i className="coin" />
             <b>{usd(s.usage.usd)}</b>
-          </button>
+          </button>}
           <button className="btn white top-ico" disabled={!!s.done} onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
             <Ico name={st.playing ? 'pause' : 'play'} size={32} />
           </button>
           {/* Always in the same place, so Play/Pause never moves under the cursor. */}
-          <button className="btn white top-ico" disabled={!st.canSkip(p)} onClick={() => store.skipToNext()} aria-label="Skip to the next thing that needs you" title="Skip to the next thing that needs you">
+          {!st.uiHidden('skip') && <button className="btn white top-ico" disabled={!st.canSkip(p)} onClick={() => store.skipToNext()} aria-label="Skip to the next thing that needs you" title="Skip to the next thing that needs you">
             <Ico name="skip" size={32} />
-          </button>
+          </button>}
         </>
       )}
       <button
@@ -862,7 +867,7 @@ function ChangeCard({ side }: { side: boolean }) {
             <label>
               <input type="checkbox" checked={!!on[r.id]} disabled={pd.denied} onChange={(e) => setOn({ ...on, [r.id]: e.target.checked })} />
               <span className="what">{r.label}</span>
-              {r.loss && <span className="loss">{r.loss}</span>}
+              {r.loss && <span className={r.change.kind === 'ui' ? 'loss still' : 'loss'}>{r.loss}</span>}
             </label>
             <span className="scope" role="radiogroup" aria-label={`How long: ${r.label}`}>
               {(['farm', 'every'] as const).map((k) => (

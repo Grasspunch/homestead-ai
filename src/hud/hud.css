@@ -272,6 +272,7 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .change-rows input { width: 18px; height: 18px; margin: 0; accent-color: var(--leaf); }
 .change-rows .loss { grid-column: 2; font: 400 var(--t-meta)/1.3 var(--ui); color: var(--berry); }
 .change-rows li:not(.on) .loss { color: var(--bark-4); }
+.change-rows .loss.still { color: var(--bark-2); } /* where a hidden part still is: a note, not a loss */
 /* The changes you asked for hang under the title, so the title keeps its status. */
 .top .title { position: relative; }
 .top .title .reshapes { position: absolute; top: calc(100% + 18px); left: -12px; display: flex; gap: 6px; }
