@@ -19,6 +19,14 @@
   --grass: #8fc77a;
   --ui: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, monospace;
+  /* Type: three sizes for reading text, nothing between them. */
+  --t-meta: 13px;   /* why-lines, hints, timestamps */
+  --t-body: 15px;   /* rows, fields, panel text */
+  --t-lead: 17px;   /* the one sentence a dialogue leads with */
+  /* Fields: one sunk well for every value you can change. */
+  --field-h: 36px;
+  --field-ink: #fffaf0;
+  --field-line: #8a6a50;
 }
 
 html, body, #root { height: 100%; margin: 0; }
@@ -70,7 +78,7 @@ input, textarea { font: inherit; color: inherit; }
 .badge.calm { background: var(--bark-3); }
 
 /* ---- dialogue (the Planner and asks) ---- */
-.dlg { position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px; width: min(1040px, calc(100% - 32px)); display: flex; gap: 14px; align-items: stretch; z-index: 6; }
+.dlg { position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px; width: min(1100px, calc(100% - 32px)); display: flex; gap: 14px; align-items: stretch; z-index: 6; }
 .dlg.with-side { left: 16px; transform: none; width: calc(100% - 490px); }
 .portrait { width: 132px; height: 132px; flex: none; border: 18px solid transparent; border-image: url(/ui/portrait.png) 7 fill / 21px stretch; image-rendering: pixelated; position: relative; }
 .portrait canvas { position: absolute; inset: -6px; width: 108px; height: 108px; image-rendering: pixelated; }
@@ -94,9 +102,6 @@ input, textarea { font: inherit; color: inherit; }
 .thinking i:nth-child(2) { animation-delay: 150ms; } .thinking i:nth-child(3) { animation-delay: 300ms; }
 @keyframes bob { 50% { transform: translateY(-4px); } }
 
-.crew-size { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--bark-2); }
-.crew-size button { width: 34px; height: 34px; border: 8px solid transparent; border-image: url(/ui/btn_tan.png) 6 fill / 10px stretch; image-rendering: pixelated; font-family: px7; font-size: 16px; display: grid; place-items: center; }
-.crew-size button[aria-pressed=true] { border-image-source: url(/ui/btn_cream.png); color: var(--leaf); }
 .vs { font-size: 14px; color: var(--bark-2); }
 .vs b { color: var(--bark); font-variant-numeric: tabular-nums; }
 

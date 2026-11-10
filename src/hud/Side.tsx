@@ -77,21 +77,25 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
       {!planning && t.status === 'ripe' && !t.gate && <Review t={t} s={s} />}
 
       <div>
-        <h3>Done when</h3>
         {planning ? (
-          <div className="when paper">
+          <label>
+            <span className="field-label">Done when</span>
             <textarea
+              className="field-area"
               rows={2}
               value={t.doneWhen}
-              aria-label="Done when"
               onChange={(e) => store.editPlan(p.id, (tasks) => {
                 const x = tasks.find((k) => k.id === id)
                 if (x) x.doneWhen = e.target.value
               })}
             />
-          </div>
+            <span className="field-help">The check that has to pass before this counts as finished.</span>
+          </label>
         ) : (
-          <div className="when">{t.doneWhen}</div>
+          <>
+            <h3>Done when</h3>
+            <div className="when">{t.doneWhen}</div>
+          </>
         )}
       </div>
 

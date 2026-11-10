@@ -285,6 +285,7 @@ export function FarmView(p: FarmViewProps) {
             onPointerUp={(e) => e.stopPropagation()}
           >
             {t.name}
+            {p.planning && <span className="plot-when">Done when {t.doneWhen.charAt(0).toLowerCase() + t.doneWhen.slice(1)}</span>}
             {!p.planning && t.status !== 'waiting' && (
               <span className="plot-bar" aria-hidden>
                 <i style={{ width: `${Math.round(t.progress * 100)}%`, background: t.status === 'wilted' || (t.gate && p.state.deploy[p.state.deploy.length - 1]?.stage === 'rollback' && t.status !== 'ripe') ? 'var(--berry)' : 'var(--leaf)' }} />

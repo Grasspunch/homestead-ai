@@ -69,7 +69,7 @@ const PRIORITY: FarmerId[] = ['builder', 'tester', 'planner', 'designer', 'deplo
 const WHY: Record<FarmerId, string> = {
   planner: 'Splits the work, prices it and passes your messages on. Needs judgment, so Opus.',
   builder: 'Writes most of the code. Sol is as good at code as Opus here and costs a quarter less.',
-  designer: 'Screens and copy need taste, so Opus. Checks its own screens on phone and desktop.',
+  designer: 'Screens and copy need taste, so Opus. Checks its own screens before the Tester does.',
   tester: 'Checks the others against each done-when. Kept apart so nobody grades its own work.',
   deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own.',
 }

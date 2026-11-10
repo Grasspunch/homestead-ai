@@ -138,7 +138,6 @@ function Dialogue({ farmer, side, children }: { farmer: FarmerId; side: boolean;
 }
 
 function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }) {
-  const [text, setText] = useState('')
   const st = useStore()
   if (p.planning)
     return (
@@ -180,6 +179,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
     usd: ids.reduce((n, id) => n + (s.farmers[id]!.limits.usd / 1.3) * (rate(setupOf(id).model) / rate(s.farmers[id]!.model) - 1), s.estimate.usd),
   }
   const setCrew = (next: FarmerId[]) => planInto(p, next)
+  const missing = FARMER_ORDER.filter((x) => !s.farmers[x])
   return (
     <Dialogue farmer="planner" side={side}>
       <div className="who">
@@ -190,7 +190,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
       <p className="plan-lead">
         {ids.length > 1 ? (
           <>
-            I’d use this crew of <b>{ids.length}</b>: <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>.
+            I’d use this crew of {ids.length}: <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>.
             {one && est && <> One agent alone takes {mins(one.minutes)} for {usd(one.usd)}, with nobody checking its work.</>}
           </>
         ) : (
@@ -199,128 +199,73 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           </>
         )}
       </p>
-      <div className="plan-grid">
-        <section>
-          <h4>Crew</h4>
-          <div className="crew-list">
-            {ids.map((id) => {
-              const f = setupOf(id)
-              return (
-                <div key={id} className="crew-row">
-                  <button className="crew-name" onClick={() => store.setDrawer({ kind: 'farmer', id })} title="Everything it carries">
-                    <Swatch farmer={id} />
-                    <b>{f.label}</b>
-                  </button>
-                  <select
-                    className="pick"
-                    value={f.model}
-                    aria-label={`${f.label}'s model`}
-                    onChange={(e) => {
-                      const m = MODELS.find((x) => x.model === e.target.value)!
-                      store.editKit(p.id, id, (k) => {
-                        const base = s.farmers[id]!
-                        k.model = m.model === base.model ? undefined : m.model
-                        k.agent = m.model === base.model ? undefined : m.agent
-                      })
-                    }}
-                  >
-                    {MODELS.map((m) => (
-                      <option key={m.model} value={m.model}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                  <LimitField unit="$" label={`${f.label}'s spend limit`} value={f.limits.usd} onChange={(v) => store.editKit(p.id, id, (k) => (k.limits = { ...f.limits, usd: v }))} />
-                  {id !== 'builder' ? (
-                    <button className="crew-x" aria-label={`Drop the ${f.label}`} onClick={() => setCrew(ids.filter((x) => x !== id))}>
-                      <Ico name="cross" size={14} />
-                    </button>
-                  ) : (
-                    <span className="crew-x" />
-                  )}
-                  {f.why && <span className="why">{f.why}</span>}
-                </div>
-              )
-            })}
-            {FARMER_ORDER.filter((x) => !s.farmers[x]).map((id) => (
-              <button key={id} className="crew-add" onClick={() => setCrew([...ids, id])}>
-                <Ico name="plus" size={14} />
-                Add the {id.charAt(0).toUpperCase() + id.slice(1)}
+      <div className="crew" role="table" aria-label="Crew">
+        <div className="crew-head" role="row">
+          <span role="columnheader">Farmer</span>
+          <span role="columnheader">Why</span>
+          <span role="columnheader">Model</span>
+          <span role="columnheader">Limit</span>
+          <span />
+        </div>
+        {ids.map((id) => {
+          const f = setupOf(id)
+          return (
+            <div key={id} className="crew-row" role="row">
+              <button className="crew-name" onClick={() => store.setDrawer({ kind: 'farmer', id })}>
+                <Swatch farmer={id} />
+                {f.label}
               </button>
-            ))}
-          </div>
-        </section>
-        <section>
-          <h4>Tasks, and when each is done</h4>
-          <div className="task-list">
-            {s.tasks.map((t) => (
-              <div key={t.id} className="task-row">
-                <div className="task-top">
-                  <button className="task-name" onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
-                    {t.name}
-                  </button>
-                  <select
-                    className="pick"
-                    value={t.farmer}
-                    aria-label={`Who does ${t.name}`}
-                    onChange={(e) =>
-                      store.editPlan(p.id, (tasks) => {
-                        const x = tasks.find((k) => k.id === t.id)
-                        if (x) x.farmer = e.target.value as FarmerId
-                      })
-                    }
-                  >
-                    {ids.map((x) => (
-                      <option key={x} value={x}>
-                        {s.farmers[x]!.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <label className="done-when">
-                  <span>Done when</span>
-                  <input
-                    defaultValue={t.doneWhen}
-                    key={t.doneWhen}
-                    aria-label={`${t.name} is done when`}
-                    onBlur={(e) => {
-                      const v = e.target.value.trim()
-                      if (v && v !== t.doneWhen)
-                        store.editPlan(p.id, (tasks) => {
-                          const x = tasks.find((k) => k.id === t.id)
-                          if (x) x.doneWhen = v
-                        })
-                    }}
-                    onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                  />
-                </label>
-              </div>
-            ))}
-          </div>
-        </section>
+              <span className="why">{f.why}</span>
+              <select
+                className="field-box"
+                value={f.model}
+                aria-label={`${f.label}'s model`}
+                onChange={(e) => {
+                  const m = MODELS.find((x) => x.model === e.target.value)!
+                  store.editKit(p.id, id, (k) => {
+                    const base = s.farmers[id]!
+                    k.model = m.model === base.model ? undefined : m.model
+                    k.agent = m.model === base.model ? undefined : m.agent
+                  })
+                }}
+              >
+                {MODELS.map((m) => (
+                  <option key={m.model} value={m.model}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <LimitField unit="$" label={`${f.label}'s spend limit`} value={f.limits.usd} onChange={(v) => store.editKit(p.id, id, (k) => (k.limits = { ...f.limits, usd: v }))} />
+              {id !== 'builder' ? (
+                <button className="crew-x" aria-label={`Drop the ${f.label}`} onClick={() => setCrew(ids.filter((x) => x !== id))}>
+                  <i className="mark no" />
+                </button>
+              ) : (
+                <span />
+              )}
+            </div>
+          )
+        })}
       </div>
-      <div className="row plan-row">
-        <div className="stops">
-          Stops for you
+      <div className="plan-note">
+        {missing.map((id) => (
+          <button key={id} className="link" onClick={() => setCrew([...ids, id])}>
+            Add the {id.charAt(0).toUpperCase() + id.slice(1)}
+          </button>
+        ))}
+        <span className="grow">Click a plot to change its task or when it’s done.</span>
+      </div>
+      <div className="plan-foot">
+        <div className="plan-setting">
+          <span>Stops for you</span>
           <LevelPicker p={p} compact />
         </div>
-        <button className="toggle review-toggle" onClick={() => setMoment(p, 'review', p.autonomy.review === 'ask' ? 'auto' : 'ask')}>
-          <span className={`switch${p.autonomy.review === 'ask' ? ' on' : ''}`} />
+        <button className="plan-setting" onClick={() => setMoment(p, 'review', p.autonomy.review === 'ask' ? 'auto' : 'ask')} aria-pressed={p.autonomy.review === 'ask'}>
           <span>I accept finished work</span>
+          <span className={`switch${p.autonomy.review === 'ask' ? ' on' : ''}`} />
         </button>
-        <form
-          className="field paper grow-form-field"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!text.trim()) return
-            planInto(p, ids, text.trim())
-            setText('')
-          }}
-        >
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Or tell me, for example: I have the screens already" aria-label="Change the plan" />
-        </form>
         <button
-          className="btn"
+          className="btn approve"
           onClick={() => {
             store.enableNotifications(true)
             store.approve(p.id)

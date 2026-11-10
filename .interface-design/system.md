@@ -1,35 +1,38 @@
 # Homestead AI interface system
 
-Direction: the farm is Sprout Lands pixel art and carries the status. The panel is a clean white sheet beside it that holds the hierarchy and opens when there is something to decide.
+Direction (concept v3): the farm is Sprout Lands pixel art and carries the status at a glance. Wood panels and paper dialogues from the Sprout Lands premium UI pack sit over it, and open only when there is something to read or decide. Desktop only.
 
-## Type and colour
-- One sans, Atkinson Hyperlegible Next, for all UI text (titles 700 to 800). JetBrains Mono only for file names, the diff, token counts and timestamps. The Sprout Lands pixel font only on the map.
-- White panel, neutral ink greys (--ink #241d33), --sprout #4f8f3f as the action accent.
-- Outbound is blue: --out #2d5da8, --out-deep #1f4682, --out-wash #e8eefa. It is used only for things that reach people outside the company (the outbox, the send button, the recipient list). Outbound items lead with their audience ("Goes to 42 people at 6 pilot customers") and an envelope. No "Irreversible" or "Can't be undone" labels.
-- Red means failure only (a failed check, a failed call). Never for emphasis.
-- No eyebrows, kicker labels, middot chains or em dashes in copy.
+## Type
+- Two faces, each with one job. The pack's pixel font (px7, px4) for names, titles, tags and buttons. Atkinson Hyperlegible Next for anything you read. JetBrains Mono only for file names, token counts and timestamps.
+- Reading text uses three sizes and nothing between them: `--t-meta` 13px (why-lines, hints, column heads, timestamps), `--t-body` 15px (rows, fields, panel text), `--t-lead` 17px (the one sentence a dialogue leads with).
+- Hierarchy comes from weight and colour before size: names and values 700 in `--bark`, body 400 in `--bark`, supporting text 400 in `--bark-3`.
+- Pixel sizes: button 20px (sm 17, xs 15), dialogue name 21px, panel title 24px, tag 13px. Never set reading text in the pixel font.
 
-## Naming
-- Each farm is named after its project, and that one name is used on the farm sign, the panel title and the valley card.
-- The owning team shows only on a farm's detail. No person's name appears anywhere; crews are named by role.
+## Colour
+- Ink ramp: `--bark` (ink), `--bark-2` (secondary), `--bark-3` (meta), `--bark-4` (muted).
+- `--leaf` is go and focus. `--berry` is failure only, never emphasis. `--sky` is only for things that reach people outside (shipping, the rollout). `--honey` is cost.
 
-## Panel
-- Level 1 is a five-step overview (Brief, Clarify, Plan, Grow, Harvest), one line per step. Finished steps fold to a one-line summary; the current step is open with its single action inside its row. No footer.
-- Drill-down goes step or task, then entry (a file, a skill, an activity line, an output). A trail ("Overview / Task / File") replaces a back button, and Esc goes up one level.
-- One raised object at a time: the card that needs you (an ask, the re-plan, the harvest-ready card). Everything else is flat, ruled rows.
-- The panel is open for Brief, Clarify and Plan. When Grow starts it folds into a 48px rail with the five step dots and a "needs you" count. Click the rail or press Tab to open it; the header has a close button. It opens itself only for an ask (the camera leans toward that plot) or when the harvest is ready. Dragging the map folds it too.
-- Files and skills: every item is marked F or S with a one-line description and a token cost, and each has its own page (what it is, owner team, last updated, preview, used by, cost). The chest on the map opens the whole library.
+## Controls
+- Actions are pack buttons: cream for the main one, tan for the rest, white in the top bar. One main action per dialogue.
+- Every value you can change is the same field, a sunk well: `--field-h` 36px, 2px `--field-line` border, `--field-ink` fill, a 2px inner shadow on top, square corners, 15px text. Focus turns the line `--leaf`. Selects add a pixel arrow; limits put the unit in `--bark-3` and the number in 700 tabular figures. Never use a button shape for an editable value.
+- Labels sit above a field (`.field-label`, 13px 700), help text below (`.field-help`, 13px). Never a placeholder as the label.
+- On or off is the pack's wooden switch. Pass and fail are the pack's check and cross. A spend meter is the pack's tick meter.
+- A choice among a few levels is a row of pack buttons, cream for the chosen one.
 
-## Harvest
-- The harvest plays on the map first (the crew carries crops to the shipping chest, about 6 s, skippable), then the panel review.
-- The outbox (blue) lists Announcement, Webinar invite and Recipient list. Each output shows the first draft against the final, and each "Done when" check sits beside its evidence as a tick. Failed or blocked checks can't be ticked and offer "Send back".
-- Approve unlocks only when every check is ticked, and approving never sends. Send is a separate confirm that names the recipients and says a mistake would mean sending a correction.
-- "Stays with you" holds your decisions and the lessons saved. Energy and call counts sit behind a Details toggle.
+## Layout
+- Rows are flat and ruled with a 1px `rgba(106,74,52,.16)` line, with 8px above and below a field. Columns line up across rows (CSS grid with `display: contents` rows), and everything in a row is vertically centred.
+- Spacing steps: 4, 8, 14, 18, 24.
+- One raised object at a time: the dialogue or card that needs you. Everything else is flat.
+
+## The plan
+- One sentence: the crew's time and price against one agent alone.
+- A row per farmer: name, why that model, model, spend limit, drop. Missing roles are links to add them.
+- Tasks and done-whens live on the plots. While planning, each plot label shows its done-when, and clicking a plot opens it to edit.
+- The foot holds Stops for you, I accept finished work, and Approve with its price.
 
 ## Map
-- Status lives on the field: each plot has a progress bar under its sign and at most one emote (check for done, alert for needs you, cross for failed, sleep for waiting). Hovering a plot shows one line.
-- Map and panel stay in sync: hovering or opening a plot highlights its row, and the reverse.
-- Farmhands never show work that isn't happening. Waiting on a task: stand at that plot's top edge and glance around on random timers. Waiting for you: on the farmhouse porch facing the door. Paused: frozen, facing down, dimmed. Done: chores away from the plots (feeding chickens, watering flowers, chopping wood, picking apples, napping, the pond, chatting in pairs), switching every 8 to 15 s. No two move in sync.
-- Things to click: chickens (a heart; three clicks and it runs off), trees, pond, well, bushes, sunflower, house, chest, signs and idle farmhands. Each reaction is under 600 ms, never changes the work, and is one frame under reduced motion.
-- Cursors: the Sprout Lands paw on the map, the pointing paw over anything clickable, the holding paw while dragging.
-- The opening is three camera beats with a one-line caption each; Enter moves on, Esc skips. The glossary lives in the "?" sheet.
+- Status lives on the field: a progress bar under each plot's name and at most one emote over it.
+- The mailbox is the inbox. It shows a letter when a question or finished work is waiting.
+- Accepted work clears its plot and stacks crates by the chest.
+- Chickens stand still and peck; clicking one floats a heart. Idle farmers do chores. Nothing on the map is decoration without a job or a reaction.
+- No text on the map beyond plot names (and done-whens while planning).

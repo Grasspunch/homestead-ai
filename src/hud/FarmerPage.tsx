@@ -88,7 +88,7 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
                     </span>
                     {!p.approved ? (
                       <select
-                        className="pick"
+                        className="field-box"
                         value={t.farmer}
                         aria-label={`Who does ${t.name}`}
                         onChange={(e) => store.editPlan(p.id, (tasks) => {
