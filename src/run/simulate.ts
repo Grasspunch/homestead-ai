@@ -115,7 +115,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const lead: FarmerId = has('planner') ? 'planner' : farmers[0]?.id ?? 'builder'
   let plan = [...input.tasks]
   const auto = input.autonomy ?? AUTONOMY_PRESETS.matters
-  const asks = (m: keyof Autonomy) => auto[m] === 'ask' || (m === 'ship' && !!input.deployAsks)
+  // With "May deploy" off, every release asks you: the merge, the ship again after a rollback, and 10% to everyone.
+  const asks = (m: keyof Autonomy) => auto[m] === 'ask' || ((m === 'ship' || m === 'reship') && !!input.deployAsks)
   const sc = scenario(goal).script
   const choose = (id: string, suggested: string) => input.choices?.[id] ?? suggested
   // Never a farmer checking its own work: the Tester checks, and the Planner checks the Tester.
@@ -366,7 +367,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
           at(t0 + 0.42, { type: 'progress', task: back.id, value: 0.5 })
           at(t0 + 1.2, { type: 'tool', farmer: bf, task: back.id, tool: 'edit', summary: 'Ran the tests' })
           at(t0 + 1.4, { type: 'task_built', task: back.id })
-          at(t0 + 1.8, { type: 'check', task: back.id, by: checkerOf(bf), pass: true, notes: `Changed as you asked: ${sb.note}`, evidence: ['tests/report.json'], proof: back.farmer === 'designer' ? shot(sc.screen, 'ok') : unit(back) })
+          at(t0 + 1.8, { type: 'check', task: back.id, by: checkerOf(bf), pass: true, notes: back.doneWhen, evidence: ['tests/report.json'], proof: back.farmer === 'designer' ? shot(sc.screen, 'ok') : unit(back) })
           at(t0 + 2.1, { type: 'task_ripe', task: back.id, summary: `Changed as you asked: ${sb.note}`, evidence: ['tests/report.json'], change: sb.note })
           at(t0 + 2.2, { type: 'verify', task: back.id, by: checkerOf(bf), pass: true })
           at(t0 + 2.25, { type: 'accept', task: back.id, by: checkerOf(bf) })
@@ -419,12 +420,28 @@ export function simulateRun(input: SimInput): RunEvent[] {
       at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'risk', question: 'Fixed what caused the rollback. Ship to 10% again?', impact: 'Same rule as before: if errors pass 2%, I roll back by myself.', suggested: 'Ship to 10% again', alternatives: ['Not yet'] })
       at(t + 1, { type: 'answer', id, choice: choose(id, 'Ship to 10% again'), by: 'human' })
       t += 1.1
+    } else {
+      at(t, { type: 'auto_fix', task: task.id, what: `Fixed what caused the rollback, so the ${label(f)} shipped to 10% again by itself.` })
     }
     at(t, { type: 'progress', task: task.id, value: 0.5 })
     at(t + 0.1, { type: 'deploy', stage: '10%', metrics: { errorRate: 0.002, p95ms: 1600, answerScore: 0.92 } })
     const good = [0.002, 0.003, 0.002, 0.003]
     good.forEach((e, i) => at(t + 0.6 + i * 0.6, { type: 'monitor', stage: '10%', metrics: { errorRate: e, p95ms: 1600 + i * 40, answerScore: 0.92 } }))
     t += 0.6 + good.length * 0.6
+    if (input.deployAsks) {
+      const id = `ask-${++askN}`
+      const go = 'Ship to everyone'
+      at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible', question: `10% has been clean for ${Math.round(good.length * 0.6)} min, with errors at 0.3%. Ship to everyone?`, impact: 'Every user gets it. If errors pass 2%, I roll back by myself.', suggested: go, alternatives: ['Stay at 10%'] })
+      const c = choose(id, go)
+      at(t + 1, { type: 'answer', id, choice: c, by: 'human' })
+      t += 1.1
+      if (c !== go) {
+        at(t, { type: 'stop', task: task.id, reason: 'You kept it at 10%. Everyone else still has the last release.' })
+        continue
+      }
+    } else {
+      at(t, { type: 'auto_fix', task: task.id, what: `10% stayed under ${ERROR_LIMIT * 100}% errors, so the ${label(f)} shipped to everyone by itself.` })
+    }
     at(t, { type: 'progress', task: task.id, value: 0.8 })
     at(t + 0.1, { type: 'deploy', stage: '100%', metrics: { errorRate: 0.003, p95ms: 1650, answerScore: 0.92 } })
     ;[0.003, 0.004, 0.003].forEach((e, i) => at(t + 0.6 + i * 0.6, { type: 'monitor', stage: '100%', metrics: { errorRate: e, p95ms: 1650 + i * 30, answerScore: 0.92 } }))
@@ -442,6 +459,36 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (e.type === 'ask') usage(e.t / MIN - 0.02, e.farmer, e.task ?? '', usdPer(e.farmer) * 0.03, 'read')
   }
   ev.sort((a, b) => a.t - b.t)
+  // Spend limits: the Planner pauses a farmer the moment it reaches its limit, and asks you to raise it.
+  {
+    const total: Partial<Record<FarmerId, number>> = {}
+    for (const e of ev) if (e.type === 'usage') total[e.farmer] = (total[e.farmer] ?? 0) + e.usd
+    const spent: Partial<Record<FarmerId, number>> = {}
+    const paused = new Set<FarmerId>()
+    for (const e of [...ev]) {
+      if (e.type !== 'usage') continue
+      const f = farmers.find((x) => x.id === e.farmer)
+      spent[e.farmer] = (spent[e.farmer] ?? 0) + e.usd
+      if (!f || paused.has(f.id) || spent[f.id]! <= f.limits.usd) continue
+      paused.add(f.id)
+      const to = Math.ceil((total[f.id]! * 1.1) / 5) * 5
+      const tm = e.t / MIN
+      if (asks('cost')) {
+        const id = `ask-limit-${f.id}`
+        const suggested = `Raise its limit to ${money(to)}`
+        at(tm + 0.01, {
+          type: 'ask', id, farmer: lead, task: e.task, reason: 'cost', limitFor: f.id, limitTo: to,
+          question: `The ${f.label} reached its ${money(f.limits.usd)} limit, so I paused it.`,
+          impact: `Its work left needs about ${money(total[f.id]! - spent[f.id]!)} more, ${money(total[f.id]!)} in all.`,
+          suggested, alternatives: ['Not yet'],
+        })
+        at(tm + 0.02, { type: 'answer', id, choice: choose(id, suggested), by: 'human' })
+      } else {
+        at(tm + 0.01, { type: 'auto_fix', task: e.task, what: `The ${f.label} reached its ${money(f.limits.usd)} limit. The ${label(lead)} raised it to ${money(to)} to finish its work.` })
+      }
+    }
+    ev.sort((a, b) => a.t - b.t)
+  }
   const usd = ev.reduce((s, e) => s + (e.type === 'usage' ? e.usd : 0), 0)
   const actions = ev.filter((e) => e.type === 'tool').length
   const last = ev[ev.length - 1].t

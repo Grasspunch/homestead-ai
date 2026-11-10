@@ -8,7 +8,7 @@ import { Home } from './hud/Home'
 import { Ico, LimitField, Mark, Portrait, Sign, Swatch, mins, usd, type IconName } from './hud/bits'
 import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
-import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel } from './hud/Side'
+import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caught, outcome } from './hud/Side'
 import { getLiveMode, route, setLiveMode } from './run/agent'
 import { planInto } from './run/planning'
 import { scenario } from './run/simPlan'
@@ -59,7 +59,7 @@ function Farm() {
   const pending = p.approved ? pendingAsk(p.events, st.clock, st.viewerAnswers) : null
   const ask = pending ? s.asks.find((a) => a.id === pending) ?? null : null
   // After a clean merge you made yourself, the Planner offers once to merge future pull requests by itself.
-  const trust = p.approved && !!s.done && !p.trust && p.autonomy.ship === 'ask' && cleanMerge(s)
+  const trust = p.approved && !!s.done && !p.trust && !p.everSentBack && p.autonomy.ship === 'ask' && cleanMerge(s)
   // A rollback is a moment of its own until the next release goes out, or until you carry on.
   const lastDeploy = s.deploy[s.deploy.length - 1]
   const rolled = lastDeploy?.stage === 'rollback' && !st.seen.has(`${p.id}:${lastDeploy.t}`) ? lastDeploy : null
@@ -379,7 +379,7 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
             store.setDrawer({ kind: 'summary' })
           }}
         >
-          Open the pull request
+          See the pull request
         </button>
       </div>
     </Dialogue>
@@ -623,9 +623,11 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
       </div>
       {s.done ? (
         <p>
-          {s.deploy[s.deploy.length - 1]?.stage === 'rollback' ? 'Everything is merged, and you rolled it back, so nothing is live.' : 'Everything is in and live for everyone.'} {usd(s.done.usd)} in {mins(s.done.minutes)}, {s.autoFixes.length} things fixed without you, and you made {s.asks.filter((a) => a.answer).length} calls.
+          {s.deploy[s.deploy.length - 1]?.stage === 'rollback' ? 'Everything is merged, and you rolled it back, so nothing is live.' : 'Everything is in and live for everyone.'} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caught(s).length || 'No'} problem{caught(s).length === 1 ? '' : 's'} caught before users saw {caught(s).length === 1 ? 'it' : 'them'}, and you made {s.asks.filter((a) => a.answer).length} call{s.asks.filter((a) => a.answer).length === 1 ? '' : 's'}.
         </p>
-      ) : (
+      ) : null}
+      {s.done && outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
+      {!s.done && (
         lines.length > 0 && (
           <div className="said">
             {lines.map((l, i) => (
@@ -641,7 +643,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
           <>
             <button className="btn" onClick={() => store.setDrawer({ kind: 'summary' })}>
               <Ico name="star" />
-              See the harvest
+              See the pull request
             </button>
             <button className="btn tan" onClick={() => store.setDrawer({ kind: 'usage' })}>
               Spend

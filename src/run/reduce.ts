@@ -1,4 +1,5 @@
 // Folds a run log into the state shown on screen at time t.
+import { soloFromRun } from './compare'
 import type { ActivityLine, Ask, FarmerId, FarmerRun, RunEvent, RunState, TaskState } from './types'
 
 export function emptyState(): RunState {
@@ -122,6 +123,11 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
         break
       }
       case 'auto_fix':
+        {
+          const m = /^The (\w+) reached its .* raised it to \$(\d+)/.exec(e.what)
+          const lf = m ? Object.values(s.farmers).find((x) => x?.label === m[1]) : undefined
+          if (lf && m) lf.limits = { ...lf.limits, usd: Number(m[2]) }
+        }
         s.autoFixes.push({ t: e.t, task: e.task, what: e.what })
         {
           const k = task(e.task)
@@ -145,6 +151,8 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
           alternatives: e.alternatives ?? [],
           touches: e.touches,
           files: e.files,
+          limitFor: e.limitFor,
+          limitTo: e.limitTo,
           t: e.t,
         }
         s.asks.push(a)
@@ -160,6 +168,9 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
           a.answer = viewer ? { choice: viewer, by: 'viewer', t: e.t } : { choice: e.choice, by: e.by, t: e.t }
           const f = farmer(a.farmer)
           if (f && f.state === 'needs') f.state = 'working'
+          // A raised spend limit.
+          const lf = farmer(a.limitFor)
+          if (lf && a.limitTo && /^raise/i.test(a.answer.choice)) lf.limits = { ...lf.limits, usd: a.limitTo }
         }
         log({ text: e.choice, kind: 'answer' }, e.t)
         break
@@ -219,6 +230,7 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
       }
       case 'done':
         s.done = { usd: e.usd, minutes: e.minutes, asks: e.asks, autoFixes: e.autoFixes, actions: e.actions }
+        s.soloActual = soloFromRun(events)
         for (const f of Object.values(s.farmers)) if (f) f.state = 'done'
         break
     }

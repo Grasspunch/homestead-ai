@@ -294,7 +294,7 @@ export function FarmView(p: FarmViewProps) {
           <button
             key={pl.id}
             className={`plot-label${p.planning ? ' ghost' : ''}${sel ? ' sel' : ''}${t.status === 'accepted' ? ' done' : ''}`}
-            style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y + pl.h + 1) * T + 2, fontSize: cam.s >= 3 ? 13 : 11 }}
+            style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y + pl.h + 1) * T + 2, fontSize: 13 }}
             onClick={(e) => {
               e.stopPropagation()
               p.onTask(pl.id)

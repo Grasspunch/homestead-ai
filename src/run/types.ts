@@ -86,6 +86,8 @@ export type RunEvent =
       alternatives?: string[]
       touches?: string[] // tasks whose code a big change reaches
       files?: number
+      limitFor?: FarmerId // a farmer paused at its spend limit
+      limitTo?: number // the limit the suggested answer raises it to
     }
   | { t: number; type: 'answer'; id: string; choice: string; by: 'human' | 'session' }
   | { t: number; type: 'task_ripe'; task: string; evidence?: string[]; summary?: string; change?: string }
@@ -134,6 +136,8 @@ export interface Ask {
   alternatives: string[]
   touches?: string[]
   files?: number
+  limitFor?: FarmerId
+  limitTo?: number
   t: number
   answer?: { choice: string; by: 'human' | 'session' | 'viewer'; t: number }
 }
@@ -153,6 +157,8 @@ export interface RunState {
   tasks: TaskState[]
   estimate?: Estimate
   singleAgentEstimate?: Estimate
+  // At the end: one Sonnet agent doing this run's own work alone, with no checker.
+  soloActual?: Estimate
   asks: Ask[]
   autoFixes: { t: number; task?: string; what: string }[]
   disagreements: { t: number; task: string; sides: { farmer: FarmerId; position: string; why?: string }[] }[]

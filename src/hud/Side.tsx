@@ -6,6 +6,7 @@ import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
 import { Ico, Mark, Portrait, Swatch, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 import { BY_YOU } from '../run/rollback'
+import { scenario } from '../run/simPlan'
 
 const STATUS: Record<TaskState['status'], string> = {
   waiting: 'Not started',
@@ -378,24 +379,49 @@ export function caught(s: RunState): { where: string; what: string }[] {
   return out
 }
 
+// The outcome the crew bought: a bad release stopped at 10%, which one agent would have shipped to everyone.
+export function outcome(s: RunState): { line: string; value: string } | null {
+  const i = s.deploy.findIndex((d, k) => d.stage === 'rollback' && d.reason !== BY_YOU && s.deploy[k - 1]?.stage === '10%')
+  if (i < 0) return null
+  const rb = scenario(s.goal).script.rollout
+  const peak = `${(rb.peak * 100).toFixed(1)}%`
+  return {
+    line: `One agent would have shipped ${rb.bug} to 100% of users.`,
+    value: `Kept 90% of users off a ${peak} error rate. One agent would have shipped ${rb.bug} to everyone.`,
+  }
+}
+
+// Planned against planned before the run ends; this run against the same work done alone once it has.
 export function CrewVsAlone({ s }: { s: RunState }) {
-  const crew = s.estimate
-  const one = s.singleAgentEstimate
+  const done = !!s.done && !!s.soloActual
+  const crew = done ? { usd: s.done!.usd, minutes: s.done!.minutes } : s.estimate
+  const one = done ? s.soloActual : s.singleAgentEstimate
   const n = FARMER_ORDER.filter((id) => s.farmers[id]).length
   if (!crew || !one || n < 2) return null
   const sooner = one.minutes - crew.minutes
   const less = one.usd - crew.usd
   const found = caught(s)
+  const out = outcome(s)
   return (
     <div className="vs">
-      <h3>Crew vs one agent</h3>
+      <h3>{done ? 'Crew vs one agent, this run' : 'Crew vs one agent, planned'}</h3>
       <p className="vs-gap">
-        <span className="big">{mins(sooner)}</span> sooner{less > 0.5 ? <>, <b>{usd(less)}</b> less</> : less < -0.5 ? <>, <b>{usd(-less)}</b> more</> : null}
+        {sooner > 0 ? (
+          <>
+            <span className="big">{mins(sooner)}</span> sooner
+          </>
+        ) : (
+          <>
+            <span className="big">{mins(-sooner)}</span> slower
+          </>
+        )}
+        {less > 0.5 ? <>, <b>{usd(less)}</b> less</> : less < -0.5 ? <>, <b>{usd(-less)}</b> more</> : null}
       </p>
+      {out && <p className="vs-out">{out.line}</p>}
       <div className="vs-grid" role="table">
         <span role="columnheader" />
         <span role="columnheader">This crew</span>
-        <span role="columnheader">One agent</span>
+        <span role="columnheader">One Sonnet agent</span>
         <span>Time</span>
         <b>{mins(crew.minutes)}</b>
         <span>{mins(one.minutes)}</span>
@@ -404,7 +430,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
         <span>{usd(one.usd)}</span>
         <span>Caught</span>
         <b>{found.length}</b>
-        <span>Unchecked</span>
+        <span>No checker</span>
       </div>
       {found.length > 0 && (
         <ul className="vs-caught">
@@ -449,7 +475,8 @@ export function UsagePanel({ s }: { s: RunState }) {
         <div className="crew-spend">
           {ids.map((id) => {
             const f = s.farmers[id]!
-            const spike = f.usd > f.limits.usd * 0.85
+            const over = f.usd - f.limits.usd
+            const spike = over > 0.005
             const fix = list.find((x) => x.farmer === id)
             return (
               <div key={id} className={`crew-spend-row${spike ? ' spike' : ''}`}>
@@ -464,7 +491,7 @@ export function UsagePanel({ s }: { s: RunState }) {
                 <span className="bar thin">
                   <i style={{ width: `${(f.usd / max) * 100}%`, background: spike ? 'var(--honey)' : '#c9a27a' }} />
                 </span>
-                {spike && <span className="returned"><b className="warn">Near its limit</b></span>}
+                {spike && <span className="returned"><b className="over">Over its limit by {usd(over)}</b></span>}
                 {fix && <ApplyFix fix={fix} />}
               </div>
             )
@@ -493,7 +520,6 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
   const inPr = s.tasks.filter((t) => t.status === 'accepted' && !t.gate)
   const commits = inPr.reduce((n, t) => n + 1 + (t.changes?.length ?? 0), 0)
   const decided = s.asks.filter((a) => a.answer)
-  const est = s.estimate
   const merged = s.deploy.length > 0
   const last = s.deploy[s.deploy.length - 1]
   const live = !!last && last.stage !== 'rollback' && !s.tasks.some((t) => t.gate && t.stopped)
@@ -517,12 +543,12 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
           <span className="mono">homestead/{p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}</span>
         </div>
       </div>
-      {s.done && est && (
+      {s.done && (
         <div className="sum">
-          {usd(s.done.usd)} and {mins(s.done.minutes)}, against about {usd(est.usd)} and {mins(est.minutes)} planned.
-          {s.singleAgentEstimate && s.singleAgentEstimate.minutes > est.minutes
-            ? ` About ${mins(s.singleAgentEstimate.minutes - est.minutes)} sooner than one agent alone, and ${caught(s).length || 'no'} problem${caught(s).length === 1 ? '' : 's'} caught before users saw ${caught(s).length === 1 ? 'it' : 'them'}.`
-            : ''}
+          {usd(s.done.usd)} in {mins(s.done.minutes)}
+          {s.soloActual ? `. One Sonnet agent doing the same work alone: about ${usd(s.soloActual.usd)} in ${mins(s.soloActual.minutes)}, with nobody checking it.` : '.'}{' '}
+          {caught(s).length || 'No'} problem{caught(s).length === 1 ? '' : 's'} caught before users saw {caught(s).length === 1 ? 'it' : 'them'}.
+          {outcome(s) ? ` ${outcome(s)!.line}` : ''}
         </div>
       )}
       <div>

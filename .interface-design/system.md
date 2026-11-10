@@ -7,6 +7,10 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - Reading text uses three sizes and nothing between them: `--t-meta` 13px (why-lines, hints, column heads, timestamps), `--t-body` 15px (rows, fields, panel text), `--t-lead` 17px (the one sentence a dialogue leads with).
 - Hierarchy comes from weight and colour before size: names and values 700 in `--bark`, body 400 in `--bark`, supporting text 400 in `--bark-3`.
 - Pixel sizes: button 20px (sm 17, xs 15), dialogue name 21px, panel title 24px, tag 13px. Never set reading text in the pixel font.
+- Big numbers and page titles: 34px or 40px, nothing else. Nothing anywhere under 13px, including plot labels and chart axes.
+- One font per button row: if one label is too long for the pixel font, the whole row switches to the body font.
+- Ink is only the tokens: `--bark`, `--bark-2`, `--bark-3`, `--bark-4`, `--leaf`, `--berry`, `--sky`, `--honey`, and cream on coloured tags. Buttons use `--bark`.
+- A spend overrun reads "Over its limit by $X" in `--berry`.
 
 ## Colour
 - Ink ramp: `--bark` (ink), `--bark-2` (secondary), `--bark-3` (descriptions, placeholders, meta). No lighter grey for text.

@@ -161,7 +161,8 @@ describe('one pull request review', () => {
     const again = shipAsk(ev)
     expect(again && again.type === 'ask' && again.id).not.toBe(first.id)
     expect(again && again.type === 'ask' && again.question).toMatch(/ready again/)
-    expect(ev.some((e) => e.type === 'check' && e.task === task.id && e.notes.includes('friendlier copy'))).toBe(true)
+    expect(ev.some((e) => e.type === 'task_ripe' && e.task === task.id && e.change === 'friendlier copy')).toBe(true)
+    expect(ev.some((e) => e.type === 'check' && e.notes.includes('friendlier copy'))).toBe(false)
     expect(ev.some((e) => e.type === 'usage' && e.task === task.id && e.kind === 'retry')).toBe(true)
     const usd = (x: typeof ev) => x.reduce((n, e) => n + (e.type === 'usage' ? e.usd : 0), 0)
     expect(usd(ev)).toBeGreaterThan(usd(simulateRun(base)))
@@ -194,5 +195,34 @@ describe('nobody grades its own work', () => {
         for (const e of ev) if ((e.type === 'check' || e.type === 'verify' || e.type === 'accept') && owner.has(e.task)) expect(e.by, `${g} ${n} ${e.type} ${e.task}`).not.toBe(owner.get(e.task))
       }
     }
+  })
+})
+
+describe('crew against one agent, fairly', () => {
+  it('prices one Sonnet agent with no checks, from the finished run', () => {
+    const plan = simulatePlan(GOAL)
+    const ev = simulateRun({ goal: GOAL, ...plan })
+    const s = reduce(ev, Number.MAX_SAFE_INTEGER)
+    expect(s.soloActual).toBeTruthy()
+    // No check cost in the single agent's total: it's under the crew's, which pays for the Tester.
+    expect(s.soloActual!.usd).toBeLessThan(s.done!.usd)
+    expect(s.soloActual!.minutes).toBeGreaterThan(s.done!.minutes)
+  })
+
+  it('pauses a farmer at its spend limit and asks to raise it', () => {
+    const plan = simulatePlan(GOAL)
+    const ev = simulateRun({ goal: GOAL, ...plan, autonomy: AUTONOMY_PRESETS.matters })
+    const ask = ev.find((e) => e.type === 'ask' && e.limitFor)
+    expect(ask).toBeTruthy()
+    const s = reduce(ev, Number.MAX_SAFE_INTEGER)
+    for (const f of Object.values(s.farmers)) if (f) expect(f.usd).toBeLessThanOrEqual(f.limits.usd + 0.01)
+  })
+
+  it('asks before every release when May deploy is off', () => {
+    const plan = simulatePlan(GOAL)
+    const ev = simulateRun({ goal: GOAL, ...plan, deployAsks: true, autonomy: AUTONOMY_PRESETS.undoable })
+    const qs = ev.filter((e) => e.type === 'ask').map((e) => (e.type === 'ask' ? e.question : ''))
+    expect(qs.some((q) => /Ship to 10% again/.test(q))).toBe(true)
+    expect(qs.some((q) => /Ship to everyone\?/.test(q))).toBe(true)
   })
 })

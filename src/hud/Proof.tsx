@@ -1,5 +1,5 @@
 // What a check rests on, shown rather than described: the test run, the screenshots, the rollout's numbers.
-import type { CSSProperties } from 'react'
+import { useEffect, useRef, type CSSProperties } from 'react'
 import type { Proof, RunState, Screen, Shot, TaskState, TestResult } from '../run/types'
 import { Mark, Swatch } from './bits'
 import { ERROR_LIMIT } from '../run/simulate'
@@ -132,8 +132,31 @@ export function ProofPop({ check, state, style, onOpen }: { check: Check; state:
   const chat = /support|assistant|chat/i.test(state.goal)
   const tests = pr?.tests ?? []
   const failed = tests.filter((x) => !x.pass)
+  // Never under the top bar: as the camera moves, push the pop down so its top stays at least 80px from the window's.
+  const ref = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    let raf = 0
+    let dy = 0
+    const tick = () => {
+      const el = ref.current
+      if (el) {
+        const top = el.getBoundingClientRect().top - dy
+        const next = Math.max(0, 80 - top)
+        if (next !== dy) {
+          dy = next
+          el.style.marginTop = `${dy}px`
+          if (dy > 0) el.removeAttribute('data-tail')
+          else el.setAttribute('data-tail', 'down')
+        }
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
   return (
     <button
+      ref={ref}
       className={`proof-pop paper bubble${check.pass ? '' : ' bad'}`}
       data-tail="down"
       style={style}
