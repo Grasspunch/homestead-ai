@@ -216,7 +216,7 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
         break
       case 'reshape': {
         const gone = new Set(e.removed)
-        s.tasks = s.tasks.filter((k) => !gone.has(k.id)).map((k) => ({ ...k, doneWhen: e.doneWhen[k.id] ?? k.doneWhen, farmer: e.owner[k.id] ?? k.farmer }))
+        s.tasks = s.tasks.filter((k) => !gone.has(k.id)).map((k) => ({ ...k, name: e.renamed?.[k.id] ?? k.name, doneWhen: e.doneWhen[k.id] ?? k.doneWhen, farmer: e.owner[k.id] ?? k.farmer }))
         for (const f of e.off) s.farmers[f] = undefined
         s.reshape = { titles: e.titles, skipped: e.skipped, synthetics: e.synthetics, everyone: e.everyone, noReview: e.noReview, off: e.off }
         break

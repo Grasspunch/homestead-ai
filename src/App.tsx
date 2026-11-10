@@ -127,8 +127,8 @@ function Farm() {
 function Top({ p, s }: { p: Project; s: RunState }) {
   const st = useStore()
   const open = s.asks.filter((a) => !a.answer).length
-  // The same count as the pull request: the work tasks, not the release.
-  const work = s.tasks.filter((t) => !t.gate)
+  // Every plot on the farm, the release included, so the count matches what you see.
+  const work = s.tasks
   const workDone = work.filter((t) => t.status === 'ripe' || t.status === 'accepted').length
   const left = work.filter((t) => t.status !== 'accepted').length
   const where = ({ '100%': 'Live', '10%': 'Live for 10%', rollback: 'Rolled back' } as Record<string, string>)[s.deploy[s.deploy.length - 1]?.stage ?? ''] ?? 'Not shipped'
@@ -857,10 +857,10 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
   const [busy, setBusy] = useState(false)
   const lines = (st.chat[p.id] ?? []).slice(-2)
   const input = useRef<HTMLInputElement>(null)
-  const send = async () => {
-    const msg = text.trim()
+  const send = async (offer?: string) => {
+    const msg = (offer ?? text).trim()
     if (!msg) return
-    setText('')
+    if (offer === undefined) setText('')
     setBusy(true)
     // A request to change the farm gets the change card; anything else goes to the crew as a note.
     const asked = await store.proposeChanges(p.id, msg, reshapeRead)
@@ -890,10 +890,20 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
       {s.done && outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
       {!s.done && (
         lines.length > 0 && (
-          <div className="said">
+          <div className="said talk">
             {lines.map((l, i) => (
               <span key={i} className={l.from === 'you' ? 'you' : ''}>
                 {l.from === 'you' ? `You: ${l.text}` : l.text}
+                {l.closest && <span className="closest">{l.closest}</span>}
+                {l.chips && i === lines.length - 1 && (
+                  <span className="offers">
+                    {l.chips.map((c) => (
+                      <button key={c.label} className="tag-btn" disabled={busy} onClick={() => send(c.request)}>
+                        {c.label}
+                      </button>
+                    ))}
+                  </span>
+                )}
               </span>
             ))}
           </div>

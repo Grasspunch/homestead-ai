@@ -8,7 +8,7 @@ import { soloFromRun } from './compare'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
 import { applyEdit, emptyEdit, type KitEdit } from './kit'
-import { key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope } from './reshape'
+import { key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope, type Suggestion } from './reshape'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from our help docs, and hands off to a person when it is not sure'
 
@@ -180,6 +180,8 @@ export interface ChatLine {
   from: 'you' | 'planner'
   text: string
   to?: FarmerId
+  closest?: string // for a change the Planner can't make: the nearest one it can
+  chips?: Suggestion[] // requests it can make, sent when you click one
 }
 
 interface Saved {
@@ -879,7 +881,7 @@ class Store {
       if (r.kind === 'not-a-change') return false
       if (r.kind === 'none') {
         this.chatTo(pid, { from: 'you', text: clip(text) })
-        this.chatTo(pid, { from: 'planner', text: r.reply })
+        this.chatTo(pid, { from: 'planner', text: r.reply, closest: r.closest, chips: r.chips.length ? r.chips : undefined })
         return 'reply'
       }
       proposal = { ...r.proposal, note }

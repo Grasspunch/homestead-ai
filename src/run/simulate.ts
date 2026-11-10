@@ -135,12 +135,19 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const lead: FarmerId = has('planner') ? 'planner' : farmers[0]?.id ?? 'builder'
   const shipper: FarmerId = has('builder') ? 'builder' : lead
   const owner: Record<string, FarmerId> = {}
+  const renamed: Record<string, string> = {}
+  const doneWhen: Record<string, string> = { ...(rs?.doneWhen ?? {}) }
   let plan = input.tasks
     .filter((t) => !rs?.skip.includes(t.id))
     .map((t) => {
       const moved = rs?.noDeployer && t.farmer === 'deployer'
       if (moved) owner[t.id] = shipper
-      return { ...t, farmer: moved ? shipper : t.farmer, doneWhen: rs?.doneWhen[t.id] ?? t.doneWhen }
+      // With the Deployer off, the release is the Builder pushing to main.
+      if (moved && t.gate) {
+        renamed[t.id] = 'Push to main'
+        doneWhen[t.id] ??= 'Merged to main and live for everyone'
+      }
+      return { ...t, name: renamed[t.id] ?? t.name, farmer: moved ? shipper : t.farmer, doneWhen: doneWhen[t.id] ?? t.doneWhen }
     })
   // No review: the release merges by itself, as with shipping set to "just do it".
   const auto = rs?.noReview ? { ...(input.autonomy ?? AUTONOMY_PRESETS.matters), ship: 'auto' as const } : input.autonomy ?? AUTONOMY_PRESETS.matters
@@ -606,7 +613,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
   // When the changes you asked for took effect: what they took out and changed, for the farm to show.
   if (rs) {
     const nameOf = (id: string) => input.tasks.find((k) => k.id === id)?.name ?? (/-rest$/.test(id) ? 'Hard cases' : id)
-    ev.push({ t: Math.max(rs.at, Math.round(0.06 * MIN)), type: 'reshape', titles: rs.titles, removed: [...rs.skip], skipped: rs.skip.map(nameOf), off: rs.noDeployer ? ['deployer'] : [], owner, doneWhen: rs.doneWhen, synthetics: rs.synthetics, everyone: rs.everyone, noReview: rs.noReview })
+    ev.push({ t: Math.max(rs.at, Math.round(0.06 * MIN)), type: 'reshape', titles: rs.titles, removed: [...rs.skip], skipped: rs.skip.map(nameOf), off: rs.noDeployer ? ['deployer'] : [], owner, doneWhen, renamed, synthetics: rs.synthetics, everyone: rs.everyone, noReview: rs.noReview })
   }
   const sp = split as Split | null
   if (sp) {

@@ -4,7 +4,7 @@
 // work that isn't happening.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { draw, hasFrame } from '../map/atlas'
+import { draw, frame, hasFrame } from '../map/atlas'
 import { atlasLoaded } from '../hud/bits'
 import { TINT } from '../run/crew'
 import { ProofPop } from '../hud/Proof'
@@ -101,7 +101,9 @@ interface Walker {
 
 // When you change the farm, a removed plot goes up in a puff of pixel cloud and the rest slide together.
 // The atlas has no smoke sprite, so the cloud is drawn here, in the same pixel size and palette.
-const POOF_MS = 1000
+// 'pack' draws the UI pack's own white clouds; 'circles' is the earlier hand-drawn cloud, kept so it can come back.
+const POOF_STYLE: 'pack' | 'circles' = 'pack'
+const POOF_MS = POOF_STYLE === 'pack' ? 600 : 1000
 const SLIDE_MS = 400
 const poofs: { x: number; y: number; w: number; h: number; at: number }[] = []
 let slide: { from: Map<string, { x: number; y: number }>; at: number } | null = null
@@ -128,7 +130,7 @@ const PUFFS = [
   [-0.46, 0.02, 0.3], [0.46, 0.04, 0.3],
   [-0.34, 0.34, 0.32], [0.02, 0.42, 0.34], [0.36, 0.32, 0.32],
 ]
-function poof(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, k: number) {
+function poofCircles(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, k: number) {
   const cx = x + w / 2
   const cy = y + h / 2
   const m = Math.min(w, h)
@@ -155,6 +157,31 @@ function poof(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
   }
   g.globalAlpha = 1
 }
+
+// The pack's clouds over the plot: four of them at whole-pixel scale. They puff up (the middle one doubles),
+// drift apart and fade, in about 600 ms.
+const CLOUDS: [name: string, dx: number, dy: number, big: boolean][] = [
+  ['cloud_puff', 0, 0, true],
+  ['cloud_wisp', -0.5, -0.35, false],
+  ['cloud_puff', 0.5, 0.3, false],
+  ['cloud_wisp', 0.45, -0.4, false],
+]
+function poofPack(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, k: number) {
+  const cx = x + w / 2
+  const cy = y + h / 2
+  const drift = 1 - Math.pow(1 - k, 2)
+  g.globalAlpha = k < 0.5 ? 1 : Math.max(0, 1 - (k - 0.5) / 0.5)
+  for (const [name, dx, dy, big] of CLOUDS) {
+    const f = frame(name)
+    if (!f) continue
+    const s = big && k > 0.18 ? 2 : 1
+    const ox = dx * w * (0.35 + 0.65 * drift)
+    const oy = dy * h * (0.35 + 0.65 * drift) - k * 4
+    draw(g, name, Math.round(cx + ox - (f[2] * s) / 2), Math.round(cy + oy - (f[3] * s) / 2), { scale: s })
+  }
+  g.globalAlpha = 1
+}
+const poof = POOF_STYLE === 'pack' ? poofPack : poofCircles
 
 export function FarmView(p: FarmViewProps) {
   const wrap = useRef<HTMLDivElement>(null)
@@ -305,7 +332,7 @@ export function FarmView(p: FarmViewProps) {
     const now = performance.now()
     const before = placed.current
     const plots = new Map(layout.plots.map((pl) => [pl.id, pl]))
-    const tasks = new Map(p.state.tasks.map((t) => [t.id, `${t.doneWhen}|${t.farmer}`]))
+    const tasks = new Map(p.state.tasks.map((t) => [t.id, `${t.name}|${t.doneWhen}|${t.farmer}`]))
     placed.current = { plots, tasks }
     if (!before || p.planning || still() || ![...plots.keys()].some((id) => before.plots.has(id))) return
     for (const [id, pl] of before.plots) if (!plots.has(id)) poofs.push({ x: pl.x, y: pl.y, w: pl.w, h: pl.h, at: now })
@@ -317,7 +344,7 @@ export function FarmView(p: FarmViewProps) {
       if (old && (old.x !== pl.x || old.y !== pl.y)) from.set(id, { x: old.x, y: old.y })
     }
     if (from.size) slide = { from, at: now }
-  }, [layout, p.state.tasks.map((t) => t.id + t.doneWhen + t.farmer).join()])
+  }, [layout, p.state.tasks.map((t) => t.id + t.name + t.doneWhen + t.farmer).join()])
 
   // Every new plot (a task split in two mid-run) stakes itself out over a moment.
   useEffect(() => {

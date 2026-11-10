@@ -66,7 +66,36 @@ export interface Proposal {
   note?: string // why the live Planner wasn't used
 }
 
-export type Reading = { kind: 'changes'; proposal: Proposal } | { kind: 'none'; reply: string } | { kind: 'not-a-change' }
+export type Reading = { kind: 'changes'; proposal: Proposal } | { kind: 'none'; reply: string; closest?: string; chips: Suggestion[] } | { kind: 'not-a-change' }
+
+// A request the Planner can make, offered as a chip under a reply: clicking it sends the request.
+export interface Suggestion {
+  label: string
+  request: string
+}
+const OFFER = {
+  incident: { label: 'Incident mode', request: 'I’m in an incident, skip the deployer and push straight to main' },
+  synth: { label: 'Judge by synthetic tests', request: 'Judge the rollout by synthetic tests in prod' },
+  notify: { label: 'Notify me at each stage', request: 'Notify me at each stage of the rollout' },
+} satisfies Record<string, Suggestion>
+type Offer = keyof typeof OFFER
+
+// For a request the Planner can't make, the nearest thing it can, if any, and up to three chips, nearest first.
+function nearest(t: string, ctx: Ctx): { closest?: string; chips: Suggestion[] } {
+  const on = (ctx.active ?? []).map((c) => c.kind)
+  const done: Record<Offer, boolean> = { incident: on.includes('removeFarmer'), synth: on.includes('setRolloutCheck'), notify: on.includes('notifyOn') }
+  let near: Offer | undefined
+  if (/\b(page|paging|pager|pagerduty|on ?call|slack|email|e mail|sms|text me|phone|alert|alerts|wake)\b/.test(t)) near = 'notify'
+  else if (/\b(test|tests|testing|monitor|monitors|metric|metrics|criteria|success|health|check|checks|error rate)\b/.test(t)) near = 'synth'
+  else if (SHIP_WORDS.test(t) || /\b(prod|production|hotfix|faster|quick|quickly|main|merge|rollback|roll back|rolls back)\b/.test(t)) near = 'incident'
+  const line: Record<Offer, string> = {
+    notify: 'Closest I can do: a desktop notification to you at each rollout stage, a rollback included.',
+    synth: 'Closest I can do: judge the rollout by synthetic tests in prod.',
+    incident: 'Closest I can do: incident mode, which pushes straight to main and ships to everyone.',
+  }
+  const order = [near, 'incident', 'synth', 'notify'].filter((k, i, a): k is Offer => !!k && a.indexOf(k) === i && !done[k as Offer])
+  return { closest: near && !done[near] ? line[near] : undefined, chips: order.slice(0, 3).map((k) => OFFER[k]) }
+}
 
 export interface Ctx {
   tasks: { id: string; name: string; farmer: FarmerId; gate?: boolean; status?: string }[]
@@ -75,8 +104,7 @@ export interface Ctx {
 }
 
 // What the Planner can change today, said plainly when it can't read a request.
-export const CAN_DO =
-  'Today I can skip tasks or the pull request review, turn the Deployer off so the Builder pushes to main, ship straight to everyone, judge the rollout by synthetic tests, and notify you at each rollout stage.'
+export const CAN_DO = 'I can’t change that yet.'
 
 const APOS = /[´`’‘ʼ′]/g
 const norm = (s: string) => ` ${s.toLowerCase().replace(APOS, "'").replace(/n't\b/g, 'nt').replace(/'/g, '').replace(/[^a-z0-9% ]+/g, ' ').replace(/\s+/g, ' ')} `
@@ -165,7 +193,11 @@ export function readChanges(text: string, ctx: Ctx): Reading {
     seen.add(k)
     return true
   })
-  if (!changes.length) return matched || /\b(skip|change|switch|turn off|remove|stop|instead|notify|deploy|push|ship)\b/.test(t) ? { kind: 'none', reply: matched ? 'That is already how this farm runs, so nothing changes.' : CAN_DO } : { kind: 'not-a-change' }
+  if (!changes.length) {
+    if (matched) return { kind: 'none', reply: 'That is already how this farm runs, so nothing changes.', chips: [] }
+    if (/\b(skip|change|switch|turn off|remove|stop|instead|notify|deploy|push|ship|page|paging|on ?call|pager|slack|email|rolls? back|rollback|when it)\b/.test(t)) return { kind: 'none', reply: CAN_DO, ...nearest(t, ctx) }
+    return { kind: 'not-a-change' }
+  }
   return { kind: 'changes', proposal: { title: titleOf(changes, incident), rows: rowsFor(changes, ctx) } }
 }
 

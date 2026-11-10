@@ -145,6 +145,12 @@ def main():
     for name, cx in {'check': 0, 'cross': 64, 'alert': 160, 'question': 192, 'sleep': 288}.items():
         add(f'emote_{name}', emo, cx, 256, 32, 32, pack=ui, trim=True)
 
+    # UI pack: the unframed white clouds (row 5 of the big weather icons, 48x48 cells), for the poof
+    # when a plot leaves the plan.
+    wx = 'emojis/emoji style ui/weather/Weather_Icons_Big.png'
+    add('cloud_puff', wx, 0, 192, 48, 48, pack=ui, trim=True)
+    add('cloud_wisp', wx, 96, 192, 48, 48, pack=ui, trim=True)
+
     pack(frames, counts, ui)
 
 

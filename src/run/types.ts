@@ -100,7 +100,7 @@ export type RunEvent =
   | { t: number; type: 'monitor'; stage: '10%' | '100%'; metrics: Metrics }
   | { t: number; type: 'replan'; reason: string; tasks: PlanTask[] }
   // You changed the farm by asking the Planner: what it took out and what it changed, from this moment.
-  | { t: number; type: 'reshape'; titles: string[]; removed: string[]; skipped: string[]; off: FarmerId[]; owner: Record<string, FarmerId>; doneWhen: Record<string, string>; synthetics: boolean; everyone: boolean; noReview: boolean }
+  | { t: number; type: 'reshape'; titles: string[]; removed: string[]; skipped: string[]; off: FarmerId[]; owner: Record<string, FarmerId>; doneWhen: Record<string, string>; renamed?: Record<string, string>; synthetics: boolean; everyone: boolean; noReview: boolean }
   // You stopped a task: it stays out of the pull request.
   | { t: number; type: 'stop'; task: string; reason: string }
   | { t: number; type: 'done'; usd: number; minutes: number; asks: number; autoFixes: number; actions: number }

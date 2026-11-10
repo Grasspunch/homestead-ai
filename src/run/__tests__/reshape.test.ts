@@ -68,8 +68,24 @@ describe('reading a request into changes', () => {
   it('anything else says plainly what it can change, and a note to the crew stays a note', () => {
     const r = readChanges('change the database to postgres', ctx)
     expect(r.kind).toBe('none')
-    expect(r.kind === 'none' && r.reply).toMatch(/Today I can/)
+    expect(r.kind === 'none' && r.reply).toBe('I can’t change that yet.')
+    expect(r.kind === 'none' && r.chips.length).toBeLessThanOrEqual(3)
     expect(readChanges('make the widget friendlier', ctx).kind).toBe('not-a-change')
+  })
+  it('out of scope, it names the closest thing it can do and offers it first', () => {
+    const r = readChanges('page the on-call when it rolls back', ctx)
+    expect(r.kind).toBe('none')
+    if (r.kind !== 'none') return
+    expect(r.closest).toMatch(/^Closest I can do: a desktop notification/)
+    expect(r.chips.map((c) => c.label)).toEqual(['Notify me at each stage', 'Incident mode', 'Judge by synthetic tests'])
+    // Each chip is a request the Planner reads into a change card.
+    for (const c of r.chips) expect(readChanges(c.request, ctx).kind).toBe('changes')
+    const d = readChanges('change the deploy to blue-green', ctx)
+    expect(d.kind === 'none' && d.closest).toMatch(/incident mode/)
+    // Something already on is not offered.
+    const on = readChanges('page the on-call when it rolls back', { ...ctx, active: [{ kind: 'notifyOn', on: 'stage' }] })
+    expect(on.kind === 'none' && on.closest).toBeUndefined()
+    expect(on.kind === 'none' && on.chips.map((c) => c.label)).not.toContain('Notify me at each stage')
   })
   it('changes already on are not offered again', () => {
     const r = readChanges('notify me at each stage of the rollout', { ...ctx, active: [{ kind: 'notifyOn', on: 'stage' }] })
@@ -294,3 +310,16 @@ describe('Your flow: changes for every farm', () => {
     expect(store.flow).toEqual([])
   })
 })
+
+describe('the release with the Deployer off', () => {
+  it('becomes the Builder pushing to main, and comes back on Undo', () => {
+    const ship = plan.tasks.find((t) => t.gate)!
+    const off = end(run([{ kind: 'removeFarmer', farmer: 'deployer' }]))
+    const t = off.tasks.find((k) => k.id === ship.id)!
+    expect([t.name, t.farmer, t.doneWhen]).toEqual(['Push to main', 'builder', 'Merged to main and live for everyone'])
+    const on = end(simulateRun({ goal, ...plan })).tasks.find((k) => k.id === ship.id)!
+    expect(on.name).toBe(ship.name)
+    expect(on.farmer).toBe('deployer')
+  })
+})
+
