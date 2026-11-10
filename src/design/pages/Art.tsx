@@ -196,10 +196,12 @@ function PackView({ pack }: { pack: PackId }) {
     return [...by.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'en', { numeric: true })))
   }, [pack, search])
 
+  // Without the pack (it can't be shared, so the hosted /design never has it), show the frames the app
+  // cuts from it: those ship in the committed atlas, so they are fine to show anywhere.
   if (!info?.present) {
     return (
       <>
-        <ArtHead title={meta.title}>Not imported here yet.</ArtHead>
+        <UsedView pack={pack} />
         <Missing all={sprout.missing} folder={manifest.packs[pack]} />
       </>
     )
@@ -410,10 +412,9 @@ function Missing({ all, folder }: { all: boolean; folder: string }) {
   const [copied, copy] = useCopy()
   return (
     <section className="art-missing" aria-labelledby="art-missing-h">
-      <h2 id="art-missing-h">{all ? 'The Sprout Lands packs are not here' : 'This pack is not here'}</h2>
+      <h2 id="art-missing-h">To see every file in the pack</h2>
       <p>
-        The license lets us use the art in this project, with credit, but not share the packs themselves. So they stay out of git and
-        each person imports their own copy. Download the four packs from{' '}
+        The packs stay out of git, so each person imports their own copy on their own machine. Download the four packs from{' '}
         <a href={CREDIT} target="_blank" rel="noreferrer">
           itch.io
         </a>
@@ -428,9 +429,6 @@ function Missing({ all, folder }: { all: boolean; folder: string }) {
       <p>
         The folder can hold the zips, under any names, or the packs already unzipped. They land in <code className="ds-code">public/assets/sprout-lands/</code>
         {all ? '' : <> as <code className="ds-code">{folder}</code></>} and this page updates on its own.
-      </p>
-      <p>
-        The frames the app draws are already in the repo, in the atlas. <a href="#/art/used">See them in Used by the app.</a>
       </p>
     </section>
   )
@@ -784,13 +782,19 @@ function usedGroups() {
   }))
 }
 
-function UsedView() {
+function UsedView({ pack }: { pack?: PackId } = {}) {
   const [search, setSearch] = useState('')
   const [ground, setGround] = usePref<Ground>('ground', 'sheet')
   const [zoom, setZoom] = usePref('zoom', 2)
   const g = useGroundStyle(ground, zoom)
-  const all = useMemo(usedGroups, [])
-  const total = Object.keys(atlasFrames).length
+  const all = useMemo(
+    () =>
+      usedGroups()
+        .map((gr) => ({ ...gr, sheets: gr.sheets.filter((s) => !pack || s.pack === pack) }))
+        .filter((gr) => gr.sheets.length > 0),
+    [pack],
+  )
+  const total = pack ? all.reduce((n, gr) => n + gr.sheets.reduce((m, s) => m + s.frames.length, 0), 0) : Object.keys(atlasFrames).length
   const sheetCount = all.reduce((n, gr) => n + gr.sheets.length, 0)
 
   const q = search.trim().toLowerCase()
@@ -809,12 +813,26 @@ function UsedView() {
 
   return (
     <>
-      <ArtHead title="Used by the app">
-        {total} frames from {sheetCount} sheets, packed into one {ATLAS_W}x{ATLAS_H} atlas. These come from the committed atlas, so they show even
-        without the packs.
-      </ArtHead>
-      <Toolbar search={search} onSearch={setSearch} placeholder="Filter by frame or file name" ground={ground} onGround={setGround} zoom={zoom} onZoom={setZoom} />
-      {groups.length === 0 && <p className="art-count">No frames match.</p>}
+      {pack && total === 0 ? (
+        <ArtHead title={PACKS[pack].title}>
+          The full pack isn’t here: the license lets us use the art, with credit, but not share the packs. The app doesn’t draw anything from
+          this pack yet.
+        </ArtHead>
+      ) : pack ? (
+        <ArtHead title={PACKS[pack].title}>
+          The full pack isn’t here: the license lets us use the art, with credit, but not share the packs. These are the {total} frames the app
+          uses from it, from {sheetCount} {sheetCount === 1 ? 'sheet' : 'sheets'}, taken from the committed atlas.
+        </ArtHead>
+      ) : (
+        <ArtHead title="Used by the app">
+          {total} frames from {sheetCount} sheets, packed into one {ATLAS_W}x{ATLAS_H} atlas. These come from the committed atlas, so they show
+          even without the packs.
+        </ArtHead>
+      )}
+      {total > 0 && (
+        <Toolbar search={search} onSearch={setSearch} placeholder="Filter by frame or file name" ground={ground} onGround={setGround} zoom={zoom} onZoom={setZoom} />
+      )}
+      {total > 0 && groups.length === 0 && <p className="art-count">No frames match.</p>}
       {groups.map((gr) => (
         <section key={gr.id} className="art-used-group" aria-labelledby={`art-g-${gr.id}`}>
           <h2 id={`art-g-${gr.id}`}>
