@@ -1442,9 +1442,10 @@ function farmerKit(ctx: CanvasRenderingContext2D, S: number, oy: number, state: 
   paint(HAT, 15, top - 4 + tip)
   if (state === 'idle' && dir === 'down') {
     // Chewing a straw: its tip nods now and then.
-    const nod = !reduced && Math.floor(clock * 1.4) % 3 === 0 ? 1 : 0
-    paint(['s'], 20, 23)
-    paint(['s'], 19, 23)
+    // The face drops a pixel in the second half of the breathing loop, and the straw goes with it.
+    const nod = (!reduced && Math.floor(clock * 1.4) % 3 === 0 ? 1 : 0) + (fi >= 4 ? 1 : 0)
+    paint(['s'], 20, 23 + (fi >= 4 ? 1 : 0))
+    paint(['s'], 19, 23 + (fi >= 4 ? 1 : 0))
     paint(['s'], 18, 22 + nod)
     paint(['s'], 17, 22 + nod)
     paint(['t'], 16, 21 + nod)
