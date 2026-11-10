@@ -80,13 +80,14 @@ export function Rollout({ state, compact = false }: { state: RunState; compact?:
   const t0 = deploys[0].t
   const t1 = Math.max(state.t, pts.length ? pts[pts.length - 1].t : t0 + 1)
   const H = compact ? 90 : 120
-  // Judged by synthetic tests: the line is failing tests, and one failing test rolls it back.
+  // Judged by synthetic tests: the line is tests passing, all of them at the top, and one failing rolls it back.
   const synth = pts.some((p) => p.metrics.synth) || deploys.some((d) => d.metrics?.synth)
-  const val = (m: Metrics) => (synth ? (m.synth ? m.synth.total - m.synth.pass : 0) : m.errorRate ?? 0)
-  const LIM = synth ? 0.5 : ERROR_LIMIT
-  const max = synth ? 3 : 0.04
+  const total = pts.find((p) => p.metrics.synth)?.metrics.synth?.total ?? 12
+  const val = (m: Metrics) => (synth ? m.synth?.pass ?? total : m.errorRate ?? 0)
+  const bad = (v: number) => (synth ? v < total : v > ERROR_LIMIT)
+  const max = 0.04
   const x = (t: number) => ((t - t0) / Math.max(1, t1 - t0)) * (W - 8) + 4
-  const y = (e: number) => H - 14 - (Math.min(e, max) / max) * (H - 24)
+  const y = synth ? (pass: number) => 20 + (Math.min(4, Math.max(0, total - pass)) / 4) * (H - 40) : (e: number) => H - 14 - (Math.min(e, max) / max) * (H - 24)
   const segs: { stage: string; pts: typeof pts }[] = []
   for (const p of pts) {
     const last = segs[segs.length - 1]
@@ -117,9 +118,22 @@ export function Rollout({ state, compact = false }: { state: RunState; compact?:
   const now = deploys[deploys.length - 1]
   return (
     <div className="rollout" ref={box}>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={synth ? 'Failing synthetic tests during the rollout' : 'Error rate during the rollout'}>
-        <line x1="0" x2={W} y1={y(LIM)} y2={y(LIM)} className="limit" />
-        <text x={W - 4} y={y(LIM) - 4} textAnchor="end" className="axis">{synth ? 'rolls back on a failing test' : 'rolls back at 2%'}</text>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={synth ? 'Synthetic tests passing during the rollout' : 'Error rate during the rollout'}>
+        {synth ? (
+          <>
+            <line x1="0" x2={W} y1={y(total)} y2={y(total)} className="limit" />
+            <text x={W - 4} y={11} textAnchor="end" className="axis">
+              {total} of {total} must pass
+            </text>
+          </>
+        ) : (
+          <>
+            <line x1="0" x2={W} y1={y(ERROR_LIMIT)} y2={y(ERROR_LIMIT)} className="limit" />
+            <text x={W - 4} y={y(ERROR_LIMIT) - 4} textAnchor="end" className="axis">
+              rolls back at 2%
+            </text>
+          </>
+        )}
         {deploys.map((d, i) => (
           <g key={d.t}>
             <line x1={x(d.t)} x2={x(d.t)} y1="4" y2={H - 14} className={d.stage === 'rollback' ? 'mark back' : 'mark'} />
@@ -129,10 +143,10 @@ export function Rollout({ state, compact = false }: { state: RunState; compact?:
           </g>
         ))}
         {segs.map((s, i) => (
-          <polyline key={i} points={s.pts.map((p) => `${x(p.t)},${y(val(p.metrics))}`).join(' ')} className={s.pts.some((p) => val(p.metrics) > LIM) ? 'err bad' : 'err'} />
+          <polyline key={i} points={s.pts.map((p) => `${x(p.t)},${y(val(p.metrics))}`).join(' ')} className={s.pts.some((p) => bad(val(p.metrics))) ? 'err bad' : 'err'} />
         ))}
         {segs.flatMap((s) => s.pts).map((p) => (
-          <circle key={p.t} cx={x(p.t)} cy={y(val(p.metrics))} r="2.5" className={val(p.metrics) > LIM ? 'dot bad' : 'dot'} />
+          <circle key={p.t} cx={x(p.t)} cy={y(val(p.metrics))} r="2.5" className={bad(val(p.metrics)) ? 'dot bad' : 'dot'} />
         ))}
       </svg>
       {latest && (

@@ -101,7 +101,7 @@ interface Walker {
 
 // When you change the farm, a removed plot goes up in a puff of pixel cloud and the rest slide together.
 // The atlas has no smoke sprite, so the cloud is drawn here, in the same pixel size and palette.
-const POOF_MS = 700
+const POOF_MS = 1000
 const SLIDE_MS = 400
 const poofs: { x: number; y: number; w: number; h: number; at: number }[] = []
 let slide: { from: Map<string, { x: number; y: number }>; at: number } | null = null
@@ -120,20 +120,38 @@ function sliding(layout: Layout, now: number): Layout {
   return { ...layout, plots: layout.plots.map((pl) => (from.has(pl.id) ? { ...pl, x: from.get(pl.id)!.x + (pl.x - from.get(pl.id)!.x) * e, y: from.get(pl.id)!.y + (pl.y - from.get(pl.id)!.y) * e } : pl)) }
 }
 
-// A small cloud: five puffs that swell and fade, snapped to a two-pixel grid like the sprites.
-function poof(g: CanvasRenderingContext2D, cx: number, cy: number, size: number, k: number) {
-  const puffs = [[0, 0, 1], [-0.55, 0.15, 0.75], [0.55, 0.1, 0.8], [-0.25, -0.4, 0.7], [0.3, -0.35, 0.65]]
-  const a = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4
+// A cloud the size of the plot: a ring of puffs round a big middle one billows out past the plot's edges,
+// holds, then thins and clears. Snapped to a two-pixel grid like the sprites, in the pack's tan and cream.
+const PUFFS = [
+  [0, 0, 0.5],
+  [-0.36, -0.3, 0.32], [0, -0.42, 0.34], [0.36, -0.3, 0.32],
+  [-0.46, 0.02, 0.3], [0.46, 0.04, 0.3],
+  [-0.34, 0.34, 0.32], [0.02, 0.42, 0.34], [0.36, 0.32, 0.32],
+]
+function poof(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, k: number) {
+  const cx = x + w / 2
+  const cy = y + h / 2
+  const m = Math.min(w, h)
+  const grow = 1 - Math.pow(1 - Math.min(1, k / 0.35), 3) // billows out fast
+  const fade = k < 0.55 ? 1 : 1 - (k - 0.55) / 0.45 // holds, then clears
+  const spread = 0.6 + 0.6 * grow + 0.2 * k
   for (const pass of [0, 1]) {
-    g.globalAlpha = a
     g.fillStyle = pass === 0 ? '#c9b18e' : '#fff6e4'
-    for (const [ox, oy, sc] of puffs) {
-      const r = size * sc * (0.32 + 0.4 * Math.min(1, k * 1.6)) - (pass === 0 ? 0 : 2)
-      const px = cx + ox * size * (0.9 + k * 0.9)
-      const py = cy + oy * size * (0.9 + k * 0.9) - k * 6
-      for (let y = -r; y <= r; y += 2)
-        for (let x = -r; x <= r; x += 2) if (x * x + y * y <= r * r) g.fillRect(Math.round((px + x) / 2) * 2, Math.round((py + y) / 2) * 2, 2, 2)
-    }
+    PUFFS.forEach(([ox, oy, sc], n) => {
+      // Each puff thins at its own moment, so the cloud breaks up rather than fading as one.
+      const a = Math.max(0, Math.min(1, fade * 1.4 - (n % 3) * 0.15))
+      if (!a) return
+      g.globalAlpha = a
+      const r = m * sc * (0.35 + 0.65 * grow) * (k > 0.55 ? 1 - (k - 0.55) * 0.6 : 1) - (pass === 0 ? 0 : 1.5)
+      if (r <= 0) return
+      const px = cx + ox * w * spread
+      const py = cy + oy * h * spread - k * 6
+      // One rect per pixel row of the circle, in the sprites' own pixels, so it is cheap for a plot-sized cloud.
+      for (let yy = -Math.floor(r); yy <= r; yy++) {
+        const half = Math.round(Math.sqrt(r * r - yy * yy))
+        if (half > 0) g.fillRect(Math.round(px) - half, Math.round(py) + yy, half * 2, 2) // two rows tall, so no seams show between rows when the camera scales
+      }
+    })
   }
   g.globalAlpha = 1
 }
@@ -786,7 +804,7 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
       poofs.splice(i, 1)
       continue
     }
-    poof(g, (q.x + q.w / 2) * PX, (q.y + q.h / 2) * PX, Math.min(q.w, q.h) * PX * 0.42, k)
+    poof(g, q.x * PX, q.y * PX, q.w * PX, q.h * PX, k)
   }
 }
 

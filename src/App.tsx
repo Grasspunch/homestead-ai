@@ -145,11 +145,17 @@ function Top({ p, s }: { p: Project; s: RunState }) {
         {p.approved && !!p.reshapes?.length && (
           <div className="reshapes">
             {p.reshapes.map((r) => (
-              <span key={r.id} className="tag gold reshape-chip" title={r.changes.length + ' changes you asked for: ' + r.request}>
+              <span key={r.id} className={`tag gold reshape-chip${st.fresh?.id === r.id && Date.now() < st.fresh.until ? ' fresh' : ''}`} title={r.changes.length + ' changes you asked for: ' + r.request}>
                 {r.title}
-                <button onClick={() => store.undoChanges(r.id)} aria-label={`Turn off ${r.title}`}>
-                  ×
-                </button>
+                {st.fresh?.id === r.id && Date.now() < st.fresh.until ? (
+                  <button className="chip-undo" onClick={() => store.undoChanges(r.id)}>
+                    Undo
+                  </button>
+                ) : (
+                  <button onClick={() => store.undoChanges(r.id)} aria-label={`Turn off ${r.title}`}>
+                    ×
+                  </button>
+                )}
               </span>
             ))}
           </div>

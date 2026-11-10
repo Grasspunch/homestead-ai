@@ -226,7 +226,7 @@ export function Kit() {
         </div>
       </Sec>
 
-      <Sec title="Change card" note="Asking the Planner to change the farm brings one card per request. One row per change, all checked; untick any you want kept. A row that removes a safety step says what you lose in berry ink. Each row says how long it lasts, this farm or every farm, as the Planner suggests; every-farm rows join Your flow in Settings, and new farms start with it. Applied, the request becomes a gold chip under the title with × to turn it off, and the toast carries Undo.">
+      <Sec title="Change card" note="Asking the Planner to change the farm brings one card per request. One row per change, all checked; untick any you want kept. A row that removes a safety step says what you lose in berry ink. Each row says how long it lasts, this farm or every farm, as the Planner suggests; every-farm rows join Your flow in Settings, and new farms start with it. Applied, the request becomes a gold chip under the title. For its first few seconds the chip carries Undo, then × to turn it off. No toast, so nothing covers the plots.">
         <div className="kp-ask">
           <div className="portrait">
             <Portrait farmer="planner" />
@@ -275,12 +275,12 @@ export function Kit() {
         <div className="row" style={{ marginTop: 14, gap: 10, alignItems: 'center' }}>
           <span className="tag gold reshape-chip">
             Incident mode
+            <button className="chip-undo">Undo</button>
+          </span>
+          <span className="tag gold reshape-chip">
+            Incident mode
             <button aria-label="Turn off Incident mode">×</button>
           </span>
-          <div className="toast paper with-undo" style={{ position: 'static', transform: 'none', animation: 'none' }}>
-            Incident mode is on.
-            <button className="toast-undo">Undo</button>
-          </div>
         </div>
       </Sec>
 

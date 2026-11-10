@@ -269,6 +269,10 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .change-rows .scope button.on { background: #fff6e4; color: var(--bark); box-shadow: 0 1px 0 rgba(74, 52, 38, .25); }
 .change-rows .scope button:disabled { cursor: default; opacity: .5; }
 .reshape-chip { gap: 6px; }
+.reshape-chip .chip-undo { margin-left: 2px; padding: 1px 6px; border-radius: 3px; background: #fff6e4; color: var(--leaf); font: 700 var(--t-meta)/1.2 var(--ui); text-transform: none; letter-spacing: 0; }
+.reshape-chip.fresh { animation: chip-in 600ms ease-out; }
+@keyframes chip-in { 0% { transform: scale(.8); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .reshape-chip.fresh { animation: none; } }
 .reshape-chip button { border: 0; background: none; color: inherit; font: inherit; padding: 0 0 0 2px; cursor: pointer; line-height: 1; }
 .toast.with-undo { display: flex; gap: 10px; align-items: center; animation-duration: 6000ms; }
 .toast-undo { border: 0; background: none; color: var(--leaf); font: 700 var(--t-body)/1.2 var(--ui); cursor: pointer; padding: 0; text-decoration: underline; }

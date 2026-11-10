@@ -235,6 +235,8 @@ class Store {
   chat: Record<string, ChatLine[]> = {}
   settingsOpen = false
   flow: FlowItem[] = [] // Your flow: changes for every farm
+  fresh: { id: string; until: number } | null = null // a change just applied: its chip shows Undo until then
+  static FRESH_MS = 8000
   notifications = false
   toast: { id: number; text: string; undo?: string } | null = null
   seen = new Set<string>() // moments you've already read, such as a rollback
@@ -955,7 +957,9 @@ class Store {
     const n = rows.length
     const flowNote = every.length ? (every.length === n ? ' It’s in your flow for every new farm.' : ` ${every.length} of them ${every.length === 1 ? 'is' : 'are'} in your flow for every new farm.`) : ''
     this.chatTo(p.id, { from: 'planner', text: (done ? `${r.title} is on from the next run: ${n} change${n === 1 ? '' : 's'}.` : `${r.title} is on: ${n} change${n === 1 ? '' : 's'}, from now.`) + flowNote })
-    this.toast = { id: Date.now(), text: `${r.title} is on.`, undo: r.id }
+    // No toast: it would cover the plots. The new chip carries Undo for a few seconds instead.
+    this.fresh = { id: r.id, until: Date.now() + Store.FRESH_MS }
+    setTimeout(() => this.notify(), Store.FRESH_MS + 50)
     if (pd.wasPlaying && !done) this.play()
     this.notify()
     this.persist()
@@ -986,7 +990,7 @@ class Store {
       if (differs) this.rebuild(p)
       this.setSpeed(p.events)
     } else if (p.approved && !this.isDone(p)) this.rebuild(p)
-    this.toast = { id: Date.now(), text: `${r.title} is off.` }
+    if (this.fresh?.id === id) this.fresh = null
     this.chatTo(p.id, { from: 'planner', text: `${r.title} is off. The farm runs as it did before.` })
     this.notify()
     this.persist()
