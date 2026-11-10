@@ -196,11 +196,11 @@
   background: var(--sheet);
 }
 
-/* The check is drawn over the box and spills out of its top right, like a mark made by hand. */
+/* The pack's check mark at 1x, centred in the box. */
 .hs-check-box > * {
   position: absolute;
-  left: 1px;
-  top: -8px;
+  left: 3px;
+  top: 3px;
   opacity: 0;
   transform: scale(0.6);
   transition:
@@ -214,8 +214,8 @@
 }
 
 .hs-check-fallback {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 11px;
   background: var(--sprout);
 }
 

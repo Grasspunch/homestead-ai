@@ -41,14 +41,14 @@ export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="hs-kbd">{children}</kbd>
 }
 
-/* ---------- Checkbox: an ink box with the UI pack's check mark ---------- */
+/* ---------- Checkbox: an ink box with the UI pack's check mark, at 1x, sitting inside the box ---------- */
 export function Checkbox({ label, hint, ...rest }: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode; hint?: ReactNode }) {
   const id = useId()
   return (
     <label className="hs-check" htmlFor={id}>
       <input id={id} type="checkbox" {...rest} />
       <span className="hs-check-box" aria-hidden>
-        {hasSprite('ui_check') ? <Sprite name="ui_check" scale={2} /> : <i className="hs-check-fallback" />}
+        {hasSprite('ui_check') ? <Sprite name="ui_check" scale={1} /> : <i className="hs-check-fallback" />}
       </span>
       <span className="hs-check-text">
         <span>{label}</span>

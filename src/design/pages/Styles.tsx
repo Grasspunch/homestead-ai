@@ -32,16 +32,16 @@ const DIRS: Dir[] = [
 
 /* ---------- ticks ---------- */
 function PixelTick() {
-  const rows = ['......#', '.....##', '#...##.', '##.##..', '.###...', '..#....']
+  const rows = ['....#', '...#.', '#.#..', '.#...']
   return (
-    <svg className="sx-tick" viewBox="0 0 7 6" width={21} height={18} shapeRendering="crispEdges" aria-hidden>
+    <svg className="sx-tick" viewBox="0 0 5 4" width={15} height={12} shapeRendering="crispEdges" aria-hidden>
       {rows.flatMap((r, y) => [...r].map((c, x) => (c === '#' ? <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} /> : null)))}
     </svg>
   )
 }
 function LineTick() {
   return (
-    <svg className="sx-tick" viewBox="0 0 16 16" width={12} height={12} aria-hidden>
+    <svg className="sx-tick" viewBox="0 0 16 16" width={10} height={10} aria-hidden>
       <path d="M3 8.5l3.2 3.2L13 4.8" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="square" />
     </svg>
   )
