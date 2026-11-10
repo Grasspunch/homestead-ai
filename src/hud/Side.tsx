@@ -54,7 +54,7 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
           {ask ? <b>Waiting for you. </b> : null}
           {t.gate && s.deploy.length && s.deploy[s.deploy.length - 1].stage === 'rollback' && t.status !== 'ripe' && t.status !== 'accepted' ? <b>{s.deploy[s.deploy.length - 1].reason === BY_YOU ? 'Rolled back by you. ' : 'Rolled back by itself. '}</b> : null}
           {STATUS[t.status]}
-          {t.status === 'growing' ? `, about ${Math.round(t.progress * 100)}% there.` : '.'} {f && t.status !== 'ripe' && t.status !== 'accepted' ? `${f.label} is on it.` : ''}{t.status === 'accepted' && t.acceptedBy && t.acceptedBy !== 'you' ? ` The ${s.farmers[t.acceptedBy]?.label ?? 'checker'} checked it.` : ''}
+          {t.status === 'growing' ? `, about ${Math.round(t.progress * 100)}% there.` : '.'} {f && t.status !== 'ripe' && t.status !== 'accepted' ? t.status === 'waiting' ? `${f.label} will work on this.` : `${f.label} is on it.` : ''}{t.status === 'accepted' && t.acceptedBy && t.acceptedBy !== 'you' ? ` The ${s.farmers[t.acceptedBy]?.label ?? 'checker'} checked it.` : ''}
           {t.summary && (t.status === 'ripe' || t.status === 'accepted') ? ` ${t.summary}.` : ''}
         </div>
       )}
