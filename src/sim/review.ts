@@ -25,7 +25,7 @@ export const TASK_GATES: Record<string, { gate: GateId; what: string }[]> = {
   ],
   backend: [
     { gate: 'unit', what: 'availability.test.ts, bookings.test.ts' },
-    { gate: 'integration', what: 'Bookings API and the staff rota on staging' },
+    { gate: 'integration', what: 'Bookings API and the staff schedule on staging' },
     { gate: 'e2e', what: 'booking.spec.ts: book a checkup on a phone' },
     { gate: 'review', what: 'Runs on the whole diff' },
   ],
@@ -142,7 +142,7 @@ export const GATE_DETAIL: Partial<Record<GateId, { status: string; rows: [string
     status: 'Against staging services.',
     rows: [
       ['Bookings API', 'Book, move and cancel on staging', '9 of 9'],
-      ['Staff rota', 'No Saturday slots from 1 December', '4 of 4'],
+      ['Staff schedule', 'No Saturday slots from 1 December', '4 of 4'],
       ['Reminder text', 'Twilio, to a staging phone', '1 of 1'],
     ],
   },

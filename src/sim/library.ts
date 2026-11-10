@@ -37,9 +37,9 @@ export const LIBRARY: Record<string, LibItem> = {
     tokens: 900,
     preview: 'Dogs and cats vet, small pets vet, dental vet.\nA checkup or a vaccination takes 15 minutes.',
   },
-  'staff-rota/rota.md': {
+  'staff-schedule/schedule.md': {
     kind: 'file',
-    what: 'Which vet works when, from the Staff rota project',
+    what: 'Which vet works when, from the Staff schedule project',
     owner: 'Practice team',
     updated: 'Nov 3',
     tokens: 700,
@@ -147,7 +147,7 @@ export const TASK_CONTEXT: Record<string, string[]> = {
 
 // The head farmer points out a file a task is missing, and says why.
 export const SUGGESTIONS: { taskIds: string[]; name: string; why: string }[] = [
-  { taskIds: ['backend'], name: 'staff-rota/rota.md', why: 'It says which vets work when, and it changed last week. The hours sheet was last edited in August.' },
+  { taskIds: ['backend'], name: 'staff-schedule/schedule.md', why: 'It says which vets work when, and it changed last week. The hours sheet was last edited in August.' },
 ]
 
 export function libItem(name: string, seeds: { file: string; title: string; from: string }[] = []): LibItem {

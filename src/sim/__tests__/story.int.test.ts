@@ -34,13 +34,13 @@ describe('Vet booking, end to end', () => {
     expect(ask.label).toBe('Anomaly')
     expect(ask.question).toBe(CLASH.question)
     expect(ask.options.map((o) => [o.value, o.label, !!o.recommended])).toEqual([
-      ['rota', 'Use the rota’s hours', true],
+      ['rota', 'Use the schedule’s hours', true],
       ['sheet', 'Keep the hours sheet and ask', false],
     ])
     e.answer('crow', 'rota')
     expect(e.replan?.status).toBe('open')
 
-    // The re-plan drops Saturday slots from 1 December, and Backend reads the rota from now on.
+    // The re-plan drops Saturday slots from 1 December, and Backend reads the schedule from now on.
     e.applyReplan()
     const back = e.task(MISSING.taskId)
     expect(back.subtasks.map((s) => s.id)).toContain('b5')
@@ -134,7 +134,7 @@ describe('Vet booking, end to end', () => {
     expect(e.decisions.map((d) => d.word)).toEqual([...merged.words, 'Deploy', 'Failed', 'Deploy', 'Send'])
   })
 
-  it('with the staff rota attached at Plan, Backend reads its hours and no crow comes', async () => {
+  it('with the staff schedule attached at Plan, Backend reads its hours and no crow comes', async () => {
     const e = freshEngine()
     await toGrow(e, (e) => e.attach('backend', MISSING.file))
     expect(e.task('backend').signposts).toContain(MISSING.file)

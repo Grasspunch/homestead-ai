@@ -834,7 +834,7 @@ export class Engine {
               { op: '+', text: `New crop on ${t.name}: “${REPLAN_SUBTASKS.switch.name}” (${who})` },
               { op: '~', text: `${t.name} reads ${MISSING.file} from now on, not ${CLASH.ours}` },
               { op: '~', text: 'The availability tests run again on staging' },
-              { op: '~', text: `The ${NEIGHBOUR.name} crew is told the booking site follows its rota` },
+              { op: '~', text: `The ${NEIGHBOUR.name} crew is told the booking site follows its schedule` },
             ]
           : [
               { op: '~', text: `${who} keeps ${CLASH.ours}: Saturdays 9:00 to 13:00` },
@@ -868,7 +868,7 @@ export class Engine {
     this.crow.state = 'leaving'
     this.crow.t = 0
     this.addLog('Head farmer', 'Applied the re-plan and sent the decision to 2 crews', 'replan', t.id, 'Both projects now agree about Saturdays.')
-    this.addLog(`${NEIGHBOUR.name} crew`, rota ? 'Noted: the booking site reads its hours from the rota' : 'Asked the practice manager. The rota still has no vet on Saturdays from 1 December.', 'info')
+    this.addLog(`${NEIGHBOUR.name} crew`, rota ? 'Noted: the booking site reads its hours from the schedule' : 'Asked the practice manager. The staff schedule still has no vet on Saturdays from 1 December.', 'info')
     this.toast('Decision sent to 2 crews')
     this.notify()
   }
@@ -2488,7 +2488,7 @@ export class Engine {
       this.request('hours', () => callAgent('hours', { goal: this.goal, task: task.name, answers: this.answersText, signposts }, sawRota ? RECORDED.hoursRota : RECORDED.hours))
     }
     if (sub.id === 'b3' && this.hoursFrom !== MISSING.file && !this.flags.has('hoursSettled')) {
-      // Staging has the staff rota: it finds slots with no vet. The head farmer looks for why across farms.
+      // Staging has the staff schedule: it finds slots with no vet. The head farmer looks for why across farms.
       this.gates[task.id] ??= {}
       this.gates[task.id]!.integration = { state: 'fail', text: INTEGRATION_FAIL.text }
       this.addLog(fh.role, 'Found Saturday slots with no vet on staging', 'pest', task.id, CLASH.failed)
@@ -2508,10 +2508,10 @@ export class Engine {
     if (sub.id === 'b2') {
       const d = this.out.hours!.data
       const saw = expandSignposts(task.signposts).includes(MISSING.file)
-      this.addLog(fh.role, `Read the opening hours from ${d.source}`, 'auto', task.id, `Saturdays: ${d.saturday}.${saw ? '' : ' The staff rota was not attached.'}`, saw ? undefined : 'endpoint')
+      this.addLog(fh.role, `Read the opening hours from ${d.source}`, 'auto', task.id, `Saturdays: ${d.saturday}.${saw ? '' : ' The staff schedule was not attached.'}`, saw ? undefined : 'endpoint')
     }
     if (sub.id === REPLAN_SUBTASKS.switch.id) {
-      this.addLog(fh.role, 'Dropped Saturday slots from 1 December', 'info', task.id, 'After your answer. Hours now come from the staff rota.')
+      this.addLog(fh.role, 'Dropped Saturday slots from 1 December', 'info', task.id, 'After your answer. Hours now come from the staff schedule.')
     }
     if (sub.id === 'b4') this.addLog(fh.role, 'Added POST /bookings', 'info', task.id, 'Confirms a slot and stores the booking.')
     if (sub.id === 'm2') this.addLog(fh.role, 'Texted a staging phone: “Biscuit’s checkup is tomorrow at 9:00”', 'info', task.id, 'Through Twilio, between 9:00 and 20:00, with how to cancel.')
@@ -2523,7 +2523,7 @@ export class Engine {
     const fh = this.farmhands[t.assignee]
     const ours = c.data.claims.find((d) => d.farm === FARM.name) ?? c.data.claims[0]
     const theirs = c.data.claims.find((d) => d !== ours)
-    const rotaFirst = /rota/i.test(c.data.recommended)
+    const rotaFirst = /schedule/i.test(c.data.recommended)
     fh.status = 'asking'
     this.raise({
       id: 'crow',
@@ -2544,11 +2544,11 @@ export class Engine {
           ]
         : undefined,
       options: [
-        { key: '1', label: 'Use the rota’s hours', value: 'rota', recommended: rotaFirst, kind: 'alt' },
+        { key: '1', label: 'Use the schedule’s hours', value: 'rota', recommended: rotaFirst, kind: 'alt' },
         { key: '2', label: 'Keep the hours sheet and ask', value: 'sheet', recommended: !rotaFirst, kind: 'alt' },
       ],
       confidence: c.data.confidence,
-      basis: 'The rota and the failing staging run agree.',
+      basis: 'The staff schedule and the failing staging run agree.',
       provenance: c.provenance,
       details: {
         reasoning: `Staging: ${CLASH.failed}`,

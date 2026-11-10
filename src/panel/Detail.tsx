@@ -447,7 +447,7 @@ function TraceView() {
           <li>
             The only opening hours in them were in front-desk-hours.csv, last edited in August: <span className="mono">{line}</span>.
           </li>
-          <li>vets.md says the staff rota sets which vet works which day, but the rota wasn’t attached, so {fh.role} had nothing to check against.</li>
+          <li>vets.md says the staff schedule sets which vet works which day, but the schedule wasn’t attached, so {fh.role} had nothing to check against.</li>
           <li>The availability search offered Saturday slots from 1 December, and staging found no vet for them.</li>
         </ol>
       </details>
@@ -571,7 +571,7 @@ function GateView({ g }: { g: GateId }) {
         <Section title="The change that matters">
           <pre className="excerpt">
             src/api/availability.ts{'\n'}
-            {e.hoursFrom === MISSING.file ? <ins>+ const hours = await rota.hours(from, to)</ins> : <span>+ const hours = sheet.hours('front-desk-hours.csv')</span>}
+            {e.hoursFrom === MISSING.file ? <ins>+ const hours = await schedule.hours(from, to)</ins> : <span>+ const hours = sheet.hours('front-desk-hours.csv')</span>}
             {'\n\n'}
             src/api/bookings.ts{'\n'}
             {e.fixSent && e.harvestFix === 'refuse' ? (

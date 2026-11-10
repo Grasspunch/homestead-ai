@@ -1,4 +1,4 @@
-// The demo story: Willow Lane Vets builds online booking from scratch, while its Staff rota project
+// The demo story: Willow Lane Vets builds online booking from scratch, while its Staff schedule project
 // changed last week: no vet works Saturdays from 1 December. Each farm is named after its project.
 // Every word an agent says in the demo lives here, so the script can be tuned in one place.
 
@@ -48,7 +48,7 @@ export const ROADS = {
 }
 
 export const NEIGHBOUR = {
-  name: 'Staff rota',
+  name: 'Staff schedule',
   team: 'Practice team',
   rect: { x: EAST_X, y: FARM.rect.y, w: 34, h: FARM.rect.h } as Rect,
   house: { x: EAST_X + 26, y: FARM.rect.y + 1, sprite: 'house_4' },
@@ -212,7 +212,7 @@ export type ValleyState = 'working' | 'idle' | 'needs' | 'done' | 'failed'
 
 export const VALLEY_STATS: Record<string, { agents: number; energyWeek: number; pests: number; waiting: number; harvests: number; unattended?: string; state?: ValleyState; reason?: 'Cost' | 'Risk' | 'Irreversible' | 'Failure' | 'Anomaly'; doing?: string }> = {
   [FARM.name]: { agents: 6, energyWeek: 0, pests: 0, waiting: 0, harvests: 0 },
-  [NEIGHBOUR.name]: { agents: 3, energyWeek: 214_000, pests: 0, waiting: 0, harvests: 6, unattended: '1 sprinkler: weekly rota emails', state: 'done', doing: 'Shipped the winter rota last week. No vet works Saturdays from 1 December.' },
+  [NEIGHBOUR.name]: { agents: 3, energyWeek: 214_000, pests: 0, waiting: 0, harvests: 6, unattended: '1 sprinkler: weekly schedule emails', state: 'done', doing: 'Shipped the winter schedule last week. No vet works Saturdays from 1 December.' },
   'Pharmacy stock': { agents: 2, energyWeek: 96_000, pests: 1, waiting: 0, harvests: 12, unattended: '1 beehive: nightly stock count', state: 'working', doing: 'Reordering flea and worm treatments before they run out.' },
   'Lab results': { agents: 3, energyWeek: 168_000, pests: 0, waiting: 1, harvests: 4, state: 'needs', reason: 'Risk', doing: 'Waiting for a vet to approve how results are worded for owners.' },
 }
@@ -222,7 +222,7 @@ export const VALLEY_STATS: Record<string, { agents: number; energyWeek: number; 
 
 export const BEATS = [
   { secs: 4.2, caption: 'Every project at Willow Lane Vets is a valley with its own crew of agents.' },
-  { secs: 4.8, caption: 'The front desk’s hours sheet says the clinic opens on Saturdays. Next door, the staff rota changed last week.' },
+  { secs: 4.8, caption: 'The front desk’s hours sheet says the clinic opens on Saturdays. Next door, the staff schedule changed last week.' },
   { secs: 4.2, caption: 'Your agents only read what you give them.' },
 ]
 export const INTRO_SIGNS = { ours: 'Hours sheet: open Saturdays', theirs: 'No Saturday vets from December' }
@@ -263,7 +263,7 @@ export const ATTACHMENTS: Attachment[] = [
   { id: 'playwright', name: 'Playwright', kind: 'tool', note: 'MCP server', selected: true },
   { id: 'sms', name: 'Twilio', kind: 'tool', note: 'MCP server for texts, staging phones only', selected: true },
   { id: 'sentry', name: 'Sentry', kind: 'tool', note: 'MCP server, read only', selected: false },
-  { id: 'rota', name: 'staff-rota/rota.md', kind: 'file', note: 'From the Staff rota project', selected: false },
+  { id: 'rota', name: 'staff-schedule/schedule.md', kind: 'file', note: 'From the Staff schedule project', selected: false },
 ]
 
 export const SUGGESTED_BUDGET = 120_000
@@ -385,25 +385,25 @@ export const REPLAN_SUBTASKS = {
 }
 
 // The file the trace finds missing, and the task that needed it.
-export const MISSING = { taskId: 'backend', file: 'staff-rota/rota.md' }
+export const MISSING = { taskId: 'backend', file: 'staff-schedule/schedule.md' }
 
 // The clash, in the words the map and the ask use.
 export const CLASH = {
   ours: 'the hours sheet',
-  theirs: 'the staff rota',
+  theirs: 'the staff schedule',
   sheet: 'Saturdays 9:00 to 13:00',
   change: 'No vet works Saturdays from 1 December',
-  crow: 'The hours sheet and the staff rota disagree about Saturdays',
-  question: 'The hours sheet is out of date. Use the rota’s hours?',
-  failed: 'Saturday 5 December, 9:00 to 13:00: 16 slots, and no vet on the rota.',
+  crow: 'The hours sheet and the staff schedule disagree about Saturdays',
+  question: 'The hours sheet is out of date. Use the schedule’s hours?',
+  failed: 'Saturday 5 December, 9:00 to 13:00: 16 slots, and no vet on the schedule.',
 }
 
 // Neighbour farm: drawn and animated, never simulated in depth.
 export const NEIGHBOUR_PLOTS: { name: string; crop: CropKind; plot: Rect; stage: number; drought?: boolean }[] = [
   { name: 'Holiday requests', crop: 'cabbage', plot: plot(NEIGHBOUR.rect.x + 3, NEIGHBOUR.rect.y + 8, 5, 3), stage: 2 },
-  { name: 'Winter rota', crop: 'wheat', plot: plot(NEIGHBOUR.rect.x + 13, NEIGHBOUR.rect.y + 8, 4, 3), stage: 3, drought: true },
+  { name: 'Winter schedule', crop: 'wheat', plot: plot(NEIGHBOUR.rect.x + 13, NEIGHBOUR.rect.y + 8, 4, 3), stage: 3, drought: true },
   { name: 'On-call nights', crop: 'carrot', plot: plot(NEIGHBOUR.rect.x + 3, NEIGHBOUR.rect.y + 15, 4, 2), stage: 3 },
-  { name: 'Rota emails', crop: 'tulip', plot: plot(NEIGHBOUR.rect.x + 13, NEIGHBOUR.rect.y + 15, 4, 2), stage: 2 },
+  { name: 'Schedule emails', crop: 'tulip', plot: plot(NEIGHBOUR.rect.x + 13, NEIGHBOUR.rect.y + 15, 4, 2), stage: 2 },
 ]
 
 // ---- Seeds ------------------------------------------------------------------
@@ -418,9 +418,9 @@ export const START_SEEDS: Seed[] = [
 ]
 
 export const LESSON_TRACE: Seed = {
-  file: 'lesson-hours-from-rota.md',
-  title: 'Read opening hours from the staff rota',
-  body: 'The front desk hours sheet was last edited in August. The Staff rota project changes every week, and from 1 December no vet works Saturdays. Any task that offers appointments reads staff-rota/rota.md, not the hours sheet.',
+  file: 'lesson-hours-from-schedule.md',
+  title: 'Read opening hours from the staff schedule',
+  body: 'The front desk hours sheet was last edited in August. The Staff schedule project changes every week, and from 1 December no vet works Saturdays. Any task that offers appointments reads staff-schedule/schedule.md, not the hours sheet.',
   from: 'Harvest: Vet booking (crow on Availability and bookings API)',
   isNew: true,
 }

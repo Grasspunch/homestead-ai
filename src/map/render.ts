@@ -301,7 +301,7 @@ function extendRoads(ctx: CanvasRenderingContext2D, ground: HTMLCanvasElement, c
       ctx.drawImage(ground, 2 * T, sy + P, seg, sh, x, sy, seg, sh)
 }
 
-// Fields in the neighbouring valleys, in world tiles. The Staff rota fields are drawn live
+// Fields in the neighbouring valleys, in world tiles. The Staff schedule fields are drawn live
 // (one of them dries up in the story); the others are painted once.
 function regionFields() {
   const out: { plot: Rect; crop: string; stage: number; drawn: boolean }[] = []
@@ -1083,7 +1083,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     ctx.restore()
     hits.push({ kind: 'farm', id: f.name, rect: px(f.rect), title: f.name, body: f.team })
   }
-  // Over the valleys' veils: the dependency between our project and the Staff rota.
+  // Over the valleys' veils: the dependency between our project and the Staff schedule.
   if (e.view === 'valley' && !e.intro) dependencyPath(ctx, e, toScreen, clock)
 
   // Opening beat 2: what each farm has promised.
@@ -1870,7 +1870,7 @@ function askBadge(ctx: CanvasRenderingContext2D, x: number, y: number, n: number
   ctx.restore()
 }
 
-// A dependency between projects: Vet booking takes its opening hours from the Staff rota. Dotted while ours
+// A dependency between projects: Vet booking takes its opening hours from the Staff schedule. Dotted while ours
 // still reads the out-of-date hours sheet, solid once the re-plan settles the hours.
 function dependencyPath(ctx: CanvasRenderingContext2D, e: Engine, toScreen: (x: number, y: number) => { x: number; y: number }, clock: number) {
   const ours = FARM.rect
@@ -1898,7 +1898,7 @@ function dependencyPath(ctx: CanvasRenderingContext2D, e: Engine, toScreen: (x: 
   ctx.moveTo(a.x, a.y)
   ctx.quadraticCurveTo(mx, my, b.x, b.y)
   ctx.stroke()
-  // Arrowhead into the Staff rota.
+  // Arrowhead into the Staff schedule.
   ctx.setLineDash([])
   const ang = Math.atan2(b.y - my, b.x - mx)
   ctx.fillStyle = INK
@@ -1909,7 +1909,7 @@ function dependencyPath(ctx: CanvasRenderingContext2D, e: Engine, toScreen: (x: 
   ctx.closePath()
   ctx.fill()
   // What the dependency is, on a plate at the top of the curve.
-  const text = fixed ? 'Reads its hours from the rota' : 'Hours sheet out of date'
+  const text = fixed ? 'Reads its hours from the schedule' : 'Hours sheet out of date'
   ctx.font = `700 13px ${SANS}`
   const w = Math.ceil(ctx.measureText(text).width) + 16
   const lx = Math.round(mx - w / 2)

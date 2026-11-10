@@ -232,7 +232,7 @@ export interface ReviewOut {
 
 export const PR_DIFF = `diff --git a/src/api/availability.ts b/src/api/availability.ts
 +export async function availability(vetId: string, from: Date, to: Date) {
-+  const hours = await rota.hours(from, to)                // the staff rota, from your answer
++  const hours = await schedule.hours(from, to)                // the staff schedule, from your answer
 +  const taken = await db.bookings.between(vetId, from, to)
 +  return slots(hours, 15).filter((s) => !taken.has(s.start))
 +}
@@ -315,10 +315,10 @@ export function findConflict(client: ClaudeClient, input: { claim: string; sourc
 Files from our farm:
 ${mine.map(doc).join('\n\n')}
 
-Everything the neighbouring farm "Staff rota" (the Practice team's crew) shares with other farms:
+Everything the neighbouring farm "Staff schedule" (the Practice team's crew) shares with other farms:
 ${theirs.map(doc).join('\n\n')}
 
-Do these sources disagree about when the clinic is open? If they do, list each claim with its farm, source document and the exact quote, recommend which source to use ("the staff rota" or "the hours sheet"), and say why in one sentence. If they agree, return conflict false and list the claim once.`,
+Do these sources disagree about when the clinic is open? If they do, list each claim with its farm, source document and the exact quote, recommend which source to use ("the staff schedule" or "the hours sheet"), and say why in one sentence. If they agree, return conflict false and list the claim once.`,
     {
       type: 'object',
       additionalProperties: false,
