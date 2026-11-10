@@ -1,0 +1,921 @@
+/* Control styles comparison page. Temporary: the picked direction moves into src/ds/ds.css. */
+
+.sx {
+  margin: 0 0 var(--s-16);
+}
+.sx-head {
+  max-width: 760px;
+  margin-bottom: var(--s-6);
+}
+.sx-head h2 {
+  font: var(--display);
+  letter-spacing: -0.02em;
+  margin: 0 0 var(--s-1);
+}
+.sx-head p {
+  font: var(--body);
+  color: var(--ink-2);
+  margin: 0;
+}
+.sx-head .sx-from {
+  font: var(--label);
+  color: var(--ink);
+  margin-bottom: var(--s-2);
+}
+.sx-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: var(--s-6);
+  align-items: start;
+  isolation: isolate;
+}
+.sx-cell {
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-3);
+  padding: var(--s-5);
+  min-width: 0;
+}
+.sx-cell h3 {
+  font: var(--title);
+  margin: 0 0 var(--s-4);
+}
+.sx-cell h4 {
+  font: var(--caption);
+  color: var(--ink-3);
+  margin: var(--s-5) 0 var(--s-3);
+}
+.sx-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  align-items: center;
+  margin-bottom: var(--s-3);
+}
+.sx-stack {
+  display: grid;
+  gap: var(--s-4);
+}
+.sx-btn {
+  font: var(--label);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  border: 0;
+  cursor: pointer;
+  color: var(--ink);
+  background: none;
+  white-space: nowrap;
+}
+.sx-btn > span {
+  position: relative;
+}
+.sx-btn kbd {
+  font: 400 12px/16px var(--font-mono);
+}
+.sx-btn:disabled {
+  cursor: not-allowed;
+}
+.sx-check {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font: var(--body);
+  cursor: pointer;
+  position: relative;
+}
+.sx-check input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.sx-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.sx-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  font: var(--body);
+}
+.sx-switch {
+  position: relative;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  flex: none;
+}
+.sx-field {
+  display: grid;
+  gap: var(--s-2);
+}
+.sx-field label {
+  font: var(--label);
+}
+.sx-field small {
+  font: var(--caption);
+  color: var(--ink-3);
+}
+.sx-input {
+  font: var(--body);
+  color: var(--ink);
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  outline: none;
+}
+.sx-who {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font: var(--body);
+  color: var(--ink-2);
+}
+.sx-who b {
+  color: var(--ink);
+}
+.sx-q {
+  font: var(--title);
+  margin: var(--s-3) 0 var(--s-4);
+}
+.sx-choices {
+  display: grid;
+  gap: var(--s-2);
+}
+.sx-choice {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+  text-align: left;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--ink);
+  width: 100%;
+  position: relative;
+}
+.sx-choice > span {
+  display: grid;
+  gap: 2px;
+}
+.sx-choice b {
+  font: var(--label);
+}
+.sx-choice small {
+  font: var(--caption);
+  color: var(--ink-2);
+}
+.sx-choice kbd {
+  font: 400 12px/16px var(--font-mono);
+  flex: none;
+}
+.sx-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+}
+.sx-meter {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-5);
+  font: var(--body);
+}
+.sx-meter-label {
+  font: var(--label);
+}
+.sx-meter > b {
+  font: var(--mono);
+  font-weight: 700;
+}
+.sx-ticks {
+  display: inline-flex;
+}
+
+/* =====================================================================
+   A. Farm-drawn: Stardew Valley, Playdate, A Short Hike, Balatro.
+   Every edge is one farm pixel (3px). The pixel border is four hard shadows,
+   which leaves the corners empty: the UI pack's cut corner.
+   ===================================================================== */
+.sx-a {
+  --u: 3px;
+}
+/* declared on every element so var(--ol) resolves against that element's own outline colour */
+.sx-a * {
+  --pb: 0 calc(var(--u) * -1) 0 var(--ol), 0 var(--u) 0 var(--ol), calc(var(--u) * -1) 0 0 var(--ol), var(--u) 0 0 var(--ol);
+}
+.sx-a .sx-cell {
+  border-radius: 0;
+}
+.sx-a .sx-btn {
+  --f: #fff;
+  --fh: #f3f4e7;
+  --hi: #fff;
+  --lip: #c1c8b9;
+  --ol: #474a4b;
+  min-height: 42px;
+  padding: 9px 18px 15px;
+  margin: var(--u);
+  background: var(--f);
+  box-shadow: inset 0 var(--u) 0 var(--hi), inset 0 calc(var(--u) * -2) 0 var(--lip), var(--pb);
+}
+.sx-a .sx-btn.sprout {
+  --f: #c0d470;
+  --fh: #d2e077;
+  --hi: #e8eeaa;
+  --lip: #8db15d;
+  --ol: #566560;
+}
+.sx-a .sx-btn.out {
+  --f: #99c5de;
+  --fh: #b4d6e8;
+  --hi: #cbe0de;
+  --lip: #7180b1;
+  --ol: #4c468b;
+}
+.sx-a .sx-btn.quiet {
+  --f: transparent;
+  --hi: transparent;
+  --lip: transparent;
+  --ol: transparent;
+  color: var(--ink-2);
+}
+.sx-a .sx-btn.quiet:hover,
+.sx-a .sx-btn.quiet.is-hover {
+  --f: #f3f4e7;
+  --ol: #f3f4e7;
+  color: var(--ink);
+}
+.sx-a .sx-btn:hover:not(:disabled),
+.sx-a .sx-btn.is-hover {
+  background: var(--fh, var(--f));
+}
+.sx-a .sx-btn:active:not(:disabled),
+.sx-a .sx-btn.is-press {
+  padding: 12px 18px 12px;
+  box-shadow: inset 0 var(--u) 0 var(--lip), inset 0 calc(var(--u) * -1) 0 var(--lip), var(--pb);
+}
+.sx-a .sx-btn:disabled {
+  --f: #f3f4e7;
+  --hi: #f3f4e7;
+  --lip: #dce0d2;
+  --ol: #c1c8b9;
+  color: #6b7470;
+}
+.sx-a .sx-btn.sm {
+  min-height: 33px;
+  padding: 6px 12px 12px;
+}
+.sx-a .sx-btn.sm:active:not(:disabled) {
+  padding: 9px 12px 9px;
+}
+.sx-a .sx-btn kbd {
+  background: rgba(255, 255, 255, 0.55);
+  padding: 0 6px;
+  box-shadow: 0 -3px 0 rgba(36, 29, 51, 0.18), 0 3px 0 rgba(36, 29, 51, 0.18), -3px 0 0 rgba(36, 29, 51, 0.18), 3px 0 0 rgba(36, 29, 51, 0.18);
+  margin: 0 3px;
+}
+/* Playdate's crank to buy: the fill climbs in eight steps while held */
+.sx-a .sx-btn.hold {
+  overflow: hidden;
+}
+.sx-a .sx-btn.hold::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: #8599c7;
+  transition: width 120ms steps(2);
+}
+.sx-a .sx-btn.hold:active::before {
+  width: 100%;
+  transition: width 680ms steps(8);
+}
+.sx-a .sx-btn.hold.is-holding::before {
+  width: 62.5%;
+}
+.sx-a .sx-btn:focus-visible {
+  outline: 3px solid var(--out);
+  outline-offset: 6px;
+}
+
+.sx-a .sx-box {
+  --ol: #474a4b;
+  width: 24px;
+  height: 24px;
+  margin: 3px;
+  background: #fff;
+  box-shadow: inset 0 3px 0 #dce0d2, var(--pb);
+  color: #3d5a2a;
+}
+.sx-a .sx-check input:checked + .sx-box {
+  --ol: #566560;
+  background: #c0d470;
+  box-shadow: inset 0 3px 0 #e8eeaa, inset 0 -3px 0 #8db15d, var(--pb);
+}
+.sx-a .sx-tick {
+  fill: #2f4a22;
+}
+.sx-a .sx-check input:focus-visible + .sx-box {
+  outline: 3px solid var(--out);
+  outline-offset: 6px;
+}
+
+.sx-a .sx-switch {
+  --ol: #474a4b;
+  width: 48px;
+  height: 24px;
+  margin: 3px;
+  background: #dce0d2;
+  box-shadow: inset 0 3px 0 #c1c8b9, var(--pb);
+}
+.sx-a .sx-switch[aria-checked='true'] {
+  --ol: #566560;
+  background: #a4c263;
+  box-shadow: inset 0 3px 0 #8db15d, var(--pb);
+}
+.sx-a .sx-switch i {
+  --ol: #474a4b;
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 15px;
+  background: #fff;
+  box-shadow: inset 0 -3px 0 #c1c8b9, var(--pb);
+  transition: transform 160ms steps(3);
+}
+.sx-a .sx-switch[aria-checked='true'] i {
+  transform: translateX(24px);
+}
+
+.sx-a .sx-input {
+  --ol: #474a4b;
+  height: 36px;
+  padding: 6px 12px 3px;
+  margin: 3px;
+  width: calc(100% - 6px);
+  background: #fff;
+  box-shadow: inset 0 3px 0 #dce0d2, var(--pb);
+}
+.sx-a .sx-input:focus,
+.sx-a .sx-input.is-focus {
+  --ol: #4c468b;
+  box-shadow: inset 0 3px 0 #cbe0de, var(--pb), 0 0 0 6px #cbe0de;
+}
+
+.sx-a .sx-ask {
+  --ol: #474a4b;
+  margin: 3px;
+  padding: 18px 18px 24px;
+  background: #fff;
+  box-shadow: inset 0 -6px 0 #dce0d2, var(--pb);
+}
+.sx-a .sx-choice {
+  --ol: #c1c8b9;
+  margin: 3px;
+  width: calc(100% - 6px);
+  padding: 9px 12px 12px;
+  background: #fff;
+  box-shadow: inset 0 -3px 0 #f3f4e7, var(--pb);
+}
+.sx-a .sx-choice:hover {
+  --ol: #818b83;
+}
+.sx-a .sx-choice[aria-pressed='true'] {
+  --ol: #566560;
+  background: #e8eeaa;
+  box-shadow: inset 0 -3px 0 #c0d470, var(--pb);
+}
+.sx-a .sx-choice kbd {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  background: #f3f4e7;
+  box-shadow: inset 0 -3px 0 #dce0d2;
+}
+.sx-a .sx-choice[aria-pressed='true'] kbd {
+  background: #c0d470;
+  box-shadow: inset 0 -3px 0 #8db15d;
+}
+.sx-a .sx-ticks {
+  gap: 3px;
+}
+.sx-a .sx-ticks i {
+  width: 6px;
+  height: 18px;
+  background: #c1c8b9;
+  box-shadow: inset 0 -3px 0 #9da89a;
+}
+.sx-a .sx-ticks i.on {
+  background: #a4c263;
+  box-shadow: inset 0 -3px 0 #67835c, inset 0 3px 0 #d2e077;
+}
+
+/* =====================================================================
+   B. Instrument: Teenage Engineering OP-1, Raycast, Linear, Vercel Geist.
+   Flat, one neutral ramp, 6px radius. Each key carries a light in the colour
+   of the one thing it does. Keycaps always on show.
+   ===================================================================== */
+.sx-b .sx-num {
+  font: var(--mono);
+  color: var(--ink-3);
+  margin-right: var(--s-1);
+}
+.sx-b .sx-btn {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(36, 29, 51, 0.16);
+  transition: background-color 0ms;
+}
+.sx-b .sx-btn::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--light, #b9b4c4);
+  flex: none;
+}
+.sx-b .sx-btn.sprout {
+  --light: #7ed36a;
+  background: var(--ink);
+  color: #fff;
+  box-shadow: none;
+}
+.sx-b .sx-btn.out {
+  --light: #7fb2ff;
+}
+.sx-b .sx-btn.quiet {
+  box-shadow: none;
+  background: transparent;
+  color: var(--ink-2);
+}
+.sx-b .sx-btn.quiet::before {
+  display: none;
+}
+.sx-b .sx-btn:hover:not(:disabled),
+.sx-b .sx-btn.is-hover {
+  background: var(--sheet-hover);
+}
+.sx-b .sx-btn.sprout:hover:not(:disabled),
+.sx-b .sx-btn.sprout.is-hover {
+  background: #3a3150;
+}
+.sx-b .sx-btn:active:not(:disabled),
+.sx-b .sx-btn.is-press {
+  background: var(--sheet-press);
+  box-shadow: inset 0 0 0 1px rgba(36, 29, 51, 0.28);
+}
+.sx-b .sx-btn.sprout:active:not(:disabled),
+.sx-b .sx-btn.sprout.is-press {
+  background: #120e1a;
+}
+.sx-b .sx-btn:disabled {
+  background: var(--sheet-sunk);
+  color: var(--ink-3);
+  box-shadow: none;
+}
+.sx-b .sx-btn:disabled::before {
+  background: #d6d3dc;
+}
+.sx-b .sx-btn.out.is-holding::before {
+  animation: sx-blink 600ms steps(2) infinite;
+}
+@keyframes sx-blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+.sx-b .sx-btn.sm {
+  height: 30px;
+  padding: 0 10px;
+}
+.sx-b .sx-btn kbd {
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(36, 29, 51, 0.07);
+  color: var(--ink-2);
+}
+.sx-b .sx-btn.sprout kbd {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.sx-b .sx-btn:focus-visible {
+  outline: 2px solid var(--out);
+  outline-offset: 2px;
+}
+
+.sx-b .sx-box {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(36, 29, 51, 0.32);
+  background: #fff;
+  color: #fff;
+}
+.sx-b .sx-check input:checked + .sx-box {
+  background: var(--ink);
+  box-shadow: none;
+}
+.sx-b .sx-check input:focus-visible + .sx-box {
+  outline: 2px solid var(--out);
+  outline-offset: 2px;
+}
+
+/* A hardware two-way switch: the lit half is the state */
+.sx-b .sx-switch {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--sheet-sunk);
+  box-shadow: inset 0 0 0 1px rgba(36, 29, 51, 0.12);
+  padding: 2px;
+  font: 700 12px/16px var(--font-mono);
+}
+.sx-b .sx-switch span {
+  display: grid;
+  place-items: center;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: var(--ink-3);
+}
+.sx-b .sx-switch[aria-checked='false'] span:first-child,
+.sx-b .sx-switch[aria-checked='true'] span:last-child {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 0 0 1px rgba(36, 29, 51, 0.14);
+}
+.sx-b .sx-switch[aria-checked='true'] span:last-child::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: #3d7531;
+  margin-right: 5px;
+  display: inline-block;
+}
+.sx-b .sx-switch[aria-checked='true'] span:last-child {
+  display: flex;
+  align-items: center;
+}
+
+.sx-b .sx-input {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(36, 29, 51, 0.16);
+}
+.sx-b #sx-b-budget {
+  font: var(--mono);
+}
+.sx-b .sx-input:hover {
+  box-shadow: inset 0 0 0 1px rgba(36, 29, 51, 0.28);
+}
+.sx-b .sx-input:focus,
+.sx-b .sx-input.is-focus {
+  box-shadow: inset 0 0 0 1px var(--out), 0 0 0 3px var(--out-soft);
+}
+
+.sx-b .sx-ask {
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px rgba(36, 29, 51, 0.14);
+  overflow: hidden;
+}
+.sx-b .sx-ask > .sx-who,
+.sx-b .sx-ask > .sx-q {
+  padding: 0 14px;
+}
+.sx-b .sx-ask > .sx-who {
+  padding-top: 12px;
+}
+.sx-b .sx-choices {
+  gap: 0;
+  border-top: 1px solid var(--rule);
+}
+.sx-b .sx-choice {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule-soft);
+  align-items: center;
+}
+.sx-b .sx-choice:hover {
+  background: var(--sheet-hover);
+}
+.sx-b .sx-choice > span {
+  flex: 1;
+}
+.sx-b .sx-choice kbd {
+  order: 2;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(36, 29, 51, 0.07);
+  color: var(--ink-2);
+}
+.sx-b .sx-choice::before {
+  /* Linear's status glyph in the gutter: empty ring, filled when picked */
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px rgba(36, 29, 51, 0.35);
+  flex: none;
+}
+.sx-b .sx-choice[aria-pressed='true'] {
+  background: var(--sheet-sunk);
+}
+.sx-b .sx-choice[aria-pressed='true']::before {
+  box-shadow: inset 0 0 0 3px #3d7531;
+}
+.sx-b .sx-foot {
+  margin: 0;
+  padding: 8px 8px 8px 14px;
+  background: var(--sheet-sunk);
+  border-top: 1px solid var(--rule);
+}
+.sx-b .sx-ctx {
+  font: var(--caption);
+  color: var(--ink-3);
+  margin-right: auto;
+}
+.sx-b .sx-ticks {
+  gap: 2px;
+}
+.sx-b .sx-ticks i {
+  width: 6px;
+  height: 14px;
+  border-radius: 1px;
+  background: #e2e0e8;
+}
+.sx-b .sx-ticks i.on {
+  background: var(--ink);
+}
+
+/* =====================================================================
+   C. Choice screen: Hades, Into the Breach, Disco Elysium, Citizen Sleeper, Celeste.
+   Square and plain everywhere; the decision card alone gets a frame.
+   Selection is an edge tab, one-shot is a shape.
+   ===================================================================== */
+.sx-c .sx-cell {
+  border-radius: 0;
+}
+.sx-c .sx-btn {
+  height: 38px;
+  padding: 0 16px;
+  background: #fff;
+  box-shadow: inset 0 0 0 2px var(--ink);
+  transition: padding 0ms;
+}
+.sx-c .sx-btn.sprout {
+  background: var(--sprout);
+  color: #fff;
+  box-shadow: none;
+}
+.sx-c .sx-btn.out {
+  background: var(--out);
+  color: #fff;
+  box-shadow: none;
+}
+.sx-c .sx-btn.quiet {
+  box-shadow: none;
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+  text-decoration-color: rgba(36, 29, 51, 0.2);
+}
+/* Celeste's menu cursor: an edge tab slides in and the label steps right */
+.sx-c .sx-btn::after {
+  content: '';
+  position: absolute;
+  left: -9px;
+  top: 6px;
+  bottom: 6px;
+  width: 4px;
+  background: var(--ink);
+  opacity: 0;
+}
+.sx-c .sx-btn:hover:not(:disabled),
+.sx-c .sx-btn.is-hover {
+  padding-left: 20px;
+  padding-right: 12px;
+}
+.sx-c .sx-btn:hover:not(:disabled)::after,
+.sx-c .sx-btn.is-hover::after {
+  opacity: 1;
+}
+.sx-c .sx-btn.sprout:hover:not(:disabled),
+.sx-c .sx-btn.sprout.is-hover {
+  background: var(--sprout-strong);
+}
+.sx-c .sx-btn:active:not(:disabled),
+.sx-c .sx-btn.is-press {
+  background: var(--sheet-press);
+}
+.sx-c .sx-btn.sprout:active:not(:disabled),
+.sx-c .sx-btn.sprout.is-press {
+  background: var(--sprout-deep);
+}
+.sx-c .sx-btn:disabled {
+  background: var(--sheet-sunk);
+  color: var(--ink-3);
+  box-shadow: inset 0 0 0 2px var(--rule);
+}
+.sx-c .sx-btn.sm {
+  height: 32px;
+  padding: 0 12px;
+}
+.sx-c .sx-btn kbd {
+  padding: 0 4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+.sx-c .sx-btn.hold {
+  overflow: hidden;
+}
+.sx-c .sx-btn.hold::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: var(--out-deep);
+  transition: width 120ms var(--ease-exit, ease-in);
+}
+.sx-c .sx-btn.hold:active::before {
+  width: 100%;
+  transition: width 680ms linear;
+}
+.sx-c .sx-btn.hold.is-holding::before {
+  width: 60%;
+}
+.sx-c .sx-btn.hold::after {
+  display: none;
+}
+.sx-c .sx-btn:focus-visible {
+  outline: 2px solid var(--out);
+  outline-offset: 3px;
+}
+
+.sx-c .sx-box {
+  width: 20px;
+  height: 20px;
+  box-shadow: inset 0 0 0 2px var(--ink);
+  background: #fff;
+  color: #fff;
+}
+.sx-c .sx-check input:checked + .sx-box {
+  background: var(--ink);
+}
+.sx-c .sx-check input:focus-visible + .sx-box {
+  outline: 2px solid var(--out);
+  outline-offset: 3px;
+}
+
+.sx-c .sx-switch {
+  width: 48px;
+  height: 24px;
+  background: #fff;
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.sx-c .sx-switch[aria-checked='true'] {
+  background: var(--sprout);
+  box-shadow: none;
+}
+.sx-c .sx-switch i {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
+  background: var(--ink);
+  transition: transform 120ms steps(2);
+}
+.sx-c .sx-switch[aria-checked='true'] i {
+  background: #fff;
+  transform: translateX(24px);
+}
+
+.sx-c .sx-input {
+  height: 38px;
+  padding: 0 12px;
+  background: var(--sheet-sunk);
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+.sx-c .sx-input:focus,
+.sx-c .sx-input.is-focus {
+  background: #fff;
+  box-shadow: inset 0 0 0 2px var(--ink), inset 6px 0 0 var(--out);
+  padding-left: 16px;
+}
+
+/* The one ornament: a stepped frame, a hard shadow, a header plate */
+.sx-c .sx-ask {
+  --u: 3px;
+  position: relative;
+  padding: 0 18px 18px;
+  background: #fff;
+  margin: 3px 9px 9px 3px;
+  clip-path: polygon(
+    0 9px, 3px 9px, 3px 6px, 6px 6px, 6px 3px, 9px 3px, 9px 0,
+    calc(100% - 9px) 0, calc(100% - 9px) 3px, calc(100% - 6px) 3px, calc(100% - 6px) 6px, calc(100% - 3px) 6px, calc(100% - 3px) 9px, 100% 9px,
+    100% calc(100% - 9px), calc(100% - 3px) calc(100% - 9px), calc(100% - 3px) calc(100% - 6px), calc(100% - 6px) calc(100% - 6px), calc(100% - 6px) calc(100% - 3px), calc(100% - 9px) calc(100% - 3px), calc(100% - 9px) 100%,
+    9px 100%, 9px calc(100% - 3px), 6px calc(100% - 3px), 6px calc(100% - 6px), 3px calc(100% - 6px), 3px calc(100% - 9px), 0 calc(100% - 9px)
+  );
+  box-shadow: inset 0 0 0 3px var(--ink);
+  filter: drop-shadow(6px 6px 0 rgba(36, 29, 51, 0.22));
+}
+.sx-c .sx-ask::before {
+  /* fills the inner stair of each corner so the 3px ink line steps cleanly */
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--ink), var(--ink)) 3px 6px / 6px 3px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) 6px 3px / 3px 6px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) calc(100% - 3px) 6px / 6px 3px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) calc(100% - 6px) 3px / 3px 6px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) 3px calc(100% - 6px) / 6px 3px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) 6px calc(100% - 3px) / 3px 6px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) calc(100% - 3px) calc(100% - 6px) / 6px 3px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) calc(100% - 6px) calc(100% - 3px) / 3px 6px no-repeat;
+}
+.sx-c .sx-who {
+  margin: 0 -18px;
+  padding: 12px 18px 10px;
+  background: var(--ink);
+  color: #d6d2e0;
+}
+.sx-c .sx-who b {
+  color: #fff;
+}
+.sx-c .sx-q {
+  font: var(--heading);
+  letter-spacing: -0.01em;
+}
+.sx-c .sx-choice {
+  padding: 10px 12px 10px 14px;
+  box-shadow: inset 0 0 0 2px var(--rule);
+}
+.sx-c .sx-choice:hover {
+  box-shadow: inset 0 0 0 2px var(--rule-strong);
+}
+.sx-c .sx-choice[aria-pressed='true'] {
+  background: var(--sprout-soft);
+  box-shadow: inset 0 0 0 2px var(--sprout), inset 6px 0 0 var(--sprout);
+  padding-left: 20px;
+}
+.sx-c .sx-choice kbd {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  box-shadow: inset 0 0 0 2px var(--ink);
+  font-weight: 700;
+}
+.sx-c .sx-choice > span > b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Disco Elysium: one-shot is a shape, not a colour */
+.sx-c .sx-once {
+  width: 9px;
+  height: 9px;
+  background: var(--ink);
+  transform: rotate(45deg);
+}
+.sx-c .sx-cons {
+  font: var(--mono) !important;
+  color: var(--ink) !important;
+  margin-top: 2px;
+}
+.sx-c .sx-cons s {
+  color: var(--ink-3);
+}
+.sx-c .sx-meter svg path {
+  fill: #e2e0e8;
+}
+.sx-c .sx-meter svg path.on {
+  fill: var(--ink);
+}
+.sx-c .sx-meter span {
+  color: var(--ink-2);
+}
+.sx-c .sx-meter b {
+  color: var(--ink);
+}

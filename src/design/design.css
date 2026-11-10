@@ -43,7 +43,7 @@ button {
   overflow-y: auto;
 }
 
-.ds-brand {
+.ds-nav .ds-brand {
   display: flex;
   align-items: center;
   gap: var(--s-2);
@@ -54,6 +54,8 @@ button {
 }
 
 .ds-brand img {
+  width: 28px;
+  height: 28px;
   image-rendering: pixelated;
   margin-top: -6px;
 }
