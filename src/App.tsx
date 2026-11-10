@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from 'react'
 import { FarmView } from './farm/FarmView'
 import { Home } from './hud/Home'
 import { Ico, Portrait, Swatch, mins, usd } from './hud/bits'
-import { ControlPanel, FarmerPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel } from './hud/Side'
+import { FarmerPage } from './hud/FarmerPage'
+import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel } from './hud/Side'
 import { getLiveMode, route, setLiveMode } from './run/agent'
 import { planInto } from './run/planning'
 import { pendingAsk } from './run/reduce'
@@ -52,7 +53,7 @@ function Farm() {
   const ask = pending ? s.asks.find((a) => a.id === pending) ?? null : null
   const d = st.drawer
   const sel = d?.kind === 'task' ? { kind: 'task' as const, id: d.id } : d?.kind === 'farmer' ? { kind: 'farmer' as const, id: d.id } : null
-  const side = !!d && d.kind !== 'chat' && d.kind !== 'ask' && d.kind !== 'summary' ? true : d?.kind === 'summary'
+  const side = !!d && d.kind !== 'chat' && d.kind !== 'farmer' && d.kind !== 'ask' && d.kind !== 'summary' ? true : d?.kind === 'summary'
   return (
     <>
       <FarmView
@@ -69,7 +70,7 @@ function Farm() {
       />
       <Top p={p} s={s} />
       {d?.kind === 'task' && <TaskPanel p={p} s={s} id={d.id} />}
-      {d?.kind === 'farmer' && <FarmerPanel p={p} s={s} id={d.id} />}
+      {d?.kind === 'farmer' && <FarmerPage p={p} s={s} id={d.id} />}
       {d?.kind === 'inbox' && <InboxPanel s={s} />}
       {d?.kind === 'usage' && <UsagePanel s={s} />}
       {d?.kind === 'summary' && <HarvestPanel s={s} p={p} />}

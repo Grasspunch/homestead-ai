@@ -5,6 +5,7 @@ import { simulateRun } from './simulate'
 import { simulatePlan } from './simPlan'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
+import { applyEdit, emptyEdit, type KitEdit } from './kit'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from our help docs, and hands off to a person when it is not sure'
 
@@ -56,6 +57,7 @@ class Store {
   notifications = false
   toast: { id: number; text: string } | null = null
   applied = new Set<string>() // usage fixes applied, by key
+  kit: Record<string, Partial<Record<FarmerId, KitEdit>>> = {} // your changes to each farmer, per project
   private lastAsk: string | null = null
   private listeners = new Set<() => void>()
 
@@ -261,6 +263,14 @@ class Store {
     this.notify()
   }
 
+  editKit(id: string, farmer: FarmerId, fn: (e: KitEdit) => void) {
+    const k = (this.kit[id] ??= {})
+    const e = (k[farmer] ??= emptyEdit())
+    fn(e)
+    this.kit = { ...this.kit, [id]: { ...k } }
+    this.notify()
+  }
+
   chatTo(id: string, line: ChatLine) {
     this.chat[id] = [...(this.chat[id] ?? []), line]
     this.notify()
@@ -271,7 +281,7 @@ class Store {
     if (!p) return
     const plan = p.events.find((e) => e.type === 'plan')
     if (!plan || plan.type !== 'plan') return
-    const farmers = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => f)
+    const farmers = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => applyEdit(f, this.kit[id]?.[f.id]))
     p.events = simulateRun({ goal: p.goal, farmers, tasks: plan.tasks, estimate: plan.estimate, singleAgentEstimate: plan.singleAgentEstimate, autonomy: p.autonomy })
     p.approved = true
     this.clock = 0

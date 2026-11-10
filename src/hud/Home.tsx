@@ -110,11 +110,10 @@ export function Home() {
           // The empty plot for a new farm.
           const ns = { x: 2 + (store.projects.length % 3) * 9, y: 2 + Math.floor(store.projects.length / 3) * 7 }
           draw(g, 'sign_blank', (ns.x + 1) * PX, (ns.y + 1) * PX)
-          g.strokeStyle = 'rgba(120,80,50,.6)'
-          g.setLineDash([3, 3])
-          g.lineWidth = 1
-          g.strokeRect((ns.x + 2.5) * PX, (ns.y + 1.5) * PX, 5 * PX, 3 * PX)
-          g.setLineDash([])
+          g.globalAlpha = 0.32
+          for (let y = 0; y < 4; y++)
+            for (let x = 0; x < 5; x++) draw(g, `bed_dry_${x === 0 ? 0 : x === 4 ? 2 : 1}${y === 0 ? 0 : y === 3 ? 2 : 1}`, (ns.x + 3.4 + x) * PX, (ns.y + 0.2 + y) * PX)
+          g.globalAlpha = 1
         }
         raf = requestAnimationFrame(tick)
       }

@@ -44,13 +44,13 @@ export function farmLayout(tasks: { id: string; gate: boolean }[], known: string
   const plots = order.map((t, i) => ({
     id: t.id,
     x: 12 + (i % cols) * 7,
-    y: 3 + Math.floor(i / cols) * 6,
+    y: 3 + Math.floor(i / cols) * 5,
     w: 3,
     h: 2,
     crop: CROPS[tasks.findIndex((x) => x.id === t.id) % CROPS.length],
     gate: t.gate,
   }))
-  return { w: 12 + cols * 7 + 1, h: Math.max(14, 3 + rows * 6), plots }
+  return { w: 12 + cols * 7 + 1, h: Math.max(14, 3 + rows * 5 + 1), plots }
 }
 
 // Spots in the yard, in tiles (feet position).
@@ -126,16 +126,34 @@ export function FarmView(p: FarmViewProps) {
     return () => ro.disconnect()
   }, [])
 
-  // Fit the farm into the space the HUD leaves free.
+  // The camera: a fixed pixel scale (3x on desktop), centred on what matters in the space the HUD
+  // leaves free. It leans toward the plot that needs you or the one you opened; drag to look around.
+  const camRef = useRef<Cam & { cx: number; cy: number; tx: number; ty: number; manual: boolean }>({ s: 3, ox: 0, oy: 0, cx: 0, cy: 0, tx: 0, ty: 0, manual: false })
+  const labels = useRef<HTMLDivElement>(null)
+  const narrow = size.w < 900
+  const scale = narrow ? 2 : size.h < 760 ? 2.5 : 3
+  if (cam.s !== scale) setCam({ s: scale, ox: 0, oy: 0 })
+  const focusId = p.openAsk?.task ?? (p.selected?.kind === 'task' ? p.selected.id : undefined)
   useEffect(() => {
-    const narrow = size.w < 900
-    const free = { x: 0, y: narrow ? 60 : 80, w: size.w - (p.side && !narrow ? 470 : 0), h: size.h - (narrow ? 60 + 230 : 80 + 280) }
-    const fit = Math.min(free.w / (layout.w * PX), free.h / (layout.h * PX))
-    const s = fit >= 2 ? Math.min(4, Math.floor(fit * 2) / 2) : Math.max(1, fit)
-    const ww = layout.w * PX * s
-    const hh = layout.h * PX * s
-    setCam({ s, ox: Math.round(free.x + (free.w - ww) / 2), oy: Math.round(free.y + (free.h - hh) / 2) })
-  }, [size.w, size.h, p.side, layout.w, layout.h])
+    const c = camRef.current
+    const pl = layout.plots.find((x) => x.id === focusId)
+    // The farm's own centre, from the house to the last plot column.
+    const home = { x: Math.min(layout.w / 2, 15.5), y: 7.2 }
+    const tgt = pl ? { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) } : home
+    c.tx = tgt.x
+    c.ty = tgt.y
+    c.manual = false
+    if (!c.cx) {
+      c.cx = tgt.x
+      c.cy = tgt.y
+    }
+  }, [focusId, layout])
+  const freeRect = () => {
+    const w = size.w - (p.side && !narrow ? 470 : 0)
+    const top = narrow ? 60 : 80
+    const bottom = narrow ? 250 : 230
+    return { cx: w / 2, cy: top + (size.h - top - bottom) / 2 }
+  }
 
   // Every new plot (a task split in two mid-run) stakes itself out over a moment.
   useEffect(() => {
@@ -150,17 +168,29 @@ export function FarmView(p: FarmViewProps) {
     const tick = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now
+      const k = camRef.current
+      if (!k.manual) {
+        const f = 1 - Math.pow(0.002, dt)
+        k.cx += (k.tx - k.cx) * f
+        k.cy += (k.ty - k.cy) * f
+      }
+      const fr = freeRect()
+      k.s = cam.s
+      k.ox = Math.round(fr.cx - k.cx * PX * k.s)
+      k.oy = Math.round(fr.cy - k.cy * PX * k.s)
+      if (labels.current) labels.current.style.transform = `translate(${k.ox}px, ${k.oy}px)`
       const c = canvas.current
-      if (c) paint(c, props.current, layout, cam, walkers.current, born.current, hover.current, now, dt)
+      if (c) paint(c, props.current, layout, k, walkers.current, born.current, hover.current, now, dt)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [ready, layout, cam])
+  }, [ready, layout, cam, size, p.side])
 
   const toTile = (e: React.PointerEvent) => {
     const r = wrap.current!.getBoundingClientRect()
-    return { x: (e.clientX - r.left - cam.ox) / (PX * cam.s), y: (e.clientY - r.top - cam.oy) / (PX * cam.s) }
+    const k = camRef.current
+    return { x: (e.clientX - r.left - k.ox) / (PX * k.s), y: (e.clientY - r.top - k.oy) / (PX * k.s) }
   }
 
   const hit = (t: { x: number; y: number }): string | null => {
@@ -172,12 +202,34 @@ export function FarmView(p: FarmViewProps) {
     return null
   }
 
+  const drag = useRef<{ x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null)
+  const onDown = (e: React.PointerEvent) => {
+    const k = camRef.current
+    drag.current = { x: e.clientX, y: e.clientY, cx: k.cx, cy: k.cy, moved: false }
+  }
   const onMove = (e: React.PointerEvent) => {
+    const d = drag.current
+    if (d && e.buttons) {
+      const dx = e.clientX - d.x
+      const dy = e.clientY - d.y
+      if (d.moved || Math.hypot(dx, dy) > 5) {
+        d.moved = true
+        const k = camRef.current
+        k.manual = true
+        k.cx = Math.max(0, Math.min(layout.w, d.cx - dx / (PX * k.s)))
+        k.cy = Math.max(0, Math.min(layout.h, d.cy - dy / (PX * k.s)))
+        if (wrap.current) wrap.current.style.cursor = 'url(/cursor-paw-hold.png) 8 8, grabbing'
+        return
+      }
+    }
     const h = hit(toTile(e))
     hover.current = h
     if (wrap.current) wrap.current.style.cursor = h ? 'url(/cursor-paw-point.png) 6 2, pointer' : ''
   }
   const onClick = (e: React.PointerEvent) => {
+    const d = drag.current
+    drag.current = null
+    if (d?.moved) return
     const h = hit(toTile(e))
     if (!h) return
     if (h.startsWith('f:')) p.onFarmer(h.slice(2) as FarmerId)
@@ -189,18 +241,18 @@ export function FarmView(p: FarmViewProps) {
 
   const T = PX * cam.s
   return (
-    <div ref={wrap} className="map-layer" onPointerMove={onMove} onPointerUp={onClick} onPointerLeave={() => (hover.current = null)}>
+    <div ref={wrap} className="map-layer" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onClick} onPointerLeave={() => (hover.current = null)} style={{ touchAction: 'none' }}>
       <canvas ref={canvas} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} aria-label="The farm" role="img" />
+      <div ref={labels} className="plot-labels">
       {layout.plots.map((pl) => {
         const t = p.state.tasks.find((x) => x.id === pl.id)
         if (!t) return null
         const sel = p.selected?.kind === 'task' && p.selected.id === pl.id
-        if (cam.s < 1.4 && !sel) return null
         return (
           <button
             key={pl.id}
             className={`plot-label${p.planning ? ' ghost' : ''}${sel ? ' sel' : ''}`}
-            style={{ left: cam.ox + (pl.x + pl.w / 2) * T, top: cam.oy + (pl.y + pl.h + 1) * T + 2, fontSize: cam.s >= 3 ? 13 : 11 }}
+            style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y + pl.h + 1) * T + 2, fontSize: cam.s >= 3 ? 13 : 11 }}
             onClick={(e) => {
               e.stopPropagation()
               p.onTask(pl.id)
@@ -216,6 +268,7 @@ export function FarmView(p: FarmViewProps) {
           </button>
         )
       })}
+      </div>
     </div>
   )
 }
@@ -259,16 +312,21 @@ function bed(g: CanvasRenderingContext2D, pl: Plot, wet: boolean) {
 }
 
 function staked(g: CanvasRenderingContext2D, pl: Plot, alpha = 1) {
+  // A ghost of the bed with a wooden stake at each corner: marked out, not dug yet.
   g.save()
-  g.globalAlpha = 0.14 * alpha
+  g.globalAlpha = 0.32 * alpha
   bed(g, pl, false)
-  g.restore()
-  g.save()
   g.globalAlpha = alpha
-  g.strokeStyle = 'rgba(120,80,50,.6)'
-  g.lineWidth = 1
-  g.setLineDash([3, 3])
-  g.strokeRect((pl.x - 1) * PX + 2.5, (pl.y - 1) * PX + 2.5, (pl.w + 2) * PX - 5, (pl.h + 2) * PX - 5)
+  const x0 = (pl.x - 1) * PX + 2
+  const y0 = (pl.y - 1) * PX + 1
+  const x1 = (pl.x + pl.w + 1) * PX - 5
+  const y1 = (pl.y + pl.h + 1) * PX - 8
+  for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
+    g.fillStyle = '#5b3a26'
+    g.fillRect(x, y, 3, 7)
+    g.fillStyle = '#b8814f'
+    g.fillRect(x + 1, y, 1, 6)
+  }
   g.restore()
 }
 
@@ -428,6 +486,12 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
   // The shipping chest, open once something is ready to review.
   const anyRipe = s.tasks.some((t) => t.status === 'ripe' || t.status === 'accepted')
   spr(g, anyRipe ? 'chest_open' : 'chest', CHEST.x, CHEST.y)
+  // Crates stack up by the chest as tasks come in.
+  if (ok('crates')) {
+    const n = Math.min(3, s.tasks.filter((t) => t.status === 'ripe' || t.status === 'accepted').length)
+    const spots = [[CHEST.x + 0.95, CHEST.y - 0.55], [CHEST.x + 1.9, CHEST.y - 0.55], [CHEST.x + 1.45, CHEST.y - 1.45]]
+    for (let i = 0; i < n; i++) g.drawImage(IMG.crates, 20, 3, 24, 26, spots[i][0] * PX, spots[i][1] * PX, 24, 26)
+  }
   // The coin pile grows with the spend: a coin per 25 cents, up to 14.
   if (ok('coin')) {
     const n = Math.min(14, Math.round(s.usage.usd * 4))
@@ -471,25 +535,18 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
     const plotEmote: Emote | null = t.status === 'wilted' || rolledBack ? 'x' : t.status === 'ripe' || t.status === 'accepted' ? 'check' : t.status === 'checking' ? 'read' : null
     if (plotEmote) emote(g, pl.x + pl.w / 2, pl.y + 1.3, plotEmote, now)
   }
-  // A big change: dashed lines from its plot to every plot whose code it reaches.
+  // A big change: every plot whose code it reaches glows with it, in time with its own plot.
   if (p.openAsk?.touches?.length) {
-    const from = layout.plots.find((x) => x.id === p.openAsk!.task)
-    if (from) {
+    const glow = 0.18 + 0.12 * Math.sin(now / 300)
+    for (const id of [p.openAsk.task, ...p.openAsk.touches]) {
+      const to = layout.plots.find((x) => x.id === id)
+      if (!to) continue
       g.save()
-      g.strokeStyle = 'rgba(91,58,38,.75)'
-      g.lineWidth = 1.5
-      g.setLineDash([4, 3])
-      g.lineDashOffset = -now / 60
-      for (const id of p.openAsk.touches) {
-        const to = layout.plots.find((x) => x.id === id)
-        if (!to) continue
-        g.beginPath()
-        g.moveTo((from.x + from.w / 2) * PX, (from.y + from.h / 2) * PX)
-        g.lineTo((to.x + to.w / 2) * PX, (to.y + to.h / 2) * PX)
-        g.stroke()
-        selector(g, to, 0)
-      }
+      g.globalAlpha = glow
+      g.fillStyle = '#ffd36b'
+      g.fillRect((to.x - 1) * PX + 3, (to.y - 1) * PX + 3, (to.w + 2) * PX - 6, (to.h + 2) * PX - 6)
       g.restore()
+      selector(g, to, now)
     }
   }
   const sel = p.selected?.kind === 'task' ? layout.plots.find((x) => x.id === p.selected!.id) : undefined
