@@ -24,11 +24,11 @@ describe('Done-when gates', () => {
     const e = freshEngine()
     finishSteps(e, 'backend')
     expect(e.taskRipe(e.task('backend'))).toBe(false)
-    e.gates.backend = { unit: { state: 'pass', text: '18 of 18' }, e2e: { state: 'pass', text: '1 of 1' } }
+    e.gates.backend = { unit: { state: 'pass', text: '18 passed' }, e2e: { state: 'pass', text: '1 passed' } }
     expect(e.taskRipe(e.task('backend'))).toBe(false) // integration still missing
     e.gates.backend.integration = { state: 'fail', text: 'x' }
     expect(e.taskRipe(e.task('backend'))).toBe(false)
-    e.gates.backend.integration = { state: 'pass', text: '9 of 9' }
+    e.gates.backend.integration = { state: 'pass', text: '9 passed' }
     expect(e.taskRipe(e.task('backend'))).toBe(true)
   })
 

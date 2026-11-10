@@ -332,7 +332,7 @@ function HarvestNow() {
             let mark: 'pass' | 'fail' | 'run' | 'look' = 'pass'
             if (r.state === 'fail') [end, tone, mark] = ['Failed', 'fail', 'fail']
             else if (r.state === 'run' || r.state === 'wait') [end, tone, mark] = ['Running', '', 'run']
-            else if (cs.length && n < cs.length) [end, tone, mark] = [`Look, ${n} of ${cs.length}`, '', 'look']
+            else if (cs.length && n < cs.length) [end, tone, mark] = [`Look, ${cs.length - n} left`, '', 'look']
             return (
               <li key={g}>
                 <Row mark={<GateMark s={mark} />} label={GATES[g].name} sub={r.text} end={end} tone={tone} onClick={() => e.go({ kind: 'out', id: g })} testId={`gate-${g}`} />
@@ -363,7 +363,7 @@ export function StaysWithYou() {
     <details className="fine">
       <summary>Energy and calls</summary>
       <p>
-        {fmtK(e.energyUsed)} of {fmtK(e.budget)} tokens, about ${e.usd.toFixed(2)}. {e.liveCalls ? `${e.liveCalls} live model calls and ` : ''}
+        {fmtK(e.energyUsed)} tokens, about ${e.usd.toFixed(2)}. Budget {fmtK(e.budget)}. {e.liveCalls ? `${e.liveCalls} live model calls and ` : ''}
         {e.simSteps + e.replayCalls} simulated steps.
       </p>
     </details>

@@ -191,7 +191,7 @@ function Mcp() {
           const access = t.access ?? []
           return (
             <li key={t.name}>
-              <Row mark={<span className="kind tool">T</span>} label={t.name} end={`${access.filter((a) => a.on).length} of ${access.length} allowed`} onClick={() => e.go({ kind: 'lib', id: t.name })} />
+              <Row mark={<span className="kind tool">T</span>} label={t.name} end={`${access.filter((a) => a.on).length} allowed`} onClick={() => e.go({ kind: 'lib', id: t.name })} />
             </li>
           )
         })}

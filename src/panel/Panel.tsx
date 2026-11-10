@@ -16,7 +16,7 @@ function Meter() {
         <i className={pct > 85 ? 'warn' : ''} style={{ width: `${pct}%` }} />
       </span>
       <span className="mono">
-        {fmtK(e.energyUsed)} of {fmtK(e.budget)}, ${e.usd.toFixed(2)}
+        {fmtK(e.energyUsed)} tokens, ${e.usd.toFixed(2)}
       </span>
     </span>
   )
@@ -35,7 +35,7 @@ function OverviewStatus() {
     return (
       <>
         <span data-testid="meter-needed">
-          {done} of {e.tasks.length} tasks done. Needed you {e.neededYou} {e.neededYou === 1 ? 'time' : 'times'}.
+          {done === e.tasks.length ? 'Every task done' : `${e.tasks.length - done} ${e.tasks.length - done === 1 ? 'task' : 'tasks'} to go`}. Needed you {e.neededYou} {e.neededYou === 1 ? 'time' : 'times'}.
         </span>
         <Meter />
       </>

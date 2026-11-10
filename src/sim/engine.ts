@@ -1151,7 +1151,7 @@ export class Engine {
     if (failed) return { text: `${failed === 'e2e' ? 'End-to-end' : GATES[failed].name} failed`, tone: 'fail' }
     if (done === t.subtasks.length) return { text: 'Running gates', tone: '' }
     if (this.farmhands[t.assignee].paused) return { text: 'Paused', tone: '' }
-    if (done > 0) return { text: `${done} of ${t.subtasks.length}`, tone: '' }
+    if (done > 0) return { text: `${t.subtasks.length - done} left`, tone: '' }
     if (t.subtasks.some((s) => s.started)) return { text: 'Working', tone: '' }
     const s = t.subtasks[0]
     if ((s.needs ?? []).some((f) => !this.flags.has(f))) return { text: 'Waiting', tone: '' }

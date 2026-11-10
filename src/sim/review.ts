@@ -41,9 +41,9 @@ export type GateState = 'wait' | 'run' | 'pass' | 'fail' | 'look'
 // What each gate reports for the whole run at the harvest. `look` means it passed and needs your eyes.
 export const RESULTS: Record<GateId, { state: GateState; text: string }> = {
   shots: { state: 'look', text: '5 screens at phone size' },
-  unit: { state: 'pass', text: '41 of 41 pass' },
-  integration: { state: 'pass', text: '14 of 14 pass' },
-  e2e: { state: 'pass', text: '4 of 4 runs, two owners at once too' },
+  unit: { state: 'pass', text: '41 passed' },
+  integration: { state: 'pass', text: '14 passed' },
+  e2e: { state: 'pass', text: '4 runs passed, two owners at once too' },
   review: { state: 'look', text: '0 blocking, 2 notes' },
 }
 
@@ -106,17 +106,17 @@ export const HARVEST_FAIL = {
 
 // What each task's own gates report during Grow, when they pass.
 export const TASK_RESULTS: Record<string, Partial<Record<GateId, string>>> = {
-  frontend: { unit: '12 of 12', shots: '5 screens at phone size' },
-  backend: { unit: '18 of 18', integration: '9 of 9', e2e: '1 of 1, one owner' },
-  messaging: { unit: '6 of 6', integration: '1 text delivered' },
+  frontend: { unit: '12 passed', shots: '5 screens at phone size' },
+  backend: { unit: '18 passed', integration: '9 passed', e2e: '1 passed, one owner' },
+  messaging: { unit: '6 passed', integration: '1 text delivered' },
 }
 
 // A failed gate the crew fixes alone: Frontend's first unit run misses one error state.
 export const UNIT_FAIL = {
   taskId: 'frontend',
-  text: '11 of 12 pass',
+  text: '1 failed, 11 passed',
   pest: 'BookingFlow.test.tsx: no message when the slot was just taken',
-  fix: 'Added “That time was just taken. Pick another.” under the time picker. 12 of 12 pass.',
+  fix: 'Added “That time was just taken. Pick another.” under the time picker. All 12 pass.',
 }
 
 // Backend's integration run on staging, while it still reads the hours sheet: Saturday slots with no vet.
@@ -130,27 +130,27 @@ export const GATE_DETAIL: Partial<Record<GateId, { status: string; rows: [string
   unit: {
     status: 'npm test, 9 seconds.',
     rows: [
-      ['BookingFlow.test.tsx', 'Frontend, 12 new', '12 of 12'],
-      ['availability.test.ts', 'Backend, 11 new', '11 of 11'],
-      ['bookings.test.ts', 'Backend, 7 new, 2 for the hold', '7 of 7'],
-      ['reminder.test.ts', 'Messaging, 6 new', '6 of 6'],
-      ['Existing suites', '2 files from the template', '5 of 5'],
+      ['BookingFlow.test.tsx', 'Frontend, 12 new', '12 passed'],
+      ['availability.test.ts', 'Backend, 11 new', '11 passed'],
+      ['bookings.test.ts', 'Backend, 7 new, 2 for the hold', '7 passed'],
+      ['reminder.test.ts', 'Messaging, 6 new', '6 passed'],
+      ['Existing suites', '2 files from the template', '5 passed'],
     ],
     output: 'Test Files  6 passed (6)\n     Tests  41 passed (41)\n  Duration  9.4s',
   },
   integration: {
     status: 'Against staging services.',
     rows: [
-      ['Bookings API', 'Book, move and cancel on staging', '9 of 9'],
-      ['Staff schedule', 'No Saturday slots from 1 December', '4 of 4'],
-      ['Reminder text', 'Twilio, to a staging phone', '1 of 1'],
+      ['Bookings API', 'Book, move and cancel on staging', '9 passed'],
+      ['Staff schedule', 'No Saturday slots from 1 December', '4 passed'],
+      ['Reminder text', 'Twilio, to a staging phone', '1 passed'],
     ],
   },
   e2e: {
     status: 'Run by the Tests agent in two browsers at once, with the Playwright MCP.',
     rows: [
-      ['booking.spec.ts', 'One owner books a checkup on a phone', '3 of 3'],
-      ['same-slot.spec.ts', 'Two owners, one slot: failed once, passed with the hold', '1 of 1'],
+      ['booking.spec.ts', 'One owner books a checkup on a phone', '3 passed'],
+      ['same-slot.spec.ts', 'Two owners, one slot: failed once, passed with the hold', '1 passed'],
     ],
     steps: ['Open /book on a phone', 'Pick Biscuit, a dog', 'Reason: vaccination', 'Dogs and cats vet, Tuesday 9:00', 'Confirm: the slot is held for 5 minutes', 'A second owner sees “That time was just taken”'],
   },

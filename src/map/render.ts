@@ -668,7 +668,7 @@ export function render(ctx: CanvasRenderingContext2D, e: Engine, cam: Camera, W:
     if (again) return
 
     const st = e.taskStatus(t)
-    const cost = `${fmtK(t.used)} of ${fmtK(t.budget)} tokens, $${usd(t.used, e.settings).toFixed(2)}`
+    const cost = `${fmtK(t.used)} tokens, $${usd(t.used, e.settings).toFixed(2)}`
     hits.push({
       kind: 'plot',
       id: t.id,

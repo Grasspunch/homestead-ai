@@ -55,7 +55,7 @@ describe('Vet booking, end to end', () => {
 
     await until(e, () => e.harvestReady, 'harvest ready')
     for (const t of e.tasks) expect(e.taskRipe(t)).toBe(true)
-    expect(e.gates.backend!.integration).toEqual({ state: 'pass', text: '9 of 9' })
+    expect(e.gates.backend!.integration).toEqual({ state: 'pass', text: '9 passed' })
     expect(e.flags.has('unitFixed')).toBe(true) // the frontend unit pest, fixed alone
     expect(e.neededYou).toBe(2)
 
@@ -143,7 +143,7 @@ describe('Vet booking, end to end', () => {
     expect(e.out.hours?.data.saturday).toBe('closed from 1 December')
     expect(e.asks).toHaveLength(0)
     expect(e.crow.state).toBe('none')
-    expect(e.gates.backend!.integration).toEqual({ state: 'pass', text: '9 of 9' })
+    expect(e.gates.backend!.integration).toEqual({ state: 'pass', text: '9 passed' })
     expect(e.log.some((l) => l.text === 'Found Saturday slots with no vet on staging')).toBe(false)
     expect(e.neededYou).toBe(1)
   })

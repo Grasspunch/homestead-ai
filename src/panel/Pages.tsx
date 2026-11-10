@@ -151,7 +151,7 @@ export function FarmBody({ id }: { id: RoleId }) {
             <>
               <dt>Energy</dt>
               <dd className="num">
-                {fmtK(used)} of {fmtK(budget)}
+                {fmtK(used)} used, {fmtK(budget)} budget
               </dd>
             </>
           )}

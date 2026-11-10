@@ -180,7 +180,7 @@ export function LibraryView() {
       <ul className="rows">
         {list.map((x) => {
           const users = e.tasks.filter((t) => t.signposts.includes(x.name)).length
-          const allowed = x.access ? `${x.access.filter((a) => a.on).length} of ${x.access.length} allowed` : null
+          const allowed = x.access ? `${x.access.filter((a) => a.on).length} allowed` : null
           return (
             <li key={x.name}>
               <Row
