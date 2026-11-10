@@ -4,6 +4,7 @@
 
 import type { AgentTask, PlanOut, ReshapeOut, RouteInput, RouteOut, Source } from '../agent/agents'
 import type { Ctx as ReshapeCtx } from './reshape'
+import type { Talk, TalkLine } from './discuss'
 
 export type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
 
@@ -87,7 +88,7 @@ async function call<T>(task: AgentTask, input: Record<string, unknown>): Promise
   if (body?.code === 'model') throw new GatewayRefused('model', (body as { model?: string }).model)
   if (!res.ok || !body || body.data === undefined) {
     const why = body?.error ?? (res.ok ? 'The agent sent back no answer.' : `The agent server answered ${res.status}.`)
-    throw new Error(task === 'plan' ? `Couldn't make a plan: ${why}` : task === 'reshape' ? `Couldn't read the change: ${why}` : `Couldn't route the message: ${why}`)
+    throw new Error(task === 'plan' ? `Couldn't make a plan: ${why}` : task === 'reshape' ? `Couldn't read the change: ${why}` : task === 'discuss' ? `Couldn't answer that: ${why}` : `Couldn't route the message: ${why}`)
   }
   return { ...body.data, tokens: body.tokens ?? 0, model: body.model, source: body.source }
 }
@@ -104,4 +105,9 @@ export function routeMessage(message: string, farmers: RouteInput['farmers'], ta
 
 export function reshapeLive(message: string, ctx: ReshapeCtx, model?: string): Promise<LiveResult<ReshapeOut>> {
   return call<ReshapeOut>('reshape', { message, ctx, model })
+}
+
+// A question about a disagreement, answered on the model of the side it's about.
+export function discussLive(question: string, talk: Talk, model?: string): Promise<LiveResult<{ lines: TalkLine[] }>> {
+  return call<{ lines: TalkLine[] }>('discuss', { question, talk, model })
 }

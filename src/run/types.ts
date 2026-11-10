@@ -1,3 +1,4 @@
+import type { Talk } from './discuss'
 // The recorded-run log (see /mnt/project-files/homestead/fresh/run-log-format.md) and the
 // state the app derives from it. A live plan and a replayed run share these shapes.
 
@@ -92,6 +93,7 @@ export type RunEvent =
       limitTo?: number // the limit the suggested answer raises it to
       confidence?: Confidence // how sure the farmer is of its suggested answer
       basis?: string // what that rests on, in one short line
+      talk?: Talk // a disagreement: both sides and their costs, so you can ask about them
     }
   | { t: number; type: 'answer'; id: string; choice: string; by: 'human' | 'session' }
   | { t: number; type: 'task_ripe'; task: string; evidence?: string[]; summary?: string; change?: string }
@@ -148,6 +150,7 @@ export interface Ask {
   limitTo?: number
   confidence?: Confidence
   basis?: string
+  talk?: Talk
   t: number
   answer?: { choice: string; by: 'human' | 'session' | 'viewer'; t: number }
 }

@@ -13,6 +13,7 @@ import { AUTONOMY_PRESETS } from './types'
 import { scenario } from './simPlan'
 import type { Reshaped } from './reshape'
 import { MODELS } from './kit'
+import { isOwnWay, ownText, type Talk } from './discuss'
 
 const MIN = 60_000
 export const ERROR_LIMIT = 0.02
@@ -199,9 +200,9 @@ export function simulateRun(input: SimInput): RunEvent[] {
     const tokIn = Math.round((usd / 0.000004) * (0.8 + r() * 0.4))
     at(min, { type: 'usage', farmer: f, task, tokensIn: tokIn, tokensOut: Math.round(tokIn * 0.12), usd: +usd.toFixed(3), kind })
   }
-  const finish = (task: PlanTask, end: number, notes = task.doneWhen, evidence = ['tests/report.json']) => {
+  const finish = (task: PlanTask, end: number, notes = task.doneWhen, evidence = ['tests/report.json'], change?: string) => {
     finished.add(task.id)
-    at(end + 0.3, { type: 'task_ripe', task: task.id, summary: notes, evidence })
+    at(end + 0.3, { type: 'task_ripe', task: task.id, summary: notes, evidence, ...(change ? { change } : {}) })
     at(end + 0.4, { type: 'verify', task: task.id, by: checkerOf(task.farmer), pass: true })
     // The checker's pass is the commit: the task goes into the pull request. You review once, at the merge.
     at(end + 0.45, { type: 'accept', task: task.id, by: checkerOf(task.farmer) })
@@ -402,19 +403,48 @@ export function simulateRun(input: SimInput): RunEvent[] {
         { farmer: 'builder', position: d.builder.position, why: d.builder.why },
       ] })
       let side = d.designer
+      let own: string | undefined
       if (asks('disagree')) {
         const id = `ask-${++askN}`
+        // What talking it through needs: both sides, and what each way costs. Yours is reworked by the Designer at a
+        // retry cost and checked again, like work sent back.
+        const talk: Talk = {
+          topic: d.topic,
+          impact: d.impact,
+          sides: (['designer', 'builder'] as const).map((who) => ({ farmer: who, label: label(who), position: d[who].position, why: d[who].why, option: d[who].option })),
+          usd: usdPer('builder') * 0.2,
+          minutes: 2,
+          ownUsd: usdPer('designer') * 0.35,
+          ownMinutes: 3,
+          builder: 'designer',
+          checker: by,
+        }
         at(end + 0.7, {
           type: 'ask', id, farmer: 'designer', task: task.id, reason: 'disagree',
           question: `The Builder and I disagree on ${d.topic}.`,
           impact: d.impact,
           suggested: d.designer.option, alternatives: [d.builder.option],
+          talk,
         })
         const c = choose(id, d.designer.option)
         at(end + 2, { type: 'answer', id, choice: c, by: 'human' })
         if (c === d.builder.option) side = d.builder
+        if (isOwnWay(c)) own = ownText(c)
       } else {
         at(end + 0.8, { type: 'auto_fix', task: task.id, what: `The Designer and Builder disagreed on ${d.topic}. The ${label(lead)} picked the Designer's way, since it fits the done-when.` })
+      }
+      if (own) {
+        // Your way: the Designer builds it at a retry cost, a farmer other than its author checks it, and it's its
+        // own commit in the pull request.
+        at(end + 2.5, { type: 'tool', farmer: 'designer', task: task.id, tool: 'edit', summary: `Building your way: ${own}` })
+        usage(end + 2.51, 'designer', task.id, usdPer('designer') * 0.35, 'retry')
+        at(end + 2.52, { type: 'progress', task: task.id, value: 0.6 })
+        at(end + 3.6, { type: 'tool', farmer: 'designer', task: task.id, tool: 'run', summary: 'Took screenshots of the screen at every width' })
+        end += 5
+        at(end, { type: 'check', task: task.id, by, pass: true, notes: `Built your way: ${own}`, evidence: ['evidence/screen.png'], proof: shot(sc.screen, 'ok') })
+        changes++
+        finish(task, end, `Built your way: ${own}`, ['evidence/screen.png'], `Your way: ${own}`)
+        continue
       }
       at(end + 2.5, { type: 'tool', farmer: 'builder', task: task.id, tool: 'edit', summary: side.tool })
       usage(end + 2.51, 'builder', task.id, usdPer('builder') * 0.2, 'write')

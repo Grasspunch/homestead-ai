@@ -7,6 +7,7 @@ import { simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
+import { OWN, confirmOwn, isOwnWay, ownText, ownWayOf, type TalkLine } from './discuss'
 import { applyEdit, emptyEdit, type KitEdit } from './kit'
 import { key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope, type Suggestion } from './reshape'
 
@@ -49,6 +50,7 @@ export interface Project {
   answers?: Record<string, string> // your answers in this run, by ask id
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
+  talks?: Record<string, (TalkLine | { from: 'you'; text: string })[]> // talking a disagreement through, by ask id
   run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean }
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
@@ -172,7 +174,10 @@ export function needsConfirm(choice: string, reason?: string) {
   return reason === 'irreversible' || /\$|\b(ship|merge|deploy|release|everyone|stop|stay|leave|keep it small|raise|limit)\b/i.test(choice)
 }
 
-export type InWords = { kind: 'answered' | 'hold' | 'confirm'; choice: string } | { kind: 'none'; why: 'question' | 'no' | 'amount' | 'unclear'; amount?: string }
+export type InWords =
+  | { kind: 'answered' | 'hold' | 'confirm'; choice: string; ask?: string }
+  | { kind: 'discuss' } // a question about a disagreement: the sides answer it, and the ask stays open
+  | { kind: 'none'; why: 'question' | 'no' | 'amount' | 'unclear'; amount?: string }
 
 // Long answers are quoted short.
 export const clip = (text: string, n = 80) => (text.length > n ? `${text.slice(0, n - 1).trimEnd()}…` : text)
@@ -629,6 +634,13 @@ class Store {
     const other = dis && dis.type === 'disagree' ? dis.sides.find((x) => x.farmer !== ask.farmer)?.farmer : undefined
     const sides: Record<string, string> = dis && other && ask.alternatives?.[0] ? { [ask.farmer]: ask.suggested, [other]: ask.alternatives[0] } : {}
     const r = readAnswerWhy(text, ask.suggested, options, sides)
+    // A disagreement can be talked through: a way of your own is confirmed first, and a question gets answered.
+    const talk = ask.talk
+    if (talk && !('choice' in r) && r.none !== 'no' && r.none !== 'amount') {
+      const way = ownWayOf(text, talk.sides)
+      if (way) return { kind: 'confirm', choice: `${OWN}${way}`, ask: confirmOwn(way, talk, (f) => this.state(p)?.farmers[f]?.label ?? f) }
+      return { kind: 'discuss' }
+    }
     if (!('choice' in r)) return { kind: 'none', why: r.none, amount: r.amount }
     const choice = r.choice
     if (/^not yet/i.test(choice)) {
@@ -640,11 +652,20 @@ class Store {
     return { kind: 'confirm', choice }
   }
 
+  // A question about a disagreement and the sides' answers, kept with the ask so it reads as a short chat.
+  talkOn(askId: string, text: string, lines: TalkLine[]) {
+    const p = this.project()
+    if (!p) return
+    p.talks = { ...p.talks, [askId]: [...(p.talks?.[askId] ?? []), { from: 'you', text: clip(text) }, ...lines] }
+    this.notify()
+    this.persist()
+  }
+
   confirmInWords(askId: string, text: string, choice: string) {
     const p = this.project()
     if (!p) return
     this.chatTo(p.id, { from: 'you', text: clip(text) })
-    this.chatTo(p.id, { from: 'planner', text: `Got it. I read that as “${choice}”.` })
+    this.chatTo(p.id, { from: 'planner', text: isOwnWay(choice) ? `Going with your way: ${ownText(choice)}.` : `Got it. I read that as “${choice}”.` })
     p.notes = { ...p.notes, [askId]: text }
     this.answer(askId, choice)
   }

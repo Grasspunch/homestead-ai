@@ -9,7 +9,7 @@ import { Ico, LimitField, Mark, Portrait, Sign, Swatch, mins, usd, type IconName
 import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
-import { getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode } from './run/agent'
+import { discuss, getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode } from './run/agent'
 import { probeKeys, type Keys } from './run/live'
 import type { Scope } from './run/reshape'
 import { planInto } from './run/planning'
@@ -719,14 +719,30 @@ function Sureness({ ask }: { ask: Ask }) {
 
 // Answer in your own words: the Planner reads it as one of the options, or says it can't and the ask stays open.
 function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
+  const st = useStore()
   const [text, setText] = useState('')
   const [miss, setMiss] = useState('')
-  const [confirm, setConfirm] = useState<{ text: string; choice: string } | null>(null)
-  const send = (e: React.FormEvent) => {
+  const [busy, setBusy] = useState(false)
+  const [confirm, setConfirm] = useState<{ text: string; choice: string; ask?: string } | null>(null)
+  const p = st.project()
+  const talk = p?.talks?.[ask.id] ?? []
+  const send = async (e: React.FormEvent) => {
     e.preventDefault()
     const msg = text.trim()
-    if (!msg) return
+    if (!msg || busy) return
     const r = store.answerInWords(ask.id, msg)
+    // A question about a disagreement: the side it's about answers, and the ask stays open.
+    if (r.kind === 'discuss' && ask.talk && p) {
+      setMiss('')
+      setText('')
+      setBusy(true)
+      const s = st.state(p)
+      const a = await discuss(msg, ask.talk, (f) => s?.farmers[f as FarmerId]?.model)
+      setBusy(false)
+      store.talkOn(ask.id, msg, a.data)
+      if (a.error) store.say(a.error)
+      return
+    }
     const why =
       r.kind !== 'none'
         ? ''
@@ -738,15 +754,15 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
               ? `${r.amount} isn’t one of these options, so nothing has changed. Pick one, or tell me which.`
               : `I can’t match “${clip(msg)}” to one of these options, so this stays open. Pick one, or tell me again.`
     setMiss(why)
-    if (r.kind === 'none') return
+    if (r.kind === 'none' || r.kind === 'discuss') return
     setText('')
-    if (r.kind === 'confirm') setConfirm({ text: msg, choice: r.choice })
+    if (r.kind === 'confirm') setConfirm({ text: msg, choice: r.choice, ask: r.ask })
     if (r.kind === 'hold') onHold()
   }
   if (confirm)
     return (
       <div className="row in-words confirm">
-        <p className="said grow">I read that as “{confirm.choice}”. Go ahead?</p>
+        <p className="said grow">{confirm.ask ?? `I read that as “${confirm.choice}”. Go ahead?`}</p>
         <button className="btn long" onClick={() => store.confirmInWords(ask.id, confirm.text, confirm.choice)}>
           <Ico name="check" />
           Yes
@@ -758,12 +774,30 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
     )
   return (
     <>
+      {talk.length > 0 && (
+        <div className="said talk ask-talk" aria-label="Talking it through">
+          {talk.map((l, i) =>
+            l.from === 'you' ? (
+              <span key={i} className="you">
+                You: {l.text}
+              </span>
+            ) : (
+              <span key={i} className="side-line">
+                <Swatch farmer={l.from} />
+                <span>
+                  <b>{p && st.state(p)?.farmers[l.from]?.label}</b> {l.text}
+                </span>
+              </span>
+            ),
+          )}
+        </div>
+      )}
       {miss && <p className="said">{miss}</p>}
       <form className="row grow-form in-words" onSubmit={send}>
         <span className="field">
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder={ask.reason === 'disagree' ? 'Ask about either way, think it through, or suggest your own' : 'Or answer in your own words'} aria-label="Answer in your own words" />
         </span>
-        <button className="btn tan" type="submit" disabled={!text.trim()}>
+        <button className="btn tan" type="submit" disabled={!text.trim() || busy}>
           <Ico name="chat" />
           Send
         </button>

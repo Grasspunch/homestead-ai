@@ -8,6 +8,7 @@
 
 import type { Estimate, FarmerId, FarmerSetup, PlanTask } from '../run/types'
 import { reshapeSchema, type Ctx as ReshapeCtx } from '../run/reshape'
+import type { Talk, TalkLine } from '../run/discuss'
 import { MODELS, modelOf, providerOf } from '../run/kit'
 
 export const MODEL = 'claude-opus-5-5'
@@ -453,9 +454,47 @@ ${input.message}
   )
 }
 
+// ---- Talking a disagreement through ---------------------------------------------------
+
+// A question about two farmers' disagreement. The side it's about answers, or both, in one short line each, from
+// what each side said. It never decides: you still pick, or suggest your own way.
+export async function discussDisagreement(client: Clients, input: { question: string; talk: Talk }, model = 'Claude Sonnet 5'): Promise<AgentResult<{ lines: TalkLine[] }>> {
+  const t = input.talk
+  const sides = t.sides.map((s) => `- ${s.farmer} (${s.label}): ${s.position}. Option "${s.option}". Why: ${s.why}`).join('\n')
+  return callJSON(
+    client,
+    `You are two farmers on a crew of AI coding agents who disagree, answering the person's question about it. Answer as the side the question is about, or as both when it's about both or neither. One short line each, from what that side said and the costs given; never make up numbers, and never decide for the person. ${STYLE}`,
+    `They disagree on ${t.topic}.
+${t.impact ?? ''}
+
+The sides:
+${sides}
+
+Either side's change costs about $${t.usd.toFixed(2)} and ${t.minutes} min. A way of the person's own costs about $${t.ownUsd.toFixed(2)} and ${t.ownMinutes} min, since it's reworked and checked again.
+
+The person's question:
+<question>
+${input.question}
+</question>`,
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['lines'],
+      properties: {
+        lines: {
+          type: 'array',
+          description: 'One or two lines, one per side that answers',
+          items: { type: 'object', additionalProperties: false, required: ['from', 'text'], properties: { from: { type: 'string', enum: t.sides.map((s) => s.farmer) }, text: { type: 'string', description: 'One short sentence' } } },
+        },
+      },
+    },
+    model,
+  )
+}
+
 // ---- Entry point used by /api/agent ---------------------------------------------------
 
-export type AgentTask = 'plan' | 'route' | 'reshape'
+export type AgentTask = 'plan' | 'route' | 'reshape' | 'discuss'
 
 // An Anthropic client alone still works, for local dev without the gateway.
 export async function runAgent(clients: Clients | ClaudeClient, task: AgentTask, input: Record<string, unknown>): Promise<AgentResult<unknown>> {
@@ -482,6 +521,14 @@ export async function runAgent(clients: Clients | ClaudeClient, task: AgentTask,
       const ctx = input.ctx as ReshapeCtx | undefined
       if (!message || !ctx || !Array.isArray(ctx.tasks) || !Array.isArray(ctx.farmers)) throw new Error('A message and the farm are needed to change it.')
       return reshapeFarm(client, { message, ctx }, model)
+    }
+    case 'discuss': {
+      // Runs on the model of the side asked, not the Planner's.
+      const question = typeof input.question === 'string' ? input.question.trim() : ''
+      const talk = input.talk as Talk | undefined
+      if (!question || !talk || !Array.isArray(talk.sides)) throw new Error('A question and the disagreement are needed.')
+      const own = typeof input.model === 'string' && modelOf(input.model) ? input.model : 'Claude Sonnet 5'
+      return discussDisagreement(client, { question, talk }, own)
     }
     default:
       throw new Error(`Unknown task: ${String(task)}`)

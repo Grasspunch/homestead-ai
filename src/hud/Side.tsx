@@ -7,6 +7,7 @@ import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
 import { Ico, Mark, Portrait, Swatch, cents, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 import { BY_YOU } from '../run/rollback'
+import { isOwnWay } from '../run/discuss'
 import { agentName } from '../run/kit'
 
 const STATUS: Record<TaskState['status'], string> = {
@@ -613,7 +614,7 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
                   <Mark pass />
                   <span className="grow">
                     {t.name}: changed
-                    <span className="sub">You asked: {c}</span>
+                    <span className="sub">{isOwnWay(c) ? c : `You asked: ${c}`}</span>
                   </span>
                 </button>
               )),

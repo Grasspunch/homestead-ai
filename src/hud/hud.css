@@ -293,3 +293,5 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .reshape-chip button { border: 0; background: none; color: inherit; font: inherit; padding: 0 0 0 2px; cursor: pointer; line-height: 1; }
 .toast.with-undo { display: flex; gap: 10px; align-items: center; animation-duration: 6000ms; }
 .toast-undo { border: 0; background: none; color: var(--leaf); font: 700 var(--t-body)/1.2 var(--ui); cursor: pointer; padding: 0; text-decoration: underline; }
+.said.ask-talk .side-line { flex-direction: row; align-items: flex-start; gap: 6px; }
+.said.ask-talk .side-line .sw { margin-top: 5px; flex: none; }

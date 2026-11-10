@@ -6,10 +6,11 @@
 
 import type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
 import type { FarmerId } from './types'
-import { GatewayRefused, KeyMissing, SOURCE, planGoal as livePlan, probeKeys, reshapeLive, routeMessage as liveRoute } from './live'
+import { GatewayRefused, KeyMissing, SOURCE, discussLive, planGoal as livePlan, probeKeys, reshapeLive, routeMessage as liveRoute } from './live'
 import { providerOf } from './kit'
 import { changesFromLive, type Ctx as ReshapeCtx, type Proposal } from './reshape'
 import { simulatePlan, simulateRoute } from './simPlan'
+import { discussSim, type Talk, type TalkLine } from './discuss'
 
 const KEY = 'homestead.live'
 
@@ -89,4 +90,15 @@ export async function reshapeRead(message: string, ctx: ReshapeCtx, model?: stri
     if (e instanceof KeyMissing || e instanceof GatewayRefused) return { proposal: null, note: noteOf(e) }
     return { proposal: null, note: `The live Planner failed (${e instanceof Error ? e.message : String(e)}), so I read this myself.` }
   }
+}
+
+// A question about a disagreement. Live, it runs on the model of the side it names, or the Designer's; simulated,
+// the sides answer from what they said. Either way the ask stays open.
+export async function discuss(question: string, talk: Talk, modelOf: (f: string) => string | undefined): Promise<AgentAnswer<TalkLine[]>> {
+  const lower = question.toLowerCase()
+  const side = talk.sides.find((s) => lower.includes(s.label.toLowerCase())) ?? talk.sides[0]
+  const model = modelOf(side.farmer)
+  const r = await run<{ lines: TalkLine[] }>(() => discussLive(question, talk, model), () => ({ lines: discussSim(question, talk) }), 500, model)
+  const lines = r.data.lines.filter((l) => talk.sides.some((s) => s.farmer === l.from)).slice(0, 2)
+  return { ...r, data: lines.length ? lines : discussSim(question, talk) }
 }
