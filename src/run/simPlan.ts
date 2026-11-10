@@ -94,7 +94,7 @@ export const SOLO = { model: 'Claude Sonnet 5.5', contextTime: 1.35, contextCost
 // Each handoff between farmers costs a little: a summary written and read.
 const HANDOFF = 0.25
 // Which model each farmer runs on, and its price per token relative to Claude Opus 5.5 (the model picker's rates).
-const MODEL_OF: Record<FarmerId, string> = { planner: 'Claude Opus 5.5', designer: 'Claude Opus 5.5', builder: 'Claude Sonnet 5.5', tester: 'Claude Haiku 5.5', deployer: 'Claude Haiku 5.5' }
+const MODEL_OF: Record<FarmerId, string> = { planner: 'Claude Opus 5.5', designer: 'Claude Sonnet 5.5', builder: 'Claude Sonnet 5.5', tester: 'Claude Haiku 5.5', deployer: 'Claude Haiku 5.5' }
 const rateOf = (model: string) => MODELS.find((m) => m.model === model)?.rate ?? 1
 const SHIP = { id: 'ship', name: 'Ship to users', farmer: 'deployer' as FarmerId, doneWhen: 'Live for 10% with errors under 2%, then for everyone', gate: true, mins: 8, usd: 0.3 }
 
@@ -116,7 +116,7 @@ function draft(goal: string): Draft {
       why: {
         planner: "Keeps the answers and the widget in step, and passes your notes on. Opus, for judgment.",
         builder: "Indexes the help docs, answers from them and hands off when unsure. Sonnet, at half of Opus’s price.",
-        designer: "The widget is what customers see, so it needs taste. Opus, and it keeps the reply box clear.",
+        designer: "The widget is what customers see, so it keeps sources visible and the reply box clear. Sonnet, since screens follow the brand guide.",
         tester: "Runs the eval questions against every answer, so a wrong one never reaches a customer.",
         deployer: "Wrong answers reach real customers, so it ships to 10% first and rolls back on its own.",
       },
@@ -137,7 +137,7 @@ function draft(goal: string): Draft {
       why: {
         planner: "Keeps prices, payments and screens reading from one plan config. Opus, for judgment.",
         builder: "Prices, the checkout API and webhooks are one chain of money code. Sonnet, at half of Opus’s price.",
-        designer: "Buyers leave at confusing errors, so the checkout screens need taste. Opus.",
+        designer: "Buyers leave at confusing errors, so it owns the checkout screens and their copy. Sonnet, working from the brand guide.",
         tester: "Runs test-card purchases and refunds against every done-when, so nobody is charged wrong.",
         deployer: "Payments can't be half broken, so 10% of buyers first, rolled back at the first failed payment.",
       },
@@ -157,7 +157,7 @@ function draft(goal: string): Draft {
       why: {
         planner: "Keeps the queries and the charts agreeing on what each metric means. Opus, for judgment.",
         builder: "Writes the metric queries and the API. Sonnet, at half of Opus’s price.",
-        designer: "Charts only help if they read at a glance, so Opus designs them.",
+        designer: "Charts only help if they read at a glance, so it designs them on their own. Sonnet, working from the brand guide.",
         tester: "Checks every metric against a hand count, so the dashboard never shows a wrong number.",
         deployer: "Ships to 10% first and rolls back if the API slows down or errors.",
       },
@@ -182,7 +182,7 @@ const PRIORITY: FarmerId[] = ['builder', 'tester', 'planner', 'designer', 'deplo
 const WHY: Record<FarmerId, string> = {
   planner: 'Splits the work, prices it and passes your messages on. Needs judgment, so Opus.',
   builder: 'Writes most of the code. Sonnet, at half of Opus’s price.',
-  designer: 'Screens and copy need taste, so Opus.',
+  designer: 'Owns the screens and copy, from the brand guide. Sonnet.',
   tester: 'Checks the others against each done-when, so nobody grades its own work. Haiku, for very little.',
   deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own. Haiku, for very little.',
 }

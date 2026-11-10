@@ -1,5 +1,5 @@
 // Folds a run log into the state shown on screen at time t.
-import { soloFromRun } from './compare'
+import { checkCost, soloFromRun } from './compare'
 import type { ActivityLine, Ask, FarmerId, FarmerRun, RunEvent, RunState, TaskState } from './types'
 
 export function emptyState(): RunState {
@@ -30,7 +30,8 @@ export function parseLog(text: string): RunEvent[] {
 }
 
 // viewerAnswers: answers the person watching gave on replay, by ask id.
-export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<string, string> = {}): RunState {
+// replayAll: read the recorded answers as given (a plan preview, a test); on a watched run only your answers count.
+export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<string, string> = {}, replayAll = false): RunState {
   const s = emptyState()
   s.t = t
   const task = (id?: string) => (id ? s.tasks.find((x) => x.id === id) : undefined)
@@ -163,7 +164,8 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
       }
       case 'answer': {
         const a = s.asks.find((x) => x.id === e.id)
-        if (a) {
+        // Only an answer you gave counts as yours: a recorded answer you never saw is left unanswered.
+        if (a && (viewerAnswers[e.id] || e.by === 'session' || replayAll)) {
           const viewer = viewerAnswers[e.id]
           a.answer = viewer ? { choice: viewer, by: 'viewer', t: e.t } : { choice: e.choice, by: e.by, t: e.t }
           const f = farmer(a.farmer)
@@ -171,8 +173,8 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
           // A raised spend limit.
           const lf = farmer(a.limitFor)
           if (lf && a.limitTo && /^raise/i.test(a.answer.choice)) lf.limits = { ...lf.limits, usd: a.limitTo }
+          log({ text: a.answer.choice, kind: 'answer' }, e.t)
         }
-        log({ text: e.choice, kind: 'answer' }, e.t)
         break
       }
       case 'task_ripe': {
@@ -231,6 +233,7 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
       case 'done':
         s.done = { usd: e.usd, minutes: e.minutes, asks: e.asks, autoFixes: e.autoFixes, actions: e.actions }
         s.soloActual = soloFromRun(events)
+        s.checkUsd = checkCost(events)
         for (const f of Object.values(s.farmers)) if (f) f.state = 'done'
         break
     }

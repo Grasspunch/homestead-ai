@@ -8,7 +8,7 @@ import { Home } from './hud/Home'
 import { Ico, LimitField, Mark, Portrait, Sign, Swatch, mins, usd, type IconName } from './hud/bits'
 import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
-import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caught, outcome } from './hud/Side'
+import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
 import { getLiveMode, route, setLiveMode } from './run/agent'
 import { planInto } from './run/planning'
 import { scenario } from './run/simPlan'
@@ -59,7 +59,10 @@ function Farm() {
   const pending = p.approved ? pendingAsk(p.events, st.clock, st.viewerAnswers) : null
   const ask = pending ? s.asks.find((a) => a.id === pending) ?? null : null
   // After a clean merge you made yourself, the Planner offers once to merge future pull requests by itself.
-  const trust = p.approved && !!s.done && !p.trust && !p.everSentBack && p.autonomy.ship === 'ask' && cleanMerge(s)
+  // After three clean runs in a row (no rollback, nothing sent back or stopped), the Planner offers once to merge by itself.
+  // Not with May deploy off: then every release asks you anyway.
+  const deployOff = st.kit[p.id]?.deployer?.rules.deploy === false
+  const trust = p.approved && !!s.done && !p.trust && !deployOff && !p.everSentBack && p.autonomy.ship === 'ask' && (p.cleanRuns ?? 0) >= 3 && cleanMerge(s)
   // A rollback is a moment of its own until the next release goes out, or until you carry on.
   const lastDeploy = s.deploy[s.deploy.length - 1]
   const rolled = lastDeploy?.stage === 'rollback' && !st.seen.has(`${p.id}:${lastDeploy.t}`) ? lastDeploy : null
@@ -129,6 +132,9 @@ function Top({ p, s }: { p: Project; s: RunState }) {
       <div className="spacer" />
       {p.approved && (
         <>
+          <button className="btn white top-ico top-pr" onClick={() => store.setDrawer({ kind: 'summary' })}>
+            Pull request
+          </button>
           <button className="btn white top-ico inbox-btn" onClick={() => store.setDrawer({ kind: 'inbox' })} aria-label={open ? `Inbox, ${open} need you` : 'Inbox'}>
             <i className="mail-ico" />
             {open > 0 && <span className="badge">{open}</span>}
@@ -159,13 +165,16 @@ function Top({ p, s }: { p: Project; s: RunState }) {
 // The pixel font is for labels of three words or fewer; a longer answer reads better in the text face.
 const long = (label: string) => (label.trim().split(/\s+/).length > 3 ? ' long' : '')
 
-function Dialogue({ farmer, side, children }: { farmer: FarmerId; side: boolean; children: React.ReactNode }) {
+// dock: the plan stands on the left, full height, so the whole farm shows beside it. The Planner sits above it.
+function Dialogue({ farmer, side, dock = false, children }: { farmer: FarmerId; side: boolean; dock?: boolean; children: React.ReactNode }) {
   return (
-    <section className={`dlg${side ? ' with-side' : ''}`}>
+    <section className={`dlg${side && !dock ? ' with-side' : ''}${dock ? ' dock' : ''}`}>
       <div className="portrait">
-        <Portrait farmer={farmer} />
+        <Portrait farmer={farmer} size={dock ? 48 : 108} />
       </div>
-      <div className="body paper bubble" data-tail="left">{children}</div>
+      <div className="body paper bubble" data-tail={dock ? 'up' : 'left'}>
+        {children}
+      </div>
     </section>
   )
 }
@@ -174,7 +183,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
   const st = useStore()
   if (p.planning)
     return (
-      <Dialogue farmer="planner" side={side}>
+      <Dialogue farmer="planner" side={side} dock>
         <div className="who">
           <b>Planner</b>
         </div>
@@ -188,7 +197,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
     )
   if (p.error)
     return (
-      <Dialogue farmer="planner" side={side}>
+      <Dialogue farmer="planner" side={side} dock>
         <div className="who">
           <b>Planner</b>
           <span className="tag red">Couldn’t plan</span>
@@ -214,7 +223,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
   const setCrew = (next: FarmerId[]) => planInto(p, next)
   const missing = FARMER_ORDER.filter((x) => !s.farmers[x])
   return (
-    <Dialogue farmer="planner" side={side}>
+    <Dialogue farmer="planner" side={side} dock>
       <div className="who">
         <b>Planner</b>
         <span className="tag grey">Plan</span>
@@ -235,10 +244,12 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         {ids.length > 1 ? (
           <>
             This crew of {ids.length} takes about <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>
-            {one && est && one.minutes > est.minutes ? (
+            {one && est ? (
               <>
-                : <b className="gain">{mins(one.minutes - est.minutes)} sooner</b> than one agent alone
-                {one.usd - est.usd > 0.5 ? <>, and {usd(one.usd - est.usd)} less</> : null}{s.farmers.tester ? ", with the Tester checking every task" : ""}.
+                , against one Sonnet agent alone:{' '}
+                {one.minutes > est.minutes ? <b className="gain">{mins(one.minutes - est.minutes)} sooner</b> : <b>{mins(est.minutes - one.minutes)} slower</b>}
+                {Math.abs(est.usd - one.usd) < 1 ? ', at the same cost' : est.usd > one.usd ? <>, and <b>{usd(est.usd - one.usd)} more</b></> : <>, and <b>{usd(one.usd - est.usd)} less</b></>}
+                {s.farmers.tester ? ', with every task checked by someone else' : ''}.
               </>
             ) : (
               '.'
@@ -250,6 +261,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           </>
         )}
       </p>
+      <div className="crew-scroll">
       <div className="crew" role="table" aria-label="Crew">
         <div className="crew-head" role="row">
           <span role="columnheader">Farmer</span>
@@ -302,6 +314,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           )
         })}
       </div>
+      </div>
       {missing.length > 0 && (
         <div className="plan-note">
           {missing.map((id) => (
@@ -339,7 +352,8 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
   const before = s.deploy[i - 1]
   const everyone = before?.stage === '100%'
   const live = before ? Math.max(1, Math.round((t - before.t) / 60_000)) : 0
-  const peak = Math.max(0, ...s.monitor.filter((m) => m.t <= t && (!before || m.t >= before.t)).map((m) => m.metrics.errorRate ?? 0))
+  // This release only: its own launch numbers and every reading until the rollback.
+  const peak = Math.max(before?.metrics?.errorRate ?? 0, ...s.monitor.filter((m) => m.t <= t && (!before || m.t >= before.t)).map((m) => m.metrics.errorRate ?? 0))
   const cause = s.activity.find((a) => a.t > t && a.kind !== 'ask' && /error|time out|timeout/i.test(a.text))
   const shipper = (s.tasks.find((x) => x.gate)?.farmer ?? 'deployer') as FarmerId
   const mine = s.deploy[i]?.reason === BY_YOU
@@ -393,8 +407,8 @@ function TrustDialogue({ side }: { side: boolean }) {
       <div className="who">
         <b>Planner</b>
       </div>
-      <p>That pull request went in clean. Merge future pull requests by itself when every check passes?</p>
-      <p className="impact">A failed check always asks you. You can change it in Stops for you.</p>
+      <p>Three clean runs in a row: no rollback, nothing sent back. Merge future pull requests by itself when every check passes?</p>
+      <p className="impact">A failed check always asks you, and a rollback takes this back.</p>
       <div className="row">
         <button className="btn" onClick={() => store.answerTrust(true)} autoFocus>
           <Ico name="check" />
@@ -422,7 +436,8 @@ const REASON: Record<Ask['reason'], { label: string; urgency: 'red' | 'honey' | 
 const isShipAsk = (a: Ask) => a.reason === 'irreversible' && /merge/i.test(a.suggested)
 // You merged it yourself, sent nothing back, and stopped nothing.
 const cleanMerge = (s: RunState) =>
-  s.asks.some((a) => isShipAsk(a) && a.answer && /^merge|everyone/i.test(a.answer.choice)) &&
+  s.asks.some((a) => isShipAsk(a) && a.answer && /^merge/i.test(a.answer.choice)) &&
+  !s.deploy.some((d) => d.stage === 'rollback') &&
   !s.asks.some((a) => a.answer?.choice === SEND_BACK) &&
   !s.tasks.some((t) => t.stopped && t.status !== 'accepted')
 
@@ -432,7 +447,10 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
   const [writing, setWriting] = useState(false)
   const [task, setTask] = useState(list[0]?.id ?? '')
   const [note, setNote] = useState('')
+  const [all, setAll] = useState(false)
   const r = REASON[ask.reason]
+  const n = list.reduce((k, t) => k + 1 + (t.changes?.length ?? 0), 0)
+  const shown = all ? list : list.slice(0, 3)
   const merge = ask.suggested
   const rest = ask.alternatives.filter((a) => a !== SEND_BACK)
   return (
@@ -444,12 +462,12 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
           Your review
         </span>
       </div>
-      <p>{holding ? 'Holding. Nothing merges until you say so.' : ask.question}</p>
+      <p>{holding ? 'Holding. Nothing merges until you say so.' : `${/again/.test(ask.question) ? 'The pull request is ready again' : 'The pull request is ready'}: ${n} commit${n === 1 ? '' : 's'}, and every check passed.`}</p>
       <div className="list pr-commits">
-        {list.map((t) => {
+        {shown.map((t) => {
           const check = [...t.checks].reverse().find((c) => c.pass)
           return (
-            <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
+            <button key={t.id} className={writing && task === t.id ? 'picked' : ''} onClick={() => (writing ? setTask(t.id) : store.setDrawer({ kind: 'task', id: t.id }))}>
               <Mark pass />
               <span className="grow">
                 {t.name}
@@ -459,6 +477,11 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
             </button>
           )
         })}
+        {!all && list.length > shown.length && (
+          <button className="more" onClick={() => setAll(true)}>
+            <span className="grow">+{list.length - shown.length} more</span>
+          </button>
+        )}
       </div>
       {writing ? (
         <form
@@ -492,18 +515,16 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
             <Ico name="check" />
             {merge}
           </button>
-          {!holding && (
-            <>
-              <button className="btn tan" onClick={() => setWriting(true)}>
-                {SEND_BACK}
+          <button className="btn tan" onClick={() => setWriting(true)}>
+            {SEND_BACK}
+          </button>
+          {rest
+            .filter((a) => !(holding && /^not yet/i.test(a)))
+            .map((a) => (
+              <button key={a} className={`btn tan${long(a)}`} onClick={() => (/^not yet/i.test(a) ? hold() : store.answer(ask.id, a))}>
+                {a}
               </button>
-              {rest.map((a) => (
-                <button key={a} className={`btn tan${long(a)}`} onClick={() => (/^not yet/i.test(a) ? hold() : store.answer(ask.id, a))}>
-                  {a}
-                </button>
-              ))}
-            </>
-          )}
+            ))}
         </div>
       )}
     </>
@@ -587,8 +608,9 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
           <Ico name="check" />
           {ask.suggested}
         </button>
-        {!holding &&
-          ask.alternatives.map((a) => (
+        {ask.alternatives
+          .filter((a) => !(holding && /^not yet/i.test(a)))
+          .map((a) => (
             <button key={a} className={`btn tan${long(a)}`} onClick={() => pick(a)}>
               {a}
             </button>
@@ -623,7 +645,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
       </div>
       {s.done ? (
         <p>
-          {s.deploy[s.deploy.length - 1]?.stage === 'rollback' ? 'Everything is merged, and you rolled it back, so nothing is live.' : 'Everything is in and live for everyone.'} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caught(s).length || 'No'} problem{caught(s).length === 1 ? '' : 's'} caught before users saw {caught(s).length === 1 ? 'it' : 'them'}, and you made {s.asks.filter((a) => a.answer).length} call{s.asks.filter((a) => a.answer).length === 1 ? '' : 's'}.
+          {s.deploy[s.deploy.length - 1]?.stage === 'rollback' ? 'Everything is merged, and you rolled it back, so nothing is live.' : 'Everything is in and live for everyone.'} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caughtLine(s)}, and you made {s.asks.filter((a) => a.answer).length} call{s.asks.filter((a) => a.answer).length === 1 ? '' : 's'}.
         </p>
       ) : null}
       {s.done && outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}

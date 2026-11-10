@@ -143,7 +143,18 @@ export function FarmView(p: FarmViewProps) {
   const camRef = useRef<Cam & { cx: number; cy: number; tx: number; ty: number; manual: boolean }>({ s: 3, ox: 0, oy: 0, cx: 0, cy: 0, tx: 0, ty: 0, manual: false })
   const labels = useRef<HTMLDivElement>(null)
   const narrow = size.w < 900
-  const scale = narrow ? 2 : size.h < 760 ? 2.5 : 3
+  // While planning, the plan docks on the left and the farm fills the rest: every plot, at the largest scale that fits.
+  const DOCK = 592
+  const docked = p.planning && !narrow
+  const box = (() => {
+    const ps = layout.plots
+    if (!ps.length) return null
+    const x0 = Math.min(...ps.map((q) => q.x - 2.4)), x1 = Math.max(...ps.map((q) => q.x + q.w + 1.4))
+    const y0 = Math.min(...ps.map((q) => q.y - 1.4)), y1 = Math.max(...ps.map((q) => q.y + q.h + 2.2))
+    return { x0, x1, y0, y1 }
+  })()
+  const fits = (k: number) => !box || ((box.x1 - box.x0) * PX * k <= size.w - DOCK - (p.side ? 470 : 0) - 16 && (box.y1 - box.y0) * PX * k <= size.h - 96)
+  const scale = narrow ? 2 : docked ? ([3, 2.5, 2].find(fits) ?? 2) : size.h < 760 ? 2.5 : 3
   if (cam.s !== scale) setCam({ s: scale, ox: 0, oy: 0 })
   const focusId = p.openAsk?.task ?? (p.selected?.kind === 'task' ? p.selected.id : undefined)
   useEffect(() => {
@@ -153,7 +164,8 @@ export function FarmView(p: FarmViewProps) {
     const home = { x: Math.min(layout.w / 2, 15.5), y: 7.2 }
     // An ask centres its plot exactly in the free space above the dialogue; an opened plot only leans toward it.
     const asking = !!p.openAsk?.task && pl?.id === p.openAsk.task
-    const tgt = !pl ? home : asking ? { x: pl.x + pl.w / 2, y: pl.y + pl.h / 2 } : { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) }
+    const plots = box && docked ? { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 } : null
+    const tgt = !pl ? plots ?? home : asking ? { x: pl.x + pl.w / 2, y: pl.y + pl.h / 2 } : { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) }
     c.tx = tgt.x
     c.ty = tgt.y
     c.manual = false
@@ -161,8 +173,12 @@ export function FarmView(p: FarmViewProps) {
       c.cx = tgt.x
       c.cy = tgt.y
     }
-  }, [focusId, layout, !!p.openAsk])
+  }, [focusId, layout, !!p.openAsk, docked])
   const freeRect = () => {
+    if (docked) {
+      const w = size.w - DOCK - (p.side ? 470 : 0)
+      return { cx: DOCK + w / 2, cy: 80 + (size.h - 96) / 2 }
+    }
     const w = size.w - (p.side && !narrow ? 470 : 0)
     const top = narrow ? 60 : 80
     // The free space ends where the dialogue starts, measured, so a tall plan or review never covers what it's about.
@@ -294,14 +310,14 @@ export function FarmView(p: FarmViewProps) {
           <button
             key={pl.id}
             className={`plot-label${p.planning ? ' ghost' : ''}${sel ? ' sel' : ''}${t.status === 'accepted' ? ' done' : ''}`}
-            style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y + pl.h + 1) * T + 2, fontSize: 13 }}
+            style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y + pl.h + 1) * T + 2, fontSize: 13, maxWidth: (pl.w + 2.1) * T }}
             onClick={(e) => {
               e.stopPropagation()
               p.onTask(pl.id)
             }}
             onPointerUp={(e) => e.stopPropagation()}
           >
-            {t.name}
+            <span className="plot-name">{t.name}</span>
             {p.planning && <span className="plot-when">Done when {t.doneWhen.charAt(0).toLowerCase() + t.doneWhen.slice(1)}</span>}
             {!p.planning && t.status !== 'waiting' && (
               <span className="plot-bar" aria-hidden>

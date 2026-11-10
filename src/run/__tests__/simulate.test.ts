@@ -63,7 +63,8 @@ describe('simulated run', () => {
 describe('the moments in a run', () => {
   const plan = simulatePlan(GOAL)
   const run = (level: 'often' | 'matters' | 'undoable') => simulateRun({ goal: GOAL, ...plan, autonomy: AUTONOMY_PRESETS[level] })
-  const asks = (ev: ReturnType<typeof run>) => ev.filter((e) => e.type === 'ask').map((e) => (e.type === 'ask' ? e.reason : ''))
+  // Spend-limit asks come at every level, so they're left out of the comparison.
+  const asks = (ev: ReturnType<typeof run>) => ev.filter((e) => e.type === 'ask' && !e.limitFor).map((e) => (e.type === 'ask' ? e.reason : ''))
 
   it('splits the pricey task with a replan, and rolls back a bad rollout by itself', () => {
     const ev = run('matters')
@@ -214,7 +215,7 @@ describe('crew against one agent, fairly', () => {
     const ev = simulateRun({ goal: GOAL, ...plan, autonomy: AUTONOMY_PRESETS.matters })
     const ask = ev.find((e) => e.type === 'ask' && e.limitFor)
     expect(ask).toBeTruthy()
-    const s = reduce(ev, Number.MAX_SAFE_INTEGER)
+    const s = reduce(ev, Number.MAX_SAFE_INTEGER, {}, true)
     for (const f of Object.values(s.farmers)) if (f) expect(f.usd).toBeLessThanOrEqual(f.limits.usd + 0.01)
   })
 
@@ -224,5 +225,25 @@ describe('crew against one agent, fairly', () => {
     const qs = ev.filter((e) => e.type === 'ask').map((e) => (e.type === 'ask' ? e.question : ''))
     expect(qs.some((q) => /Ship to 10% again/.test(q))).toBe(true)
     expect(qs.some((q) => /Ship to everyone\?/.test(q))).toBe(true)
+  })
+})
+
+describe('the limit ask has a real no', () => {
+  it('stops the farmer: its unfinished tasks stay out, and it spends nothing more', () => {
+    const plan = simulatePlan(GOAL)
+    const base = { goal: GOAL, ...plan, autonomy: AUTONOMY_PRESETS.undoable }
+    const ask = simulateRun(base).find((e) => e.type === 'ask' && e.limitFor)
+    if (!ask || ask.type !== 'ask') throw new Error('no limit ask')
+    expect(ask.impact).not.toMatch(/\$0\.00/)
+    const ev = simulateRun({ ...base, choices: { [ask.id]: 'Stop it here' } })
+    expect(ev.some((e) => e.type === 'usage' && e.farmer === ask.limitFor && e.t > ask.t + 2000)).toBe(false)
+    expect(ev.some((e) => e.type === 'stop')).toBe(true)
+  })
+
+  it('never counts a recorded answer you did not give', () => {
+    const plan = simulatePlan(GOAL)
+    const ev = simulateRun({ goal: GOAL, ...plan })
+    const s = reduce(ev, Number.MAX_SAFE_INTEGER)
+    expect(s.asks.every((a) => !a.answer)).toBe(true)
   })
 })

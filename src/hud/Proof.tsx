@@ -1,5 +1,5 @@
 // What a check rests on, shown rather than described: the test run, the screenshots, the rollout's numbers.
-import { useEffect, useRef, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Proof, RunState, Screen, Shot, TaskState, TestResult } from '../run/types'
 import { Mark, Swatch } from './bits'
 import { ERROR_LIMIT } from '../run/simulate'
@@ -63,12 +63,21 @@ export function ProofView({ proof, chat, note }: { proof: Proof; chat: boolean; 
 
 // The rollout: error rate over time against the line where it rolls back by itself.
 export function Rollout({ state, compact = false }: { state: RunState; compact?: boolean }) {
+  // The chart is drawn at its real width, one unit to a pixel, so its labels are true type sizes.
+  const box = useRef<HTMLDivElement>(null)
+  const [W, setW] = useState(400)
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setW(Math.max(160, Math.round(el.clientWidth))))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [state.deploy.length > 0])
   const pts = state.monitor
   const deploys = state.deploy
   if (!deploys.length) return null
   const t0 = deploys[0].t
   const t1 = Math.max(state.t, pts.length ? pts[pts.length - 1].t : t0 + 1)
-  const W = 400
   const H = compact ? 90 : 120
   const max = 0.04
   const x = (t: number) => ((t - t0) / Math.max(1, t1 - t0)) * (W - 8) + 4
@@ -81,17 +90,35 @@ export function Rollout({ state, compact = false }: { state: RunState; compact?:
     if (!last || rb) segs.push({ stage: p.stage, pts: [p] })
     else last.pts.push(p)
   }
+  // Stage labels that would collide stack upward instead of running into each other.
+  const span = (d: (typeof deploys)[number]) => {
+    const w = (d.stage === 'rollback' ? 11 : d.stage === '100%' ? 8 : 3) * 7
+    const end = x(d.t) > W - 80
+    return end ? [x(d.t) - 3 - w, x(d.t) - 3] : [x(d.t) + 3, x(d.t) + 3 + w]
+  }
+  const lift: number[] = []
+  deploys.forEach((d, i) => {
+    const [a0, a1] = span(d)
+    const used = new Set<number>()
+    for (let j = 0; j < i; j++) {
+      const [b0, b1] = span(deploys[j])
+      if (a0 < b1 + 4 && b0 < a1 + 4) used.add(lift[j])
+    }
+    let k = 0
+    while (used.has(k)) k++
+    lift.push(k)
+  })
   const latest = pts[pts.length - 1]?.metrics
   const now = deploys[deploys.length - 1]
   return (
-    <div className="rollout">
+    <div className="rollout" ref={box}>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Error rate during the rollout">
         <line x1="0" x2={W} y1={y(ERROR_LIMIT)} y2={y(ERROR_LIMIT)} className="limit" />
         <text x={W - 4} y={y(ERROR_LIMIT) - 4} textAnchor="end" className="axis">rolls back at 2%</text>
-        {deploys.map((d) => (
+        {deploys.map((d, i) => (
           <g key={d.t}>
             <line x1={x(d.t)} x2={x(d.t)} y1="4" y2={H - 14} className={d.stage === 'rollback' ? 'mark back' : 'mark'} />
-            <text x={x(d.t) > W - 80 ? x(d.t) - 3 : x(d.t) + 3} textAnchor={x(d.t) > W - 80 ? 'end' : 'start'} y={H - 3} className={d.stage === 'rollback' ? 'axis bad' : 'axis'}>
+            <text x={x(d.t) > W - 80 ? x(d.t) - 3 : x(d.t) + 3} textAnchor={x(d.t) > W - 80 ? 'end' : 'start'} y={H - 3 - lift[i] * 15} className={d.stage === 'rollback' ? 'axis bad' : 'axis'}>
               {d.stage === 'rollback' ? 'rolled back' : d.stage === '100%' ? 'everyone' : '10%'}
             </text>
           </g>

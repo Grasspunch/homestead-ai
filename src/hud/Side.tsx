@@ -6,7 +6,6 @@ import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
 import { Ico, Mark, Portrait, Swatch, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 import { BY_YOU } from '../run/rollback'
-import { scenario } from '../run/simPlan'
 
 const STATUS: Record<TaskState['status'], string> = {
   waiting: 'Not started',
@@ -368,26 +367,40 @@ function fixes(s: RunState): Fix[] {
   return out
 }
 
-// What the crew bought you, against one agent doing it all: time, money, and what got caught on the way.
-export function caught(s: RunState): { where: string; what: string }[] {
-  const out: { where: string; what: string }[] = []
-  for (const t of s.tasks) for (const c of t.checks) if (!c.pass) out.push({ where: t.name, what: c.notes })
-  // A rollback only counts as caught when it came after the 10% stage; after a full ship every user already saw it.
+// What got caught: problems a different farmer's check found before the merge, and a bad release the 10% stage
+// stopped (10% of users did see that one). A rollback you made yourself isn't counted.
+export function caught(s: RunState): { where: string; what: string; kind: 'check' | 'canary' }[] {
+  const out: { where: string; what: string; kind: 'check' | 'canary' }[] = []
+  for (const t of s.tasks) for (const c of t.checks) if (!c.pass) out.push({ where: t.name, what: c.notes, kind: 'check' })
   s.deploy.forEach((d, i) => {
-    if (d.stage === 'rollback' && s.deploy[i - 1]?.stage !== '100%') out.push({ where: 'Rollout', what: d.reason ?? 'Errors passed 2% at 10%, so it rolled back on its own' })
+    if (d.stage === 'rollback' && d.reason !== BY_YOU && s.deploy[i - 1]?.stage === '10%') out.push({ where: 'Rollout', what: d.reason ?? 'Errors passed 2% at 10%, so it rolled back on its own', kind: 'canary' })
   })
   return out
 }
 
-// The outcome the crew bought: a bad release stopped at 10%, which one agent would have shipped to everyone.
+// "2 caught before merge, 1 stopped at 10%", said the same way everywhere.
+export function caughtLine(s: RunState) {
+  const c = caught(s)
+  const checks = c.filter((x) => x.kind === 'check').length
+  const canary = c.filter((x) => x.kind === 'canary').length
+  const parts = [`${checks || 'No'} problem${checks === 1 ? '' : 's'} caught before merge`]
+  if (canary) parts.push(`${canary} bad release stopped at 10%`)
+  return parts.join(', ')
+}
+
+// The case for a crew: a separate checker caught problems before the merge, for a few dollars of checks.
 export function outcome(s: RunState): { line: string; value: string } | null {
-  const i = s.deploy.findIndex((d, k) => d.stage === 'rollback' && d.reason !== BY_YOU && s.deploy[k - 1]?.stage === '10%')
-  if (i < 0) return null
-  const rb = scenario(s.goal).script.rollout
-  const peak = `${(rb.peak * 100).toFixed(1)}%`
+  if (!s.done || !s.soloActual) return null
+  const checks = caught(s).filter((x) => x.kind === 'check').length
+  if (!checks) return null
+  const gap = s.done.usd - s.soloActual.usd
+  const cost = Math.abs(gap) < 1 ? 'Same cost as one agent' : gap > 0 ? `${usd(gap)} more than one agent` : `${usd(-gap)} less than one agent`
+  const sooner = s.soloActual.minutes - s.done.minutes
+  const time = sooner > 0 ? `, ${mins(sooner)} sooner` : ''
+  const spent = s.checkUsd !== undefined ? `${usd(s.checkUsd)} of checks` : 'A separate checker'
   return {
-    line: `One agent would have shipped ${rb.bug} to 100% of users.`,
-    value: `Kept 90% of users off a ${peak} error rate. One agent would have shipped ${rb.bug} to everyone.`,
+    line: `${spent} caught ${checks} problem${checks === 1 ? '' : 's'} before merge. One agent has nobody to catch them.`,
+    value: `${cost}${time}, and ${spent.charAt(0).toLowerCase() + spent.slice(1)} caught ${checks} problem${checks === 1 ? '' : 's'} before merge.`,
   }
 }
 
@@ -418,6 +431,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
         {less > 0.5 ? <>, <b>{usd(less)}</b> less</> : less < -0.5 ? <>, <b>{usd(-less)}</b> more</> : null}
       </p>
       {out && <p className="vs-out">{out.line}</p>}
+      <p className="vs-note">One agent carries every file’s context, so each step runs about a third slower.</p>
       <div className="vs-grid" role="table">
         <span role="columnheader" />
         <span role="columnheader">This crew</span>
@@ -429,7 +443,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
         <b>{usd(crew.usd)}</b>
         <span>{usd(one.usd)}</span>
         <span>Caught</span>
-        <b>{found.length}</b>
+        <b>{found.filter((f) => f.kind === 'check').length} before merge</b>
         <span>No checker</span>
       </div>
       {found.length > 0 && (
@@ -542,17 +556,23 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
           <span className={`tag ${merged ? (last.stage === 'rollback' ? 'red' : 'green') : 'grey'}`}>{state}</span>
           <span className="mono">homestead/{p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}</span>
         </div>
+        {live && (
+          <button className="btn tan sm pr-rollback" onClick={() => store.rollBackNow()}>
+            <Ico name="back" size={20} />
+            Roll back
+          </button>
+        )}
       </div>
       {s.done && (
         <div className="sum">
           {usd(s.done.usd)} in {mins(s.done.minutes)}
-          {s.soloActual ? `. One Sonnet agent doing the same work alone: about ${usd(s.soloActual.usd)} in ${mins(s.soloActual.minutes)}, with nobody checking it.` : '.'}{' '}
-          {caught(s).length || 'No'} problem{caught(s).length === 1 ? '' : 's'} caught before users saw {caught(s).length === 1 ? 'it' : 'them'}.
-          {outcome(s) ? ` ${outcome(s)!.line}` : ''}
+          {s.soloActual ? `. One Sonnet agent alone: about ${usd(s.soloActual.usd)} in ${mins(s.soloActual.minutes)}.` : '.'} {caughtLine(s)}.
         </div>
       )}
       <div>
-        <h3>{commits} commit{commits === 1 ? '' : 's'}</h3>
+        <h3>
+          <span className="num">{commits}</span> commit{commits === 1 ? '' : 's'}
+        </h3>
         <div className="list">
           {inPr.flatMap((t) => {
             const check = [...t.checks].reverse().find((c) => c.pass)
@@ -600,12 +620,6 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
             ))}
           </div>
           <Rollout state={s} compact />
-          {live && !s.done && (
-            <button className="btn tan sm" onClick={() => store.rollBackNow()}>
-              <Ico name="back" size={20} />
-              Roll back
-            </button>
-          )}
         </div>
       )}
       {decided.length > 0 && (
@@ -685,7 +699,10 @@ export function ControlPanel({ p }: { p: Project }) {
             <div className="moment" key={m.key}>
               <span className="grow">
                 {m.label}
-                <span className="sub">{v === 'ask' ? 'Asks you first, with a suggested answer' : m.auto}</span>
+                <span className="sub">
+                  {v === 'ask' ? 'Asks you first, with a suggested answer' : m.auto}
+                  {m.key === 'ship' && v === 'ask' ? `. Clean runs in a row: ${Math.min(3, p.cleanRuns ?? 0)} of 3` : ''}
+                </span>
               </span>
               <div className="seg" role="radiogroup" aria-label={m.label}>
                 <button role="radio" aria-checked={v === 'ask'} className={v === 'ask' ? 'on' : ''} disabled={locked} onClick={() => set(m.key as Moment, 'ask')}>

@@ -48,3 +48,11 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - The pull request review is the one ask with a list: each commit with its check line, scrolling inside the bubble. Send back opens a task picker and a note in one row.
 - Chickens stand still and peck; clicking one floats a heart. Idle farmers do chores. Nothing on the map is decoration without a job or a reaction.
 - No text on the map beyond plot names (and done-whens while planning).
+
+## Checkpoint 14
+- The plan docks on the left, full height, with the Planner's portrait above it and the tail pointing up. The farm fills the rest at the largest scale (3, 2.5 or 2) that shows every plot.
+- Plot names wrap rather than truncate. Labels never grow wider than their column.
+- The rollout chart draws one unit to a pixel, so its labels are real 13px type. Labels that would collide stack upward.
+- Digits never sit in px4: a count in a section head is in the body font.
+- "Not yet" holds without taking the other answers away. A long commit list shows three and "+N more".
+- The top bar has a labelled Pull request button. Roll back sits under the pull request's title whenever anything is live.

@@ -99,6 +99,8 @@ export interface SimInput {
   plannedModels?: Partial<Record<FarmerId, string>>
   // Work you sent back from the pull request review, by the ask you answered: which task, and what should change.
   sendBacks?: Record<string, { task: string; note: string }>
+  // A later run of the same farm: last run's release bug is already fixed, so this release goes out clean.
+  bugFixed?: boolean
 }
 
 export const SEND_BACK = 'Send back'
@@ -359,6 +361,9 @@ export function simulateRun(input: SimInput): RunEvent[] {
         if (sb && back) {
           // Sent back: its farmer changes it at a retry cost, a different farmer checks it, and it's a new commit.
           const bf = back.farmer
+          // Checked again by someone other than its author and its first checker, when the crew has one.
+          const first = checkerOf(bf)
+          const again: FarmerId = farmers.find((x) => x.id !== bf && x.id !== first && x.id !== 'deployer')?.id ?? first
           const t0 = reviewAt + 1.6
           r = rng(hash(goal + back.id + sb.note))
           at(t0, { type: 'task_start', task: back.id, farmer: bf })
@@ -367,10 +372,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
           at(t0 + 0.42, { type: 'progress', task: back.id, value: 0.5 })
           at(t0 + 1.2, { type: 'tool', farmer: bf, task: back.id, tool: 'edit', summary: 'Ran the tests' })
           at(t0 + 1.4, { type: 'task_built', task: back.id })
-          at(t0 + 1.8, { type: 'check', task: back.id, by: checkerOf(bf), pass: true, notes: back.doneWhen, evidence: ['tests/report.json'], proof: back.farmer === 'designer' ? shot(sc.screen, 'ok') : unit(back) })
+          at(t0 + 1.8, { type: 'check', task: back.id, by: again, pass: true, notes: back.doneWhen, evidence: ['tests/report.json'], proof: back.farmer === 'designer' ? shot(sc.screen, 'ok') : unit(back) })
           at(t0 + 2.1, { type: 'task_ripe', task: back.id, summary: `Changed as you asked: ${sb.note}`, evidence: ['tests/report.json'], change: sb.note })
-          at(t0 + 2.2, { type: 'verify', task: back.id, by: checkerOf(bf), pass: true })
-          at(t0 + 2.25, { type: 'accept', task: back.id, by: checkerOf(bf) })
+          at(t0 + 2.2, { type: 'verify', task: back.id, by: again, pass: true })
+          at(t0 + 2.25, { type: 'accept', task: back.id, by: again })
           changes++
           reviewAt = t0 + 2.3
           continue
@@ -399,6 +404,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
     }
 
     // Rollout: 10% (or everyone, if you said so), watch, it goes bad, roll back by itself, fix, ship again.
+    // The bug lives in this release only the first time: on a later run of the same farm it was fixed last time.
+    if (!input.bugFixed) {
     const first = everyone ? '100%' : '10%'
     at(t, { type: 'progress', task: task.id, value: 0.3 })
     at(t + 0.1, { type: 'deploy', stage: first, metrics: { errorRate: 0.003, p95ms: 1700, answerScore: 0.91 } })
@@ -423,6 +430,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
     } else {
       at(t, { type: 'auto_fix', task: task.id, what: `Fixed what caused the rollback, so the ${label(f)} shipped to 10% again by itself.` })
     }
+    }
+    if (!(input.bugFixed && everyone)) {
     at(t, { type: 'progress', task: task.id, value: 0.5 })
     at(t + 0.1, { type: 'deploy', stage: '10%', metrics: { errorRate: 0.002, p95ms: 1600, answerScore: 0.92 } })
     const good = [0.002, 0.003, 0.002, 0.003]
@@ -442,6 +451,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     } else {
       at(t, { type: 'auto_fix', task: task.id, what: `10% stayed under ${ERROR_LIMIT * 100}% errors, so the ${label(f)} shipped to everyone by itself.` })
     }
+    }
     at(t, { type: 'progress', task: task.id, value: 0.8 })
     at(t + 0.1, { type: 'deploy', stage: '100%', metrics: { errorRate: 0.003, p95ms: 1650, answerScore: 0.92 } })
     ;[0.003, 0.004, 0.003].forEach((e, i) => at(t + 0.6 + i * 0.6, { type: 'monitor', stage: '100%', metrics: { errorRate: e, p95ms: 1650 + i * 30, answerScore: 0.92 } }))
@@ -459,32 +469,48 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (e.type === 'ask') usage(e.t / MIN - 0.02, e.farmer, e.task ?? '', usdPer(e.farmer) * 0.03, 'read')
   }
   ev.sort((a, b) => a.t - b.t)
-  // Spend limits: the Planner pauses a farmer the moment it reaches its limit, and asks you to raise it.
+  // Spend limits: the Planner pauses a farmer the moment it reaches its limit, at every level, and asks you:
+  // raise the limit, or stop the farmer there (its unfinished tasks stay out of the pull request).
   {
     const total: Partial<Record<FarmerId, number>> = {}
     for (const e of ev) if (e.type === 'usage') total[e.farmer] = (total[e.farmer] ?? 0) + e.usd
     const spent: Partial<Record<FarmerId, number>> = {}
     const paused = new Set<FarmerId>()
     for (const e of [...ev]) {
-      if (e.type !== 'usage') continue
+      if (e.type !== 'usage' || !ev.includes(e)) continue
       const f = farmers.find((x) => x.id === e.farmer)
       spent[e.farmer] = (spent[e.farmer] ?? 0) + e.usd
       if (!f || paused.has(f.id) || spent[f.id]! <= f.limits.usd) continue
       paused.add(f.id)
+      const left = total[f.id]! - spent[f.id]!
+      // Reached at its very last step: nothing left to pause. It shows as over its limit instead.
+      if (left < 0.5) continue
       const to = Math.ceil((total[f.id]! * 1.1) / 5) * 5
       const tm = e.t / MIN
-      if (asks('cost')) {
-        const id = `ask-limit-${f.id}`
-        const suggested = `Raise its limit to ${money(to)}`
-        at(tm + 0.01, {
-          type: 'ask', id, farmer: lead, task: e.task, reason: 'cost', limitFor: f.id, limitTo: to,
-          question: `The ${f.label} reached its ${money(f.limits.usd)} limit, so I paused it.`,
-          impact: `Its work left needs about ${money(total[f.id]! - spent[f.id]!)} more, ${money(total[f.id]!)} in all.`,
-          suggested, alternatives: ['Not yet'],
+      const id = `ask-limit-${f.id}`
+      const suggested = `Raise its limit to ${money(to)}`
+      const stopIt = 'Stop it here'
+      at(tm + 0.01, {
+        type: 'ask', id, farmer: lead, task: e.task, reason: 'cost', limitFor: f.id, limitTo: to,
+        question: `The ${f.label} reached its ${money(f.limits.usd)} limit, so I paused it.`,
+        impact: `Its work left needs about ${money(left)} more, ${money(total[f.id]!)} in all. Stopping it leaves its unfinished tasks out of the pull request.`,
+        suggested, alternatives: [stopIt],
+      })
+      const c = choose(id, suggested)
+      at(tm + 0.02, { type: 'answer', id, choice: c, by: 'human' })
+      if (c === stopIt) {
+        const cut = e.t + 0.02 * MIN
+        const done = new Set(ev.filter((x) => x.type === 'accept' && x.t <= cut).map((x) => (x.type === 'accept' ? x.task : '')))
+        const mine = new Set(ev.filter((x) => x.type === 'task_start' && x.farmer === f.id && !done.has(x.task)).map((x) => (x.type === 'task_start' ? x.task : '')))
+        const keep = ev.filter((x) => {
+          if (x.t <= cut || x.type === 'goal' || x.type === 'plan' || x.type === 'farmer') return true
+          if ('farmer' in x && x.farmer === f.id && x.type !== 'ask') return false
+          if ('task' in x && x.task && mine.has(x.task)) return false
+          return true
         })
-        at(tm + 0.02, { type: 'answer', id, choice: choose(id, suggested), by: 'human' })
-      } else {
-        at(tm + 0.01, { type: 'auto_fix', task: e.task, what: `The ${f.label} reached its ${money(f.limits.usd)} limit. The ${label(lead)} raised it to ${money(to)} to finish its work.` })
+        ev.length = 0
+        ev.push(...keep)
+        for (const k of mine) at(tm + 0.05, { type: 'stop', task: k, reason: `You stopped the ${f.label} at its ${money(f.limits.usd)} limit. This task stays out of the pull request.` })
       }
     }
     ev.sort((a, b) => a.t - b.t)

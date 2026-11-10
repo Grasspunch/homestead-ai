@@ -8,19 +8,19 @@ An engineer or tech lead who hands a feature to several coding agents and stays 
 
 ## The problem
 
-One agent on a whole feature works in a row and grades its own work. Several agents are faster, but today that means watching terminals and guessing when to step in. In the sample run, "Index the help docs" has used $7.83 of its $9.00 at about half done and is heading for $27; splitting it costs about $12 less. Later a timeout bug passes every test. The Deployer ships to 10% first, sees errors reach 3.1%, and rolls back by itself. One agent with no checker would have shipped it to every user.
+One agent on a whole feature works in a row and grades its own work. Several agents are faster, but today that means watching terminals and guessing when to step in. In the support sample, "Index the help docs" has used $8.50 of its $9.80 at about half done and is heading for $29; splitting it costs about $13 less. A separate checker then catches two problems before the merge: two tests crashing on empty input, and sources covering the reply box. One agent grading its own work has nobody to catch them. As a safety net, the release goes to 10% first: in the sample, and on a new farm's first run, a timeout bug gets that far and rolls back by itself at 3.1% errors.
 
 ## Three interaction choices
 
-**The crew stops for you, at a level you pick.** "Often", "When it matters" or "Only what's hard to undo". Everything else is handled and listed under "Fixed without you". Each ask has a suggested answer, and your answer changes the run from there on. A farmer that reaches its spend limit is paused until you raise it.
+**The crew stops for you, at a level you pick.** "Often", "When it matters" or "Only what's hard to undo". Everything else is handled and listed under "Fixed without you". Each ask has a suggested answer, and your answer changes the run from there on. A farmer that reaches its spend limit is paused, at every level: raise the limit, or stop it there and leave its unfinished tasks out.
 
-**One review, at the pull request.** A task commits when a different farmer's check passes. You review once: every commit with the check that let it in. Merge, or send one task back with a note; it is reworked at a retry cost, checked again, and comes back as one more commit. After a clean merge the Planner offers once to merge by itself when every check passes. While a release is live you can roll it back yourself.
+**One review, at the pull request.** A task commits when a different farmer's check passes. You review once: every commit with the check that let it in. Merge, or send one task back with a note; it is reworked at a retry cost, checked again, and comes back as one more commit. After three clean runs in a row (no rollback, nothing sent back or stopped) the Planner offers once to merge by itself; a rollback takes that back. While a release is live you can roll it back yourself.
 
 **The plan is a set of choices you can see.** Each farmer, why it is on the crew, its model and limit, priced against one agent. Change a model and the price moves. Turn off the Deployer's "May deploy" and it asks before every release: the merge, the ship again after a rollback, and 10% to everyone.
 
 ## Crew against one agent
 
-The comparison is one Claude Sonnet 5.5 agent doing the same work in a row, with no checker and no check cost. Before the run both columns are estimates; after it both come from the run. In the support sample the crew costs $58 and finishes in under 2 hours; the same work alone costs about $50 and takes 2 h 17 min. The crew is a little dearer, about half an hour sooner, and checked.
+The comparison is one Claude Sonnet 5.5 agent doing the same work in a row, with no checker and no check cost. Before the run both columns are estimates; after it both come from the run. One assumption carries the time gap: one agent holds every file's context, so each step runs 1.35 times slower. In the support sample the crew costs about $56 and finishes in under 2 hours; the same work alone costs about $54 and takes 2 h 17 min. So the crew costs about the same, is about half an hour sooner, and about $3.50 of checks caught two problems before merge.
 
 ## What is simulated
 

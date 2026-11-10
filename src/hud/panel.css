@@ -337,3 +337,5 @@ button.crew-x:hover { opacity: 1; }
   .crew-head span { padding-bottom: 2px; }
 }
 .crew-spend-row .over { color: var(--berry); }
+.plot-label .plot-name { white-space: normal; text-align: center; line-height: 1.15; }
+.pp-roll .rollout text { display: none; }

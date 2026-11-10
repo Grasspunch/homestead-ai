@@ -159,6 +159,7 @@ export interface RunState {
   singleAgentEstimate?: Estimate
   // At the end: one Sonnet agent doing this run's own work alone, with no checker.
   soloActual?: Estimate
+  checkUsd?: number // what the checks cost in this run
   asks: Ask[]
   autoFixes: { t: number; task?: string; what: string }[]
   disagreements: { t: number; task: string; sides: { farmer: FarmerId; position: string; why?: string }[] }[]

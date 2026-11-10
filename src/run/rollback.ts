@@ -8,7 +8,6 @@ export const BY_YOU = 'Rolled back by you'
 export const SHIP_AGAIN = 'Ship to 10% again'
 export const LEAVE_IT = 'Leave it rolled back'
 type Done = Extract<RunEvent, { type: 'done' }>
-const OWN = new Set(['progress', 'usage', 'task_built', 'check', 'task_ripe', 'verify', 'accept'])
 
 // The release stage live at time t, if any.
 export function liveStage(events: RunEvent[], t: number) {
@@ -31,9 +30,9 @@ export function rollBack(events: RunEvent[], t0: number, askId: string, choice?:
   const shipper = [...events].reverse().find((e) => e.type === 'task_start' && e.t <= t0 && gates.has(e.task))
   if (!shipper || shipper.type !== 'task_start') return events
   const gate = shipper.task
-  // Part of the release itself: the stages, their metrics, and the release task's own progress and finish.
+  // Part of the release itself: the stages, their metrics, and everything the release task did, said or logged.
   const rollout = (e: RunEvent) =>
-    e.type === 'deploy' || e.type === 'monitor' || (OWN.has(e.type) && 'task' in e && e.task === gate)
+    e.type === 'deploy' || e.type === 'monitor' || (e.type !== 'task_start' && 'task' in e && e.task === gate)
   const withDone = (out: RunEvent[]) => {
     const done = events.find((e) => e.type === 'done')
     const body: RunEvent[] = out.filter((e) => e.type !== 'done').sort((a, b) => a.t - b.t)

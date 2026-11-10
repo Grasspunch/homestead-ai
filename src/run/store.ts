@@ -38,7 +38,9 @@ export interface Project {
   sendBacks?: Record<string, { task: string; note: string }> // work you sent back from the pull request review, by ask
   rollbacks?: number[] // run times you rolled a live release back
   everSentBack?: boolean // a send back on this farm, ever: the trust offer never follows one
-  trust?: 'offered' | 'yes' | 'no' // after a clean merge, the Planner offers once to merge by itself
+  trust?: 'offered' | 'yes' | 'no'
+  runs?: number // runs watched to the end
+  cleanRuns?: number // runs in a row with no rollback, no send back and nothing stopped // after a clean merge, the Planner offers once to merge by itself
 }
 
 export interface ChatLine {
@@ -173,13 +175,19 @@ class Store {
       if (!this.playing) return
       const p = this.project()
       if (!p || !p.approved) return
-      const dt = now - this.last
+      // A slow frame (a hidden tab, a busy laptop) never jumps the run forward by more than a tenth of a second.
+      const dt = Math.min(100, now - this.last)
       this.last = now
       const waiting = pendingAsk(p.events, this.clock, this.viewerAnswers)
       if (!waiting) {
         const end = duration(p.events)
-        this.clock = Math.min(end, this.clock + dt * this.speed)
-        if (this.clock >= end) this.playing = false
+        // And the clock never passes an ask you haven't answered: it stops on it.
+        const next = p.events.find((e) => e.type === 'ask' && e.t > this.clock && !this.viewerAnswers[e.id])
+        this.clock = Math.min(end, next ? next.t : end, this.clock + dt * this.speed)
+        if (this.clock >= end) {
+          this.playing = false
+          this.finishRun(p)
+        }
         this.notify()
       } else if (this.lastAsk !== waiting) {
         // The run stops on the farmer that needs you; the dialogue shows its ask.
@@ -226,7 +234,7 @@ class Store {
     const farmers = planned.map((f) => applyEdit(f, kit[f.id]))
     const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
-    let events = simulateRun({ goal: p.goal, farmers, tasks: plan.tasks, estimate: plan.estimate, singleAgentEstimate: plan.singleAgentEstimate, autonomy: p.autonomy, choices: this.viewerAnswers, deployAsks, plannedModels, sendBacks: p.sendBacks })
+    let events = simulateRun({ goal: p.goal, farmers, tasks: plan.tasks, estimate: plan.estimate, singleAgentEstimate: plan.singleAgentEstimate, autonomy: p.autonomy, choices: this.viewerAnswers, deployAsks, plannedModels, sendBacks: p.sendBacks, bugFixed: p.kind !== 'sample' && (p.runs ?? 0) > 0 })
     // Steps a farmer took before you changed its model were paid at the old rate.
     const at = this.kitAt[p.id] ?? {}
     const rate = (m: string) => MODELS.find((x) => x.model === m)?.rate ?? 1
@@ -269,6 +277,27 @@ class Store {
     p.everSentBack = true
     this.answer(askId, SEND_BACK)
     this.play()
+  }
+
+  // A run reached its end: count it, and if it was clean, toward the offer to merge by itself.
+  // A rollback resets the count, and takes back merging by itself if you'd allowed it.
+  private finished = new Set<string>()
+  private finishRun(p: Project) {
+    const key = `${p.id}:${p.runs ?? 0}`
+    if (this.finished.has(key)) return
+    this.finished.add(key)
+    const s = this.state(p)
+    if (!s?.done) return
+    p.runs = (p.runs ?? 0) + 1
+    const rolled = s.deploy.some((d) => d.stage === 'rollback')
+    const clean = !rolled && !s.asks.some((a) => a.answer?.choice === SEND_BACK) && !s.tasks.some((t) => t.stopped)
+    p.cleanRuns = clean ? (p.cleanRuns ?? 0) + 1 : 0
+    if (rolled && p.autonomy.ship === 'auto' && p.trust === 'yes') {
+      p.autonomy = { ...p.autonomy, ship: 'ask' }
+      p.trust = undefined
+      this.say('A rollback took back merging by itself. Pull requests ask you again.')
+    }
+    this.notify()
   }
 
   // Roll back a live release yourself, from the pull request.

@@ -214,3 +214,27 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 .row:has(> .btn.long) > .btn, .row:has(> .btn.long) > form > .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
 .vs .vs-out { margin: 4px 0 8px; font-size: var(--t-body); color: var(--bark); font-weight: 700; }
 .dlg p.gain-line { color: var(--leaf); font-weight: 700; }
+
+/* The plan, docked: full height on the left, so every plot shows beside it. The Planner sits above, the tail points up at it. */
+.dlg.dock { left: 16px; right: auto; transform: none; top: 80px; bottom: 16px; width: 560px; flex-direction: column; align-items: flex-start; gap: 30px; }
+.dlg.dock .portrait { width: 72px; height: 72px; border-width: 10px; border-image-width: 12px; }
+.dlg.dock .portrait canvas { inset: 2px; }
+.dlg.dock .approve small { display: none; }
+.dlg.dock .body { flex: 1; min-height: 0; width: 100%; --tail-at: 30px; }
+.dlg.dock .crew-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.dlg.dock .crew { grid-template-columns: minmax(0, 1fr) 168px 80px 24px; grid-auto-flow: row dense; column-gap: 10px; }
+.dlg.dock .crew-head span:nth-child(2) { display: none; }
+.dlg.dock .crew-row .why { grid-column: 1 / -1; border-top: 0; min-height: 0; display: block; white-space: normal; line-height: 1.35; padding: 0 0 0 20px; margin-bottom: 8px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.dlg.dock .plan-foot { flex-wrap: nowrap; gap: 10px; }
+.dlg.dock .plan-foot .plan-setting > span:first-child { display: none; }
+@media (max-height: 800px) { .dlg.dock .crew-row .why { -webkit-line-clamp: 1; margin-bottom: 6px; } }
+.dlg.dock .plan-foot .approve { margin-left: auto; }
+.vs .vs-note { margin: 0 0 8px; font-size: var(--t-meta); color: var(--bark-3); }
+.top .top-pr { padding: 0 6px; font-size: 17px; }
+.side .pr-rollback { margin-top: 10px; }
+/* Digits never in the small pixel font: its 6 reads as an E. */
+h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacing: 0; }
+.dlg .send-back .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
+.dlg .pr-commits { max-height: none; }
+.dlg .pr-commits .picked { background: rgba(79, 143, 63, .14); }
+.dlg .pr-commits .more { color: var(--bark-2); font-weight: 700; }
