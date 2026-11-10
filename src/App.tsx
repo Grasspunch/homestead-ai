@@ -103,7 +103,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
             <i className="mail-ico" />
             {open > 0 && <span className="badge">{open}</span>}
           </button>
-          <button className="pill paper" onClick={() => store.setDrawer({ kind: 'usage' })} aria-label="Spend">
+          <button className="btn white top-ico top-coin" onClick={() => store.setDrawer({ kind: 'usage' })} aria-label={`Spend so far, ${usd(s.usage.usd)}`}>
             <i className="coin" />
             <b>{usd(s.usage.usd)}</b>
           </button>
@@ -241,7 +241,9 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
                   <i className="mark no" />
                 </button>
               ) : (
-                <span />
+                <span className="crew-x locked" title="Every crew needs a Builder, since it writes the code" aria-label="The Builder can't be dropped">
+                  <i className="mark no" />
+                </span>
               )}
             </div>
           )

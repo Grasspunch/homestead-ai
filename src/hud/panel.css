@@ -282,6 +282,7 @@ select.field-box { appearance: none; -webkit-appearance: none; padding-right: 26
 .crew-row .why { font-size: var(--t-meta); line-height: 1.35; color: var(--bark-3); padding: 6px 0; }
 .crew-x { justify-content: center; opacity: .6; }
 button.crew-x:hover { opacity: 1; }
+.crew-x.locked { opacity: .22; filter: grayscale(1); cursor: help; }
 .plan-note { display: flex; align-items: center; gap: 16px; font-size: var(--t-meta); color: var(--bark-3); }
 .plan-note .link { font-size: var(--t-meta); }
 .plan-note .grow { flex: 1; text-align: right; }
@@ -307,7 +308,7 @@ button.crew-x:hover { opacity: 1; }
 /* screenshots: the real screen, cropped to what was checked, with a plain border */
 .shot { margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .shot-img { position: relative; display: block; border: 2px solid var(--field-line); background: #fff; line-height: 0; }
-.shot-img img { display: block; width: 100%; height: auto; }
+.shot-img img { display: block; width: 100%; height: auto; image-rendering: auto; }
 
 .shot .ring { position: absolute; border: 3px solid var(--berry); border-radius: 6px; box-shadow: 0 0 0 3px rgba(196, 97, 90, .25); }
 .shot figcaption { font-size: var(--t-meta); font-weight: 700; }

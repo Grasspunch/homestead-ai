@@ -95,7 +95,7 @@ export const PLAN_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'label', 'agent', 'model', 'context', 'constraints', 'limits'],
+        required: ['id', 'label', 'agent', 'model', 'context', 'constraints', 'limits', 'why'],
         properties: {
           id: { type: 'string', enum: FARMER_IDS },
           label: { type: 'string', description: 'For example "Builder"' },
@@ -104,6 +104,7 @@ export const PLAN_SCHEMA = {
           context: { type: 'array', items: { type: 'string' }, description: 'The only paths and docs this farmer may read, 2 to 5 entries, for example "docs/pricing.md" or "src/checkout/"' },
           constraints: { type: 'array', items: { type: 'string' }, description: 'What it may and may not do, 2 to 4 entries, for example "May not deploy" or "Read only: src/"' },
           limits: limitsSchema,
+          why: { type: 'string', description: 'One sentence, under 110 characters, on why this goal needs this farmer: name its part of this project, and why its model fits. For example "Payments cannot be half broken, so it ships to 10% of buyers first."' },
         },
       },
     },
@@ -160,6 +161,7 @@ For each farmer:
 - context: the only paths and docs it may read, concrete and specific to this goal (for example "docs/pricing.md", "src/checkout/"), never "the codebase".
 - constraints: concrete rules (for example "May not deploy", "Read only: src/", "No network calls to production").
 - limits: a dollar and minute cap for its share of the work.
+- why: why this project needs this farmer, in its own terms (its tasks, its risk), not a generic job description.
 
 Tasks: 3 to 8, in run order, kebab-case ids. Each has one farmer from the crew, a short done-when the Tester can check, and gate true only when it cannot be undone or reaches real users (deploys, sending messages, payments).
 

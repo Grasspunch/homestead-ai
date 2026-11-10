@@ -9,6 +9,8 @@ interface Draft {
   name: string
   tasks: (Omit<PlanTask, 'gate'> & { gate?: boolean; mins: number; usd: number; after?: string[] })[]
   context: Partial<Record<FarmerId, string[]>>
+  // Why this project needs each farmer, in the project's own terms.
+  why?: Partial<Record<FarmerId, string>>
 }
 
 const USD_SCALE = 15
@@ -27,6 +29,13 @@ function draft(goal: string): Draft {
         SHIP,
       ],
       context: { builder: ['src/', 'docs/help/', 'eval/questions.jsonl'], designer: ['src/widget/', 'docs/brand.md'], tester: ['tests/', 'eval/questions.jsonl'] },
+      why: {
+        planner: "Keeps the answers and the widget in step, and passes your notes on. Opus, for judgment.",
+        builder: "Indexes the help docs, answers from them and hands off when unsure. Sol codes as well as Opus here for less.",
+        designer: "The widget is what customers see, so it needs taste. Opus, and it keeps the reply box clear.",
+        tester: "Runs the eval questions against every answer, so a wrong one never reaches a customer.",
+        deployer: "Wrong answers reach real customers, so it ships to 10% first and rolls back on its own.",
+      },
     }
   if (/(checkout|payment|stripe|billing|subscription|pricing)/.test(g))
     return {
@@ -39,6 +48,13 @@ function draft(goal: string): Draft {
         { ...SHIP, doneWhen: 'Live for 10% of buyers with no failed payments, then for everyone' },
       ],
       context: { builder: ['src/billing/', 'docs/pricing.md'], designer: ['src/checkout/', 'docs/brand.md'], tester: ['tests/billing/'] },
+      why: {
+        planner: "Keeps prices, payments and screens reading from one plan config. Opus, for judgment.",
+        builder: "Prices, the checkout API and webhooks are one chain of money code. Sol, as good as Opus here for less.",
+        designer: "Buyers leave at confusing errors, so the checkout screens need taste. Opus.",
+        tester: "Runs test-card purchases and refunds against every done-when, so nobody is charged wrong.",
+        deployer: "Payments can't be half broken, so 10% of buyers first, rolled back at the first failed payment.",
+      },
     }
   if (/(dashboard|analytics|metrics|report|chart)/.test(g))
     return {
@@ -50,6 +66,13 @@ function draft(goal: string): Draft {
         SHIP,
       ],
       context: { builder: ['src/metrics/', 'db/schema.sql'], designer: ['src/dashboard/'], tester: ['tests/metrics/'] },
+      why: {
+        planner: "Keeps the queries and the charts agreeing on what each metric means. Opus, for judgment.",
+        builder: "Writes the metric queries and the API. Sol is as good as Opus at SQL here for less.",
+        designer: "Charts only help if they read at a glance, so Opus designs them.",
+        tester: "Checks every metric against a hand count, so the dashboard never shows a wrong number.",
+        deployer: "Ships to 10% first and rolls back if the API slows down or errors.",
+      },
     }
   const short = goal.replace(/[.!?]+$/, '').split(/\s+/).slice(0, 4).join(' ')
   return {
@@ -92,7 +115,7 @@ function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boole
     context: base[id].context,
     constraints: base[id].constraints,
     limits: { usd: Math.ceil(usd * 1.3), minutes: Math.ceil((minutes * 1.3) / 5) * 5 },
-    why: solo ? 'Does everything in a row. Cheapest to run, slowest to finish.' : WHY[id],
+    why: solo ? 'Does everything in a row. Cheapest to run, slowest to finish.' : d.why?.[id] ?? WHY[id],
   }
 }
 

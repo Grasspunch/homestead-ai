@@ -43,9 +43,9 @@ input, textarea { font: inherit; color: inherit; }
 .map-layer { position: absolute; inset: 0; }
 
 /* ---- nine-slices ---- */
-.paper { border: 12px solid transparent; border-image: url(/ui/textbox.png) 5 fill / 15px stretch; image-rendering: pixelated; }
+.paper { border: 12px solid transparent; border-image: url(/ui/textbox_plain.png) 5 fill / 15px stretch; image-rendering: pixelated; }
 /* Panels are the same light paper as the dialogues: one background for every surface. */
-.wood { border: 15px solid transparent; border-image: url(/ui/textbox.png) 5 fill / 15px stretch; image-rendering: pixelated; }
+.wood { border: 15px solid transparent; border-image: url(/ui/textbox_plain.png) 5 fill / 15px stretch; image-rendering: pixelated; }
 .px { font-family: px7; font-weight: 400; letter-spacing: .5px; }
 .px-s { font-family: px4; font-weight: 400; letter-spacing: .5px; }
 
@@ -85,13 +85,15 @@ input, textarea { font: inherit; color: inherit; }
 .dlg.with-side { left: 16px; transform: none; width: calc(100% - 490px); }
 .portrait { width: 132px; height: 132px; flex: none; border: 18px solid transparent; border-image: url(/ui/portrait.png) 7 fill / 21px stretch; image-rendering: pixelated; position: relative; }
 .portrait canvas { position: absolute; inset: -6px; width: 108px; height: 108px; image-rendering: pixelated; }
-.dlg .body { flex: 1; min-width: 0; padding: 4px 10px 6px; display: flex; flex-direction: column; gap: 10px; }
+.dlg .body { position: relative; flex: 1; min-width: 0; padding: 4px 10px 6px; display: flex; flex-direction: column; gap: 10px; }
 .who { display: flex; align-items: center; gap: 10px; min-height: 28px; }
 .who b { font-family: px7; font-weight: 400; font-size: 21px; }
 .who .model { font-size: 13px; color: var(--bark-3); }
 .who .aside { margin-left: auto; font-size: 13.5px; color: var(--bark-3); display: flex; align-items: center; gap: 6px; }
 .tag { font-family: px4; font-size: 13px; padding: 3px 8px 2px; border-radius: 4px; background: #c98a5b; color: #fff6e4; letter-spacing: .5px; white-space: nowrap; }
 .tag.sky { background: var(--sky); } .tag.gold { background: var(--honey); } .tag.green { background: #7aa35a; } .tag.grey { background: var(--bark-4); } .tag.red { background: var(--berry); }
+/* The bubble's tail, drawn once beside the portrait so the nine-slice edge stays clean. */
+.dlg .body::before { content: ""; position: absolute; left: -12px; top: 39px; width: 15px; height: 30px; background: url(/ui/textbox_tail.png) 0 0 / 15px 30px; image-rendering: pixelated; pointer-events: none; }
 .dlg p { margin: 0; font-size: 17px; line-height: 1.45; }
 .dlg p.impact { font-size: 15px; color: var(--bark-2); }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -141,7 +143,7 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 .fix .grow { flex: 1; font-size: 14.5px; }
 .fix .sub { display: block; font-size: 13px; color: var(--bark-3); }
 .toggle { display: flex; align-items: center; gap: 10px; text-align: left; }
-.box { width: 26px; height: 26px; flex: none; border: 7px solid transparent; border-image: url(/ui/textbox.png) 5 fill / 8px stretch; image-rendering: pixelated; position: relative; }
+.box { width: 26px; height: 26px; flex: none; border: 7px solid transparent; border-image: url(/ui/textbox_plain.png) 5 fill / 8px stretch; image-rendering: pixelated; position: relative; }
 .box.on::after { content: ""; position: absolute; inset: -8px; background: url(/ui/checkmark.png) center / 28px 28px no-repeat; image-rendering: pixelated; }
 .ship { display: flex; gap: 0; align-items: stretch; }
 .ship > div { flex: 1; padding: 6px 8px; border-left: 3px solid rgba(106, 74, 52, .2); font-size: 13.5px; }
@@ -196,6 +198,9 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 .list > * > .sub, .list > * > .mono { margin-top: 1px; }
 /* top bar icon buttons: as tall as the pills, the icon at 2x */
 .top .top-ico { height: 56px; min-width: 56px; justify-content: center; padding: 0; border-width: 12px; }
+.top .top-coin { padding: 0 4px; gap: 8px; }
+.top .top-coin .coin { width: 22px; height: 22px; flex: none; background: url(/ui/coin.png) 0 0 / 22px 22px; image-rendering: pixelated; }
+.top .top-coin b { font-family: px7; font-weight: 400; font-size: 20px; font-variant-numeric: tabular-nums; line-height: 1; }
 .top .top-ico .mail-ico { width: 39px; height: 24px; background-size: 39px 24px; }
 .inbox-btn .badge { top: -20px; right: -20px; }
 /* an ask's header: which plot it's about, then how urgent */

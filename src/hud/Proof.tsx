@@ -46,7 +46,7 @@ export function Screens({ shots, chat, note, thumb = false }: { shots: Shot[]; c
   return (
     <figure className={`shot ${kind}${thumb ? ' thumb' : ''}`}>
       <span className="shot-img">
-        <img src={`/proof/${kind}-${shot.state}.png`} alt={bad ? `Screenshot: ${note ?? 'the broken part is ringed'}` : 'Screenshot of the built screen'} />
+        <img src={`/proof/${kind}-${shot.state}${thumb ? '-thumb' : ''}.png`} alt={bad ? `Screenshot: ${note ?? 'the broken part is ringed'}` : 'Screenshot of the built screen'} />
         {bad && <i className="ring" style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` }} />}
       </span>
       {!thumb && bad && note && <figcaption className="bad">{note}</figcaption>}
