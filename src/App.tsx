@@ -498,14 +498,14 @@ function Settings() {
           setLive(!live)
         }}
       >
-        <span className={`box${live ? ' on' : ''}`} />
+        <span className={`switch${live ? ' on' : ''}`} />
         <span>
           Live mode
           <small>The Planner runs on Claude with the server’s API key. Off, it’s simulated and spends nothing.</small>
         </span>
       </button>
       <button className="toggle" onClick={() => store.enableNotifications(!st.notifications)}>
-        <span className={`box${st.notifications ? ' on' : ''}`} />
+        <span className={`switch${st.notifications ? ' on' : ''}`} />
         <span>
           Desktop notifications
           <small>When a farmer needs you and this tab is in the background.</small>

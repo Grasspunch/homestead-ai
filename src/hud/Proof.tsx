@@ -1,7 +1,7 @@
 // What a check rests on, shown rather than described: the test run, the screenshots, the rollout's numbers.
 import type { CSSProperties } from 'react'
 import type { Proof, RunState, Shot, TaskState, TestResult } from '../run/types'
-import { Swatch } from './bits'
+import { Mark, Swatch } from './bits'
 import { ERROR_LIMIT } from '../run/simulate'
 
 export function Tests({ tests, kind }: { tests: TestResult[]; kind: 'unit' | 'integration' }) {
@@ -17,7 +17,7 @@ export function Tests({ tests, kind }: { tests: TestResult[]; kind: 'unit' | 'in
       <ol className="tests-list">
         {[...failed, ...tests.filter((t) => t.pass)].map((t) => (
           <li key={t.name} className={t.pass ? '' : 'fail'}>
-            <span className="tick" aria-label={t.pass ? 'passed' : 'failed'}>{t.pass ? '✓' : '✗'}</span>
+            <Mark pass={t.pass} />
             <span className="grow">
               {t.name}
               {t.error && <span className="mono err">{t.error}</span>}
@@ -181,7 +181,7 @@ export function proofStamp(t: TaskState) {
         : failed ? `${failed} of ${tests!.length} failing` : `${tests!.length} ${pr.kind === 'integration' ? 'e2e' : 'tests'} pass`
   return (
     <span className={`plot-proof${c.pass ? '' : ' bad'}`}>
-      <i aria-hidden>{c.pass ? '✓' : '✗'}</i>
+      <Mark pass={c.pass} />
       {word}
     </span>
   )

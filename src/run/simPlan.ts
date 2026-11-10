@@ -88,7 +88,7 @@ function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boole
     id,
     label: solo ? 'Builder' : label,
     agent: opus ? 'claude-code' : 'codex',
-    model: opus ? 'Claude Opus 5.5' : 'Sol 6.1',
+    model: opus ? 'Claude Opus 5.5' : 'Codex Sol 6.1',
     context: base[id].context,
     constraints: base[id].constraints,
     limits: { usd: Math.ceil(usd * 1.3), minutes: Math.ceil((minutes * 1.3) / 5) * 5 },

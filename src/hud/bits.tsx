@@ -87,3 +87,17 @@ export function LimitField({ value, unit, label, min = 1, onChange }: { value: n
     </label>
   )
 }
+
+// The pack's tick meter: 20 ticks, green for what's spent, honey once past 85%.
+export function Ticks({ used, total, n = 20 }: { used: number; total: number; n?: number }) {
+  const on = Math.min(n, Math.round((used / Math.max(0.01, total)) * n))
+  return (
+    <span className={`ticks${used > total * 0.85 ? ' warm' : ''}`} role="meter" aria-valuenow={Math.round(used)} aria-valuemax={Math.round(total)} aria-label="Spent of its limit">
+      <i style={{ width: on * 10 }} />
+      <b style={{ width: (n - on) * 10 }} />
+    </span>
+  )
+}
+
+// The pack's check and cross, for pass and fail.
+export const Mark = ({ pass }: { pass: boolean }) => <span className={`mark ${pass ? 'yes' : 'no'}`} aria-label={pass ? 'passed' : 'failed'} />

@@ -60,6 +60,9 @@ const DOOR = { x: 4, y: 6.6 }
 const MAILBOX = { x: 6.1, y: 3.8 }
 const CHEST = { x: 7.1, y: 4.85 }
 const COINS = { x: 7.4, y: 6.6 }
+// The henhouse is your inbox (an egg per item); the cow is the connected repo (milk while it's read).
+const henOf = (l: { w: number }) => ({ x: l.w - 3.2, y: 7.2 })
+const cowOf = (l: { w: number }) => ({ x: l.w - 3.6, y: 2.8 })
 const CHORES: { x: number; y: number; anim: string; dir: Dir }[] = [
   { x: 4.6, y: 10.1, anim: 'chop', dir: 'right' },
   { x: 8.6, y: 10.6, anim: 'water', dir: 'down' },
@@ -116,7 +119,7 @@ export function FarmView(p: FarmViewProps) {
 
   useEffect(() => {
     atlasLoaded().then(() => setReady(true))
-    const imgs = ['bubble', 'emoji', 'dot_1', 'selectorst_a1', 'mailbox', 'mailbox_letter', 'coin', 'crates']
+    const imgs = ['bubble', 'emoji', 'dot_1', 'selectorst_a1', 'mailbox', 'mailbox_letter', 'coin', 'crates', 'henhouse', 'egg', 'tray', 'cow_brown', 'calf', 'milk']
     for (const k of imgs) loadImg(k)
   }, [])
 
@@ -199,6 +202,10 @@ export function FarmView(p: FarmViewProps) {
     for (const [id, w] of walkers.current) if (Math.abs(t.x - w.x) < 0.6 && t.y > w.y - 1.6 && t.y < w.y + 0.2) return `f:${id}`
     for (const pl of layout.plots) if (t.x > pl.x - 2.2 && t.x < pl.x + pl.w + 1 && t.y > pl.y - 1.2 && t.y < pl.y + pl.h + 1.9) return `t:${pl.id}`
     if (near(t, { x: MAILBOX.x + 0.5, y: MAILBOX.y - 0.6 }, 0.9)) return 'mail'
+    const hen = henOf(layout)
+    if (t.x > hen.x - 0.6 && t.x < hen.x + 2.8 && t.y > hen.y - 0.2 && t.y < hen.y + 4.4) return 'mail'
+    const cow = cowOf(layout)
+    if (t.x > cow.x - 1.4 && t.x < cow.x + 2.2 && t.y > cow.y - 1 && t.y < cow.y + 1.6) return 'f:builder'
     if (near(t, { x: CHEST.x + 0.5, y: CHEST.y + 0.3 }, 0.8)) return 'chest'
     if (near(t, COINS, 1)) return 'coins'
     return null
@@ -264,6 +271,13 @@ export function FarmView(p: FarmViewProps) {
             />
           )
         })}
+      <button className="plot-label yard-label" style={{ left: (henOf(layout).x + 0.9) * T, top: (henOf(layout).y + 4.5) * T, fontSize: cam.s >= 3 ? 13 : 11 }} onClick={(e) => { e.stopPropagation(); p.onMail() }} onPointerUp={(e) => e.stopPropagation()}>
+        Inbox
+        {p.state.asks.some((a) => !a.answer) && <span className="plot-proof bad">{p.state.asks.filter((a) => !a.answer).length} needs you</span>}
+      </button>
+      <button className="plot-label yard-label" style={{ left: (cowOf(layout).x + 0.6) * T, top: (cowOf(layout).y + 1.5) * T, fontSize: cam.s >= 3 ? 13 : 11 }} onClick={(e) => { e.stopPropagation(); p.onFarmer('builder') }} onPointerUp={(e) => e.stopPropagation()}>
+        GitHub repo
+      </button>
       {layout.plots.map((pl) => {
         const t = p.state.tasks.find((x) => x.id === pl.id)
         if (!t) return null
@@ -441,7 +455,11 @@ function poseOf(id: FarmerId, s: RunState, layout: Layout, planning: boolean, op
   if (pl && task && (task.status === 'wilted' || task.status === 'checking')) return { ...side(pl), anim: 'idle', dir: 'left' as Dir }
   // Waiting for its next task: stand by that plot and glance around.
   const next = plotOf(s.tasks.find((t) => t.farmer === id && t.status === 'waiting')?.id)
-  if (next) return { x: next.x + next.w + 1.4, y: next.y + 0.9, anim: 'idle', dir: (Math.floor(performance.now() / 3000 + idx) % 2 ? 'left' : 'right') as Dir, emote: 'dots' as Emote }
+  // Waiting on someone else's work: a chore in the yard until its plot frees up.
+  if (next) {
+    const c = CHORES[idx % CHORES.length]
+    return { x: c.x, y: c.y, anim: c.anim, dir: c.dir }
+  }
   if (id === 'planner') return { ...DOOR, anim: 'idle', dir: 'down' as Dir }
   const c = CHORES[idx % CHORES.length]
   return { x: c.x, y: c.y, anim: c.anim, dir: c.dir }
@@ -498,8 +516,41 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
   spr(g, 'house_2', 2, 2)
   spr(g, 'well', 2, 8)
   spr(g, 'workstation', 5, 9.4)
-  spr(g, 'chicken_0', 9.2, 12.4)
-  spr(g, 'chicken_1', 10.4, 12.7, { flip: true })
+  // Chickens peck about the yard and the henhouse, each on its own slow loop.
+  const hen = henOf(layout)
+  const inbox = s.asks.length + s.autoFixes.length
+  const waiting = s.asks.some((a) => !a.answer)
+  if (ok('henhouse')) g.drawImage(IMG.henhouse, hen.x * PX, hen.y * PX)
+  if (ok('tray')) g.drawImage(IMG.tray, (hen.x - 0.3) * PX, (hen.y + 3.4) * PX)
+  if (ok('egg'))
+    for (let i = 0; i < Math.min(5, inbox); i++) {
+      const last = i === Math.min(5, inbox) - 1 && waiting
+      const hop = last ? Math.max(0, Math.sin(now / 180)) * 2 : 0
+      g.drawImage(IMG.egg, 0, 0, 16, 16, (hen.x - 0.15 + i * 0.36) * PX, (hen.y + 3.05) * PX - hop, 10, 10)
+    }
+  const peck = (n: number, x: number, y: number, r: number) => {
+    const a = now / 4200 + n * 2.1
+    const px = x + Math.cos(a) * r
+    const py = y + Math.sin(a * 1.3) * r * 0.4
+    const pecking = Math.floor(now / 400 + n) % 5 === 0
+    spr(g, `chicken_${pecking ? 1 : 0}`, px, py, { flip: Math.sin(a) > 0 })
+  }
+  peck(0, 9.6, 12.5, 0.8)
+  peck(1, hen.x + 0.4, hen.y + 4.6, 0.9)
+  peck(2, hen.x + 1.6, hen.y + 5.1, 0.7)
+  // The cow is the repo the crew reads and opens pull requests on. Milk shows while someone is in it.
+  const cow = cowOf(layout)
+  const using = Object.values(s.farmers).some((f) => f && f.state === 'working' && /read|pull request|search|code/i.test(f.lastTool ?? ''))
+  if (ok('cow_brown')) {
+    const f = Math.floor(now / 600) % 2
+    g.drawImage(IMG.cow_brown, 0, 0, 32, 32, cow.x * PX, (cow.y - 0.6) * PX - f, 32, 32)
+  }
+  if (ok('calf')) g.drawImage(IMG.calf, 0, 0, 32, 32, (cow.x - 1.3) * PX, (cow.y + 0.2) * PX, 24, 24)
+  if (using && ok('bubble') && ok('milk')) {
+    const bob = Math.round(Math.sin(now / 260))
+    g.drawImage(IMG.bubble, 0, 0, 31, 32, (cow.x + 1.4) * PX, (cow.y - 1.7) * PX + bob, 16, 16.5)
+    g.drawImage(IMG.milk, 0, 0, 16, 16, (cow.x + 1.4) * PX + 3, (cow.y - 1.7) * PX + 2 + bob, 10, 10)
+  }
 
   // Mailbox: a letter when something needs you.
   const mail = p.openAsk ? 'mailbox_letter' : 'mailbox'
@@ -513,9 +564,9 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
     const spots = [[CHEST.x + 0.95, CHEST.y - 0.55], [CHEST.x + 1.9, CHEST.y - 0.55], [CHEST.x + 1.45, CHEST.y - 1.45]]
     for (let i = 0; i < n; i++) g.drawImage(IMG.crates, 20, 3, 24, 26, spots[i][0] * PX, spots[i][1] * PX, 24, 26)
   }
-  // The coin pile grows with the spend: a coin per 25 cents, up to 14.
+  // The coin pile grows with the spend: a coin per $5, up to 14.
   if (ok('coin')) {
-    const n = Math.min(14, Math.round(s.usage.usd * 4))
+    const n = Math.min(14, Math.round(s.usage.usd / 5))
     for (let i = 0; i < n; i++) {
       const col = i % 4
       const row = Math.floor(i / 4)

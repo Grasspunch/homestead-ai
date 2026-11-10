@@ -50,10 +50,10 @@ export const FARMER_IDS: FarmerId[] = ['planner', 'builder', 'designer', 'tester
 // Which agent and model each farmer runs on in the product.
 export const CREW: Record<FarmerId, { label: string; role: string; agent: string; model: string }> = {
   planner: { label: 'Planner', role: 'splits the goal into tasks, keeps the plan current, answers the person', agent: 'claude-code', model: 'Claude Opus 5.5' },
-  builder: { label: 'Builder', role: 'writes and changes the code', agent: 'codex', model: 'Sol 6.1' },
+  builder: { label: 'Builder', role: 'writes and changes the code', agent: 'codex', model: 'Codex Sol 6.1' },
   designer: { label: 'Designer', role: 'designs the screens, copy and flows people see', agent: 'claude-code', model: 'Claude Opus 5.5' },
-  tester: { label: 'Tester', role: 'checks each task against its done-when and runs the tests', agent: 'codex', model: 'Sol 6.1' },
-  deployer: { label: 'Deployer', role: 'ships to staging and production, watches the rollout', agent: 'codex or claude-code', model: 'Sol 6.1 or Claude Opus 5.5' },
+  tester: { label: 'Tester', role: 'checks each task against its done-when and runs the tests', agent: 'codex', model: 'Codex Sol 6.1' },
+  deployer: { label: 'Deployer', role: 'ships to staging and production, watches the rollout', agent: 'codex or claude-code', model: 'Codex Sol 6.1 or Claude Opus 5.5' },
 }
 
 const STYLE = 'Write every string as one short plain line. No jargon, no em dashes, no "·" separators, no lists packed into one string.'
@@ -100,7 +100,7 @@ export const PLAN_SCHEMA = {
           id: { type: 'string', enum: FARMER_IDS },
           label: { type: 'string', description: 'For example "Builder"' },
           agent: { type: 'string', enum: ['codex', 'claude-code'] },
-          model: { type: 'string', enum: ['Sol 6.1', 'Claude Opus 5.5'] },
+          model: { type: 'string', enum: ['Codex Sol 6.1', 'Claude Opus 5.5'] },
           context: { type: 'array', items: { type: 'string' }, description: 'The only paths and docs this farmer may read, 2 to 5 entries, for example "docs/pricing.md" or "src/checkout/"' },
           constraints: { type: 'array', items: { type: 'string' }, description: 'What it may and may not do, 2 to 4 entries, for example "May not deploy" or "Read only: src/"' },
           limits: limitsSchema,
@@ -152,7 +152,7 @@ ${input.goal}
 The farmers you can use:
 ${crew}
 
-Model rules: Builder and Tester use agent "codex" with model "Sol 6.1". Planner and Designer use agent "claude-code" with model "Claude Opus 5.5". The Deployer may use either pair. A single general agent uses "claude-code" with "Claude Opus 5.5".
+Model rules: Builder and Tester use agent "codex" with model "Codex Sol 6.1". Planner and Designer use agent "claude-code" with model "Claude Opus 5.5". The Deployer may use either pair. A single general agent uses "claude-code" with "Claude Opus 5.5".
 
 Team size: ${crewInstruction(input.crewSize)}
 

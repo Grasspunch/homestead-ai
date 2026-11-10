@@ -55,8 +55,8 @@ export interface ModelChoice {
 export const MODELS: ModelChoice[] = [
   { model: 'Claude Opus 5.5', agent: 'claude-code', label: 'Claude Opus 5.5', about: 'Best at plans, design and judgment', rate: 1 },
   { model: 'Claude Sonnet 5.5', agent: 'claude-code', label: 'Claude Sonnet 5.5', about: 'Fast and capable, cheaper', rate: 0.6 },
-  { model: 'Claude Haiku 5.5', agent: 'claude-code', label: 'Claude Haiku 5.5', about: 'Quick checks and routing', rate: 0.2 },
-  { model: 'Sol 6.1', agent: 'codex', label: 'Sol 6.1', about: 'Strong builder and tester', rate: 0.75 },
+  { model: 'Astra', agent: 'astra', label: 'Astra', about: 'Quick checks and routing', rate: 0.2 },
+  { model: 'Codex Sol 6.1', agent: 'codex', label: 'Codex Sol 6.1', about: 'Strong builder and tester', rate: 0.75 },
 ]
 
 export const RULES: { id: string; label: string }[] = [

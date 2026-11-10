@@ -4,7 +4,7 @@ import { store, useStore, type Project } from '../run/store'
 import { MODELS, RULES, SKILLS, applyEdit, contextTokens, defaultRules, emptyEdit, type KitItem } from '../run/kit'
 import type { FarmerId, RunState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
-import { Ico, LimitField, Portrait, Swatch, tokens, usd } from './bits'
+import { Ico, LimitField, Portrait, Swatch, Ticks, tokens, usd } from './bits'
 
 // Which skill a tool line is using, so the page can light it up while it runs.
 function inUse(line: string | undefined, items: KitItem[]): string | undefined {
@@ -51,14 +51,6 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
             <Portrait farmer={id} size={96} />
           </div>
           <div className="grow">
-            <div className="page-crew">
-              {FARMER_ORDER.filter((x) => s.farmers[x]).map((x) => (
-                <button key={x} className={x === id ? 'on' : ''} onClick={() => store.setDrawer({ kind: 'farmer', id: x })}>
-                  <Swatch farmer={x} />
-                  {s.farmers[x]!.label}
-                </button>
-              ))}
-            </div>
             <h2>{f.label}</h2>
             <div className="now">
               {working && <span className="live-dot" aria-hidden />}
@@ -69,6 +61,14 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
                 </button>
               )}
             </div>
+          </div>
+          <div className="page-crew">
+            {FARMER_ORDER.filter((x) => s.farmers[x]).map((x) => (
+              <button key={x} className={x === id ? 'on' : ''} onClick={() => store.setDrawer({ kind: 'farmer', id: x })}>
+                <Swatch farmer={x} />
+                {s.farmers[x]!.label}
+              </button>
+            ))}
           </div>
           <button className="btn white xs" onClick={() => store.setDrawer(null)} aria-label="Close">
             <Ico name="cross" size={16} />
@@ -126,7 +126,6 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
                     })}
                   >
                     <b>{m.label}</b>
-                    <span>{m.agent === 'codex' ? 'Codex' : 'Claude Code'}</span>
                     <small>{m.about}</small>
                   </button>
                 ))}
@@ -151,9 +150,7 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
                 </span>
               </div>
               {p.approved && (
-                <div className="bar" style={{ marginTop: 8 }}>
-                  <i style={{ width: `${Math.min(100, (base.usd / f.limits.usd) * 100)}%`, background: base.usd > f.limits.usd * 0.85 ? 'var(--honey)' : 'var(--leaf)' }} />
-                </div>
+                <Ticks used={base.usd} total={f.limits.usd} />
               )}
               {p.approved && <p className="fine">{usd(base.usd)} spent so far, {tokens(base.tokens)} tokens.</p>}
             </section>
@@ -178,6 +175,7 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
                         <span className="sub">{now === i.id ? 'Using it now' : i.about}</span>
                       </span>
                       <span className="mono cost">{tokens(i.tokens)}</span>
+                      <span className={`switch${on ? ' on' : ''}`} aria-hidden />
                     </button>
                   )
                 })}
@@ -207,6 +205,7 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
                         {reading && <span className="sub">Reading it now</span>}
                       </span>
                       <span className="mono cost">{tokens(contextTokens(c))}</span>
+                      <span className={`switch${on ? ' on' : ''}`} aria-hidden />
                     </button>
                   )
                 })}
@@ -233,7 +232,7 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
               <h3>Rules</h3>
               {RULES.map((r) => (
                 <button key={r.id} className="toggle rule-row" onClick={() => set((e) => (e.rules = { ...e.rules, [r.id]: !rules[r.id] }))}>
-                  <span className={`box${rules[r.id] ? ' on' : ''}`} />
+                  <span className={`switch${rules[r.id] ? ' on' : ''}`} />
                   <span>{r.label}</span>
                 </button>
               ))}

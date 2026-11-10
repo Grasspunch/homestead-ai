@@ -3,7 +3,7 @@ import { CREW } from '../agent/agents'
 import { store, type Project } from '../run/store'
 import type { Autonomy, AutonomyLevel, FarmerId, Moment, RunState, TaskState } from '../run/types'
 import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
-import { Ico, Portrait, Swatch, mins, tokens, usd } from './bits'
+import { Ico, Mark, Portrait, Swatch, mins, tokens, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 
 const STATUS: Record<TaskState['status'], string> = {
@@ -120,7 +120,7 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
               if (x) x.gate = !x.gate
             })}
           >
-            <span className={`box${t.gate ? ' on' : ''}`} />
+            <span className={`switch${t.gate ? ' on' : ''}`} />
             <span>Wait for my go-ahead before this one runs</span>
           </button>
         </>
@@ -140,7 +140,7 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
             {[...t.checks].reverse().map((c, i) => (
               <details key={c.t} open={i === 0} className={c.pass ? 'check ok-row' : 'check bad-row'}>
                 <summary>
-                  <span className={c.pass ? 'ok' : 'bad'}>{c.pass ? '✓' : '✗'}</span>
+                  <Mark pass={c.pass} />
                   <span className="grow">{c.notes}</span>
                   <span className="sub">{s.farmers[c.by]?.label ?? c.by}, {ago(s, c.t)}</span>
                 </summary>
@@ -311,7 +311,7 @@ function fixes(s: RunState): Fix[] {
   if (retry / total > 0.04) out.push({ key: 'retry', title: 'Cap fix rounds at 2 per task', why: `Fixes after failed checks cost ${usd(retry)} this run.`, saves: retry * 0.4 })
   if (read / total > 0.2) out.push({ key: 'read', title: 'Narrow the Builder to the folders it touched', why: `Reading files was ${Math.round((read / total) * 100)}% of the spend.`, saves: read * 0.35 })
   const designer = s.farmers.designer
-  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', title: 'Check screenshots with Sol 6.1', why: 'The Designer’s screenshot checks don’t need the bigger model.', saves: designer.usd * 0.3 })
+  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', title: 'Check screenshots with Codex Sol 6.1', why: 'The Designer’s screenshot checks don’t need the bigger model.', saves: designer.usd * 0.3 })
   for (const r of s.replans) {
     const t = s.tasks.find((x) => r.added.includes(x.id))
     if (t) out.push({ key: `split-${t.id}`, title: `Plan "${t.name.split(': ')[1] ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.', saves: 0.25 })
@@ -438,7 +438,7 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
             const done = t.status === 'ripe' || t.status === 'accepted'
             return (
               <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
-                <span className={done ? 'ok' : 'sub'}>{done ? '✓' : '·'}</span>
+                {done ? <Mark pass /> : <span className="sub">·</span>}
                 <span className="grow">
                   {t.name}
                   <span className="sub">{t.doneWhen}</span>
