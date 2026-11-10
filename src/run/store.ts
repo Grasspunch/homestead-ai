@@ -668,7 +668,7 @@ class Store {
   }
 
   // What the plan will cost and take, by simulating it on its default path with your current farmers and rules,
-  // against one Sonnet agent doing the same work. The plan and the run it starts come from the same simulation.
+  // against one Sonnet 5 agent doing the same work. The plan and the run it starts come from the same simulation.
   private forecasts = new Map<string, Forecast>()
   forecast(p: Project): Forecast | null {
     const kit = this.kit[p.id] ?? {}

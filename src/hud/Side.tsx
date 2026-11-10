@@ -1,4 +1,5 @@
 // The wood panel on the right: one page at a time (a task, a farmer, the inbox, spend, the harvest, control).
+import { useEffect, useRef, useState } from 'react'
 import { CREW } from '../agent/agents'
 import { clip, store, type Project } from '../run/store'
 import type { Autonomy, AutonomyLevel, FarmerId, Moment, RunState, TaskState } from '../run/types'
@@ -367,7 +368,7 @@ function fixes(s: RunState): Fix[] {
   if (retry / total > 0.04) out.push({ key: 'retry', farmer: 'builder', title: 'Cap fix rounds at 2 per task', why: `Fixes after failed checks cost ${usd(retry)} this run.`, saves: retry * 0.4 })
   if (read / total > 0.2) out.push({ key: 'read', farmer: 'builder', title: 'Narrow the Builder to the folders it touched', why: `Reading files was ${Math.round((read / total) * 100)}% of the spend.`, saves: read * 0.35 })
   const designer = s.farmers.designer
-  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', farmer: 'designer', title: 'Run the Designer on Claude Sonnet 5.5', why: 'Its screenshot checks don’t need the bigger model.', saves: designer.usd * 0.5, model: 'Claude Sonnet 5.5' })
+  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', farmer: 'designer', title: 'Run the Designer on Claude Sonnet 5', why: 'Its screenshot checks don’t need the bigger model.', saves: designer.usd * 0.5, model: 'Claude Sonnet 5' })
   for (const r of s.replans) {
     const t = s.tasks.find((x) => r.added.includes(x.id))
     if (t) out.push({ key: `split-${t.id}`, farmer: 'planner', title: `Plan "${s.tasks.find((x) => `${x.id}-rest` === t.id)?.name ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.' })
@@ -444,7 +445,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
       <div className="vs-grid" role="table">
         <span role="columnheader" />
         <span role="columnheader">This crew</span>
-        <span role="columnheader">One Sonnet agent</span>
+        <span role="columnheader">One Sonnet 5 agent</span>
         <span>Time</span>
         <b>{mins(crew.minutes)}</b>
         <span>{mins(one.minutes)}</span>
@@ -577,7 +578,7 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
       {s.done && (
         <div className="sum">
           {usd(s.done.usd)} in {mins(s.done.minutes)}
-          {s.soloActual ? `. One Sonnet agent alone: about ${usd(s.soloActual.usd)} in ${mins(s.soloActual.minutes)}.` : '.'} {caughtLine(s)}.
+          {s.soloActual ? `. One Sonnet 5 agent alone: about ${usd(s.soloActual.usd)} in ${mins(s.soloActual.minutes)}.` : '.'} {caughtLine(s)}.
         </div>
       )}
       <div>
@@ -689,14 +690,105 @@ export const LEVELS: { key: AutonomyLevel; label: string }[] = [
   { key: 'undoable', label: 'Only what’s hard to undo' },
 ]
 
+// What a level stops for, read off its autonomy preset: one line under each option in the menu.
+const ASKS_ABOUT: Record<Moment, string> = {
+  cost: 'cost',
+  disagree: 'disagreements',
+  failed: 'failed checks',
+  big: 'big changes',
+  ship: 'merging',
+  reship: 'shipping again after a rollback',
+}
+export function asksAbout(a: Autonomy): string {
+  const on = (Object.keys(ASKS_ABOUT) as Moment[]).filter((m) => a[m] === 'ask').map((m) => ASKS_ABOUT[m])
+  if (!on.length) return 'Nothing: it handles every moment itself'
+  const list = on.length > 1 ? `${on.slice(0, -1).join(', ')} and ${on[on.length - 1]}` : on[0]
+  const line = list.charAt(0).toUpperCase() + list.slice(1)
+  return on.length <= 2 ? `${line} only` : line
+}
+
+// "Ask me: When it matters ▾": one compact field that opens a menu of the levels, each with what it asks about.
+// Arrow keys move, Enter picks, Esc closes.
 export function LevelPicker({ p, compact = false }: { p: Project; compact?: boolean }) {
+  return <AskMe level={p.level} up={compact} onPick={(k) => store.setAutonomy(p.id, k, { ...AUTONOMY_PRESETS[k] })} />
+}
+
+export function AskMe({ level, onPick, up = false }: { level: AutonomyLevel | 'custom'; onPick: (k: AutonomyLevel) => void; up?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [at, setAt] = useState(0)
+  const box = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const current = LEVELS.find((l) => l.key === level)
+  useEffect(() => {
+    if (!open) return
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', away)
+    return () => document.removeEventListener('mousedown', away)
+  }, [open])
+  const pick = (k: AutonomyLevel) => {
+    onPick(k)
+    setOpen(false)
+    trigger.current?.focus()
+  }
+  const show = () => {
+    setAt(Math.max(0, LEVELS.findIndex((l) => l.key === level)))
+    setOpen(true)
+  }
+  const keys = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) {
+        e.preventDefault()
+        show()
+      }
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setOpen(false)
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setAt((at + 1) % LEVELS.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setAt((at + LEVELS.length - 1) % LEVELS.length)
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      pick(LEVELS[at].key)
+    } else if (e.key === 'Tab') setOpen(false)
+  }
   return (
-    <div className={`levels${compact ? ' compact' : ''}`} role="radiogroup" aria-label="How often the crew stops for you">
-      {LEVELS.map((l) => (
-        <button key={l.key} role="radio" aria-checked={p.level === l.key} className={p.level === l.key ? 'on' : ''} onClick={() => store.setAutonomy(p.id, l.key, { ...AUTONOMY_PRESETS[l.key] })}>
-          {l.label}
-        </button>
-      ))}
+    <div className={`ask-me${up ? ' up' : ''}`} ref={box} onKeyDown={keys}>
+      <button
+        ref={trigger}
+        className="field-box select"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Ask me: ${current?.label ?? 'Custom'}`}
+        onClick={() => (open ? setOpen(false) : show())}
+      >
+        <span className="ask-label">Ask me:</span> <b>{current?.label ?? 'Custom'}</b>
+      </button>
+      {open && (
+        <ul className="ask-menu paper" role="listbox" aria-label="How often the crew stops for you" aria-activedescendant={`ask-${LEVELS[at].key}`} tabIndex={-1}>
+          {LEVELS.map((l, i) => (
+            <li
+              key={l.key}
+              id={`ask-${l.key}`}
+              role="option"
+              aria-selected={level === l.key}
+              className={`${i === at ? 'at' : ''}${level === l.key ? ' on' : ''}`}
+              onMouseEnter={() => setAt(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(l.key)}
+            >
+              <b>{l.label}</b>
+              <span>{asksAbout(AUTONOMY_PRESETS[l.key])}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

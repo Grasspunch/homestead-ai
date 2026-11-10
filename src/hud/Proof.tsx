@@ -1,7 +1,7 @@
 // What a check rests on, shown rather than described: the test run, the screenshots, the rollout's numbers.
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Metrics, Proof, RunState, Screen, Shot, TaskState, TestResult } from '../run/types'
-import { Mark, Swatch } from './bits'
+import { Mark } from './bits'
 import { ERROR_LIMIT } from '../run/simulate'
 import { scenario } from '../run/simPlan'
 
@@ -185,7 +185,8 @@ const WHO: Record<string, string> = { planner: 'Planner', builder: 'Builder', de
 
 
 // A check that just happened, popped over its plot: the test seeds, the screenshots or the live line.
-export function ProofPop({ check, state, style, onOpen }: { check: Check; state: RunState; style: CSSProperties; onOpen: () => void }) {
+// It leads with the task and how it came out, then the proof, and last who checked it.
+export function ProofPop({ check, task, state, style, onOpen }: { check: Check; task: string; state: RunState; style: CSSProperties; onOpen: () => void }) {
   const pr = check.proof
   const chat = /support|assistant|chat/i.test(state.goal)
   const tests = pr?.tests ?? []
@@ -223,12 +224,11 @@ export function ProofPop({ check, state, style, onOpen }: { check: Check; state:
         onOpen()
       }}
       onPointerUp={(e) => e.stopPropagation()}
-      aria-label={`${WHO[check.by]} checked: ${check.notes}`}
+      aria-label={`${task}: ${check.pass ? 'done' : 'failed'}. ${check.notes}. Checked by the ${WHO[check.by]}.`}
     >
       <span className="pp-head">
-        <Swatch farmer={check.by} />
-        <b>{WHO[check.by]}</b>
-        <span className={check.pass ? 'ok' : 'bad'}>{check.pass ? 'passed' : 'failed'}</span>
+        <b className="pp-task">{task}</b>
+        <span className={`tag ${check.pass ? 'green' : 'red'}`}>{check.pass ? 'Done' : 'Failed'}</span>
       </span>
       {pr?.kind === 'screens' && pr.shots ? (
         <span className="pp-shot-row">
@@ -259,6 +259,7 @@ export function ProofPop({ check, state, style, onOpen }: { check: Check; state:
       ) : (
         <span className="pp-line">{check.notes}</span>
       )}
+      <span className="pp-by">Checked by the {WHO[check.by]}</span>
     </button>
   )
 }

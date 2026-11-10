@@ -87,15 +87,16 @@ export function scenario(goal: string): { script: Script; matched: boolean; name
 const USD_SCALE = 15
 // Drafts list minutes for a small slice of work; real agent tasks run 20 to 60 minutes.
 const MIN_SCALE = 3
-// One agent alone, against a crew: a fair single agent on Claude Sonnet 5.5, doing every task in a row,
+// One agent alone, against a crew: a fair single agent on Claude Sonnet 5, doing every task in a row,
 // with no checker and nothing charged for checks. It rereads one growing context, which slows every step
 // and costs a little more (caching keeps the rereads cheap, not fast). These are the only two assumptions.
-export const SOLO = { model: 'Claude Sonnet 5.5', contextTime: 1.35, contextCost: 1.1 }
+export const SOLO = { model: 'Claude Sonnet 5', contextTime: 1.35, contextCost: 1.1 }
 // Each handoff between farmers costs a little: a summary written and read.
 const HANDOFF = 0.25
 // Which model each farmer runs on, and its price per token relative to Claude Opus 5.5 (the model picker's rates).
-// A mixed crew: the Builder codes on Codex; the Tester and Deployer stay on Haiku, since GPT-6 Luna costs the same.
-const MODEL_OF: Record<FarmerId, string> = { planner: 'Claude Opus 5.5', designer: 'Claude Sonnet 5.5', builder: 'GPT-6.1 Sol', tester: 'Claude Haiku 5.5', deployer: 'Claude Haiku 5.5' }
+// A mixed crew: the Planner on Opus 5.5 and the Designer on Sonnet 5; the Builder codes on Codex. The Tester and
+// Deployer take the cheaper of Haiku 4.5 ($1 in, $5 out) and GPT-6 Luna ($0.10, $0.50): Luna, at a tenth of the price.
+const MODEL_OF: Record<FarmerId, string> = { planner: 'Claude Opus 5.5', designer: 'Claude Sonnet 5', builder: 'GPT-6.1 Sol', tester: 'GPT-6 Luna', deployer: 'GPT-6 Luna' }
 const rateOf = (model: string) => MODELS.find((m) => m.model === model)?.rate ?? 1
 const SHIP = { id: 'ship', name: 'Ship to users', farmer: 'deployer' as FarmerId, doneWhen: 'Live for 10% with errors under 2%, then for everyone', gate: true, mins: 8, usd: 0.3 }
 
@@ -116,8 +117,8 @@ function draft(goal: string): Draft {
       context: { builder: ['src/', 'docs/help/', 'eval/questions.jsonl'], designer: ['src/widget/', 'docs/brand.md'], tester: ['tests/', 'eval/questions.jsonl'] },
       why: {
         planner: "Keeps the answers and the widget in step, and passes your notes on. Opus, for judgment.",
-        builder: "Indexes the help docs, answers from them and hands off when unsure. GPT-6.1 Sol on Codex, at Sonnet’s price.",
-        designer: "The widget is what customers see, so it keeps sources visible and the reply box clear. Sonnet, since screens follow the brand guide.",
+        builder: "Indexes the help docs, answers from them and hands off when unsure. GPT-6.1 Sol on Codex, at Sonnet 5’s price.",
+        designer: "The widget is what customers see, so it keeps sources visible and the reply box clear. Sonnet 5, since screens follow the brand guide.",
         tester: "Runs the eval questions against every answer, so a wrong one never reaches a customer.",
         deployer: "Wrong answers reach real customers, so it ships to 10% first and rolls back on its own.",
       },
@@ -137,8 +138,8 @@ function draft(goal: string): Draft {
       context: { builder: ['src/billing/', 'docs/pricing.md'], designer: ['src/checkout/', 'docs/brand.md'], tester: ['tests/billing/'] },
       why: {
         planner: "Keeps prices, payments and screens reading from one plan config. Opus, for judgment.",
-        builder: "Prices, the checkout API and webhooks are one chain of money code. GPT-6.1 Sol on Codex, at Sonnet’s price.",
-        designer: "Buyers leave at confusing errors, so it owns the checkout screens and their copy. Sonnet, working from the brand guide.",
+        builder: "Prices, the checkout API and webhooks are one chain of money code. GPT-6.1 Sol on Codex, at Sonnet 5’s price.",
+        designer: "Buyers leave at confusing errors, so it owns the checkout screens and their copy. Sonnet 5, working from the brand guide.",
         tester: "Runs test-card purchases and refunds against every done-when, so nobody is charged wrong.",
         deployer: "Payments can't be half broken, so 10% of buyers first, rolled back at the first failed payment.",
       },
@@ -158,8 +159,8 @@ function draft(goal: string): Draft {
       context: { builder: ['src/metrics/', 'db/schema.sql'], designer: ['src/dashboard/'], tester: ['tests/metrics/'] },
       why: {
         planner: "Keeps the queries and the charts agreeing on what each metric means. Opus, for judgment.",
-        builder: "Writes the metric queries and the API. GPT-6.1 Sol on Codex, at Sonnet’s price.",
-        designer: "Charts only help if they read at a glance, so it designs them on their own. Sonnet, working from the brand guide.",
+        builder: "Writes the metric queries and the API. GPT-6.1 Sol on Codex, at Sonnet 5’s price.",
+        designer: "Charts only help if they read at a glance, so it designs them on their own. Sonnet 5, working from the brand guide.",
         tester: "Checks every metric against a hand count, so the dashboard never shows a wrong number.",
         deployer: "Ships to 10% first and rolls back if the API slows down or errors.",
       },
@@ -183,10 +184,10 @@ const PRIORITY: FarmerId[] = ['builder', 'tester', 'planner', 'designer', 'deplo
 
 const WHY: Record<FarmerId, string> = {
   planner: 'Splits the work, prices it and passes your messages on. Needs judgment, so Opus.',
-  builder: 'Writes most of the code. GPT-6.1 Sol on Codex, at Sonnet’s price.',
-  designer: 'Owns the screens and copy, from the brand guide. Sonnet.',
-  tester: 'Checks the others against each done-when, so nobody grades its own work. Haiku, for very little.',
-  deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own. Haiku, for very little.',
+  builder: 'Writes most of the code. GPT-6.1 Sol on Codex, at Sonnet 5’s price.',
+  designer: 'Owns the screens and copy, from the brand guide. Sonnet 5.',
+  tester: 'Checks the others against each done-when, so nobody grades its own work. GPT-6 Luna, a tenth of Haiku’s price.',
+  deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own. GPT-6 Luna, a tenth of Haiku’s price.',
 }
 
 function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boolean): FarmerSetup {

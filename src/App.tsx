@@ -9,7 +9,7 @@ import { Ico, LimitField, Mark, Portrait, Sign, Swatch, mins, usd, type IconName
 import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
-import { NO_KEY, getLiveMode, reshapeRead, route, setLiveMode } from './run/agent'
+import { getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode } from './run/agent'
 import { probeKeys, type Keys } from './run/live'
 import type { Scope } from './run/reshape'
 import { planInto } from './run/planning'
@@ -280,7 +280,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
   const setCrew = (next: FarmerId[]) => planInto(p, next)
   const missing = FARMER_ORDER.filter((x) => !s.farmers[x])
   // No key for the Planner's provider: the plan is simulated, and the tag says which key.
-  const noKey = !!p.liveNote && Object.values(NO_KEY).includes(p.liveNote)
+  const noKey = isFallbackNote(p.liveNote)
   const pl = s.farmers.planner ? setupOf('planner') : undefined
   return (
     <Dialogue farmer="planner" side={side} dock>
@@ -304,7 +304,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
             About <b>{est && mins(est.minutes)}</b> and <b>{est && usd(est.usd)}</b> with {ids.length} farmers.
             {one && est && (
               <>
-                {' '}One Sonnet agent alone would{' '}
+                {' '}One Sonnet 5 agent alone would{' '}
                 {one.minutes > est.minutes ? <>take <b className="gain">{mins(one.minutes - est.minutes)} longer</b></> : <>finish <b>{mins(est.minutes - one.minutes)} sooner</b></>}
                 {Math.abs(est.usd - one.usd) < 0.5 ? ' for the same cost' : est.usd > one.usd ? <> and cost <b>{usd(est.usd - one.usd)} less</b></> : <> and cost <b>{usd(one.usd - est.usd)} more</b></>}
                 {s.farmers.tester ? ', with no one checking its work' : ''}.
@@ -385,10 +385,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         </div>
       )}
       <div className="plan-foot">
-        <div className="plan-setting">
-          <span>Stops for you</span>
-          <LevelPicker p={p} compact />
-        </div>
+        <LevelPicker p={p} compact />
         <button
           className="btn approve"
           onClick={() => {
@@ -958,7 +955,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
 function Settings() {
   const st = useStore()
   const [live, setLive] = useState(getLiveMode())
-  // Which keys the server has, yes or no. The values never leave the server.
+  // Whether the server can make live calls, and how. Keys never leave the server.
   const [keys, setKeys] = useState<Keys | null>(null)
   useEffect(() => {
     let on = true
@@ -980,21 +977,16 @@ function Settings() {
         <span className={`switch${live ? ' on' : ''}`} />
         <span>
           Live mode
-          <small>On, the Planner calls Claude or Codex with the server’s keys. Off, it’s simulated and free.</small>
+          <small>On, the Planner calls Claude or Codex through Lovable AI. Off, it’s simulated and free.</small>
         </span>
       </button>
-      <dl className="keys" aria-label="Server keys">
-        {(
-          [
-            ['anthropic', 'Anthropic key (Claude)'],
-            ['openai', 'OpenAI key (Codex)'],
-          ] as const
-        ).map(([k, label]) => (
-          <div key={k}>
-            <dt>{label}</dt>
-            <dd className={keys?.[k] ? 'yes' : 'no'}>{keys ? (keys[k] ? 'Yes' : 'No') : '…'}</dd>
-          </div>
-        ))}
+      <dl className="keys" aria-label="Live calls">
+        <div>
+          <dt>Live:</dt>
+          <dd className={keys?.gateway || keys?.anthropic ? 'yes' : 'no'}>
+            {!keys ? '…' : keys.gateway ? 'Lovable AI (uses workspace credits)' : keys.anthropic ? 'Claude only, with the Anthropic key' : 'Not set up'}
+          </dd>
+        </div>
       </dl>
       <button className="toggle" onClick={() => store.enableNotifications(!st.notifications)}>
         <span className={`switch${st.notifications ? ' on' : ''}`} />

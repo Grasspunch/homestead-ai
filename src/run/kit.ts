@@ -50,25 +50,30 @@ export interface ModelChoice {
   model: string
   agent: 'claude-code' | 'codex'
   provider: Provider
-  api: string // the provider's model id, for live calls
+  api: string // the provider's own model id, for direct calls in local dev
+  gateway: string // the id on Lovable's AI gateway, for live calls on Lovable
   label: string
   about: string
   rate: number // cost relative to Claude Opus 5.5
 }
 
-// Every rate is per token, against Claude Opus 5.5 ($4 in, $20 out per million tokens), from list prices.
+// The models Lovable's AI gateway offers. Every rate is per token, against Claude Opus 5.5 ($4 in, $20 out per
+// million tokens); input and output scale together for each, so one ratio covers both.
+// The gateway ids are the provider-prefixed names Lovable's gateway uses. They need checking in Lovable: a wrong
+// one fails on screen with the id it tried, and the call is simulated instead.
+// GPT-6 Sol is on Lovable's list too, but has no published price here, so it stays out of the picker.
 export const MODELS: ModelChoice[] = [
-  // Anthropic's list prices per million tokens: Opus $4 in, $20 out; Sonnet $2, $10; Haiku $0.10, $0.50.
-  { model: 'Claude Opus 5.5', agent: 'claude-code', provider: 'anthropic', api: 'claude-opus-5-5', label: 'Claude Opus 5.5', about: 'Best at plans, design and judgment', rate: 1 },
-  { model: 'Claude Sonnet 5.5', agent: 'claude-code', provider: 'anthropic', api: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', about: 'Everyday coding at half the price', rate: 0.5 },
-  { model: 'Claude Haiku 5.5', agent: 'claude-code', provider: 'anthropic', api: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', about: 'Checks, routing and shipping, for very little', rate: 0.025 },
+  // Anthropic, per million tokens: Opus 5.5 $4 in, $20 out; Opus 5 $5, $25; Sonnet 5 $2, $10; Haiku 4.5 $1, $5; Fable 5.1 $10, $50.
+  { model: 'Claude Opus 5.5', agent: 'claude-code', provider: 'anthropic', api: 'claude-opus-5-5', gateway: 'anthropic/claude-opus-5-5', label: 'Claude Opus 5.5', about: 'Best at plans, design and judgment', rate: 1 },
+  { model: 'Claude Opus 5', agent: 'claude-code', provider: 'anthropic', api: 'claude-opus-5', gateway: 'anthropic/claude-opus-5', label: 'Claude Opus 5', about: 'The previous Opus, at a quarter more', rate: 1.25 },
+  { model: 'Claude Sonnet 5', agent: 'claude-code', provider: 'anthropic', api: 'claude-sonnet-5', gateway: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5', about: 'Everyday coding and design at half the price', rate: 0.5 },
+  { model: 'Claude Haiku 4.5', agent: 'claude-code', provider: 'anthropic', api: 'claude-haiku-4-5', gateway: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5', about: 'Quick checks at a quarter of the price', rate: 0.25 },
+  { model: 'Claude Fable 5.1', agent: 'claude-code', provider: 'anthropic', api: 'claude-fable-5-1', gateway: 'anthropic/claude-fable-5-1', label: 'Claude Fable 5.1', about: 'The hardest problems, at 2.5 times the price', rate: 2.5 },
   // OpenAI's models in Codex, per million tokens: Astra $10 in, $50 out; Sol $2, $10; Terra $1, $5; Luna $0.10, $0.50.
-  // Source: https://developers.openai.com/codex/models (now https://learn.chatgpt.com/docs/models) and
-  // https://openai.com/api/pricing/ — read as a summary, not verbatim, so check them before relying on them.
-  { model: 'GPT-6.1 Sol', agent: 'codex', provider: 'openai', api: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', about: 'Codex’s default for coding, at Sonnet’s price', rate: 0.5 },
-  { model: 'GPT-6.1 Terra', agent: 'codex', provider: 'openai', api: 'gpt-6.1-terra', label: 'GPT-6.1 Terra', about: 'Smaller coding jobs at a quarter of Opus’s price', rate: 0.25 },
-  { model: 'GPT-6 Luna', agent: 'codex', provider: 'openai', api: 'gpt-6-luna', label: 'GPT-6 Luna', about: 'Focused, high-volume work, at Haiku’s price', rate: 0.025 },
-  { model: 'GPT-6 Astra', agent: 'codex', provider: 'openai', api: 'gpt-6-astra', label: 'GPT-6 Astra', about: 'OpenAI’s most capable, at 2.5 times Opus’s price', rate: 2.5 },
+  { model: 'GPT-6.1 Sol', agent: 'codex', provider: 'openai', api: 'gpt-6.1-sol', gateway: 'openai/gpt-6.1-sol', label: 'GPT-6.1 Sol', about: 'Codex’s default for coding, at Sonnet’s price', rate: 0.5 },
+  { model: 'GPT-6.1 Terra', agent: 'codex', provider: 'openai', api: 'gpt-6.1-terra', gateway: 'openai/gpt-6.1-terra', label: 'GPT-6.1 Terra', about: 'Smaller coding jobs at a quarter of the price', rate: 0.25 },
+  { model: 'GPT-6 Luna', agent: 'codex', provider: 'openai', api: 'gpt-6-luna', gateway: 'openai/gpt-6-luna', label: 'GPT-6 Luna', about: 'Checks, routing and shipping, for very little', rate: 0.025 },
+  { model: 'GPT-6 Astra', agent: 'codex', provider: 'openai', api: 'gpt-6-astra', gateway: 'openai/gpt-6-astra', label: 'GPT-6 Astra', about: 'OpenAI’s most capable, at 2.5 times the price', rate: 2.5 },
 ]
 
 // The picker groups models by who makes them.

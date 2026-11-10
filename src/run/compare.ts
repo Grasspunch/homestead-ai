@@ -1,4 +1,4 @@
-// Crew against one agent, from the finished run: what this run's own work would have cost one Sonnet agent
+// Crew against one agent, from the finished run: what this run's own work would have cost one Sonnet 5 agent
 // doing it all in a row, with no checker. Both columns come from the same events, never from the plan.
 import { MODELS } from './kit'
 import { SOLO } from './simPlan'
@@ -14,7 +14,7 @@ export function soloFromRun(events: RunEvent[]): Estimate {
     if (e.type === 'farmer') model[e.id] = e.model
     if (e.type === 'check' || e.type === 'verify') checker.add(e.by)
   }
-  // The work: every step a maker took, repriced to Sonnet. The checking, and the Tester's own task, are left out.
+  // The work: every step a maker took, repriced to Sonnet 5. The checking, and the Tester's own task, are left out.
   const starts = new Map<string, { t: number; f: FarmerId }>()
   let usd = 0
   let ms = 0

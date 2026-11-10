@@ -167,7 +167,7 @@ export interface RunState {
   tasks: TaskState[]
   estimate?: Estimate
   singleAgentEstimate?: Estimate
-  // At the end: one Sonnet agent doing this run's own work alone, with no checker.
+  // At the end: one Sonnet 5 agent doing this run's own work alone, with no checker.
   soloActual?: Estimate
   checkUsd?: number // what the checks cost in this run
   asks: Ask[]

@@ -12,10 +12,11 @@ export type LiveResult<T> = T & { tokens: number; model?: string }
 const ENDPOINT = '/api/agent'
 const HEADERS: Record<string, string> = { 'Content-Type': 'application/json' }
 
-// Which providers' keys the server has, yes or no. Never the keys themselves.
+// Which models the server can run live, by maker, and whether it goes through Lovable AI. Yes or no, never a key.
 export interface Keys {
   anthropic: boolean
   openai: boolean
+  gateway: boolean
 }
 let keysAvailable: Promise<Keys> | null = null
 
@@ -23,8 +24,8 @@ let keysAvailable: Promise<Keys> | null = null
 export function probeKeys(): Promise<Keys> {
   keysAvailable ??= fetch(ENDPOINT, { headers: HEADERS })
     .then((r) => (r.ok ? r.json() : {}))
-    .then((j: { live?: boolean; keys?: Partial<Keys> }) => ({ anthropic: !!(j.keys?.anthropic ?? j.live), openai: !!j.keys?.openai }))
-    .catch(() => ({ anthropic: false, openai: false }))
+    .then((j: { live?: boolean; gateway?: boolean; keys?: Partial<Keys> }) => ({ anthropic: !!(j.keys?.anthropic ?? j.live), openai: !!j.keys?.openai, gateway: !!j.gateway }))
+    .catch(() => ({ anthropic: false, openai: false, gateway: false }))
   return keysAvailable
 }
 
@@ -38,10 +39,23 @@ export function resetLiveProbe() {
   keysAvailable = null
 }
 
-// The server had no key for the model this call needed.
+// The server can't run the model this call needed.
 export class KeyMissing extends Error {
   constructor(public provider: 'anthropic' | 'openai') {
-    super(provider === 'openai' ? 'OpenAI key not set, simulated' : 'Anthropic key not set, simulated')
+    super(provider === 'openai' ? 'Lovable AI not set up, simulated' : 'Anthropic key not set, simulated')
+  }
+}
+
+// Lovable's gateway said no: out of credits, rate limited, or it doesn't know the model id. The call is simulated.
+export class GatewayRefused extends Error {
+  constructor(public code: 'credits' | 'rate' | 'model', model?: string) {
+    super(
+      code === 'credits'
+        ? 'Out of Lovable credits, simulated instead'
+        : code === 'rate'
+          ? 'Lovable AI rate limit reached, simulated instead'
+          : `Lovable AI doesn't offer the model "${model ?? '?'}", simulated instead. Check its id in src/run/kit.ts.`,
+    )
   }
 }
 
@@ -52,13 +66,16 @@ async function call<T>(task: AgentTask, input: Record<string, unknown>): Promise
   } catch {
     throw new Error('Could not reach the agent server.')
   }
-  let body: { data?: T; tokens?: number; model?: string; error?: string; missing?: 'anthropic' | 'openai' } | null = null
+  let body: { data?: T; tokens?: number; model?: string; error?: string; missing?: 'anthropic' | 'openai'; code?: 'credits' | 'rate' | 'model' } | null = null
   try {
     body = await res.json()
   } catch {
     body = null
   }
   if (res.status === 503 && body?.missing) throw new KeyMissing(body.missing)
+  if (res.status === 402) throw new GatewayRefused('credits')
+  if (res.status === 429) throw new GatewayRefused('rate')
+  if (body?.code === 'model') throw new GatewayRefused('model', (body as { model?: string }).model)
   if (!res.ok || !body || body.data === undefined) {
     const why = body?.error ?? (res.ok ? 'The agent sent back no answer.' : `The agent server answered ${res.status}.`)
     throw new Error(task === 'plan' ? `Couldn't make a plan: ${why}` : task === 'reshape' ? `Couldn't read the change: ${why}` : `Couldn't route the message: ${why}`)

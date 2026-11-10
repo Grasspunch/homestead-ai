@@ -1,11 +1,12 @@
 // The Planner the app talks to. Simulated by default, so trying it spends no tokens.
-// Live mode (Settings) sends the same requests to the real Planner through /api/agent,
-// which uses the deployment's ANTHROPIC_API_KEY for Claude models and OPENAI_API_KEY for the Codex models.
-// A failed live call, or one whose provider has no key, falls back to the simulation and says why.
+// Live mode (Settings) sends the same requests to the real Planner through /api/agent, which on Lovable calls
+// every model through Lovable AI, paid with workspace credits.
+// A failed live call, one the server can't run, or one Lovable AI refuses (credits, rate limit) falls back to the
+// simulation and says why.
 
 import type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
 import type { FarmerId } from './types'
-import { KeyMissing, planGoal as livePlan, probeKeys, reshapeLive, routeMessage as liveRoute } from './live'
+import { GatewayRefused, KeyMissing, planGoal as livePlan, probeKeys, reshapeLive, routeMessage as liveRoute } from './live'
 import { providerOf } from './kit'
 import { changesFromLive, type Ctx as ReshapeCtx, type Proposal } from './reshape'
 import { simulatePlan, simulateRoute } from './simPlan'
@@ -39,17 +40,23 @@ export interface AgentAnswer<T> {
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// What a live call couldn't do: no key for its provider, so it was simulated.
-export const NO_KEY = { anthropic: 'Anthropic key not set, simulated', openai: 'OpenAI key not set, simulated' }
+// What a live call couldn't do: the server can't run its model, so it was simulated.
+export const NO_KEY = { anthropic: 'Anthropic key not set, simulated', openai: 'Lovable AI not set up, simulated' }
 
-// `model` is the Planner's model: a Claude Planner needs the Anthropic key, a Codex one the OpenAI key.
+// Notes that say a call was simulated for an expected reason, not because it broke.
+export const isFallbackNote = (note?: string) =>
+  !!note && (Object.values(NO_KEY).includes(note) || note === new GatewayRefused('credits').message || note === new GatewayRefused('rate').message)
+
+const noteOf = (e: unknown) => (e instanceof KeyMissing ? NO_KEY[e.provider] : e instanceof Error ? e.message : String(e))
+
+// `model` is the Planner's model. On Lovable both makers run through Lovable AI; in local dev without it, only Claude.
 async function run<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, model?: string): Promise<AgentAnswer<T>> {
   const provider = providerOf(model)
   if (live && (await probeKeys())[provider]) {
     try {
       return { data: await liveCall(), live: true }
     } catch (e) {
-      return { data: sim(), live: false, error: e instanceof KeyMissing ? NO_KEY[e.provider] : e instanceof Error ? e.message : String(e) }
+      return { data: sim(), live: false, error: noteOf(e) }
     }
   }
   // A short pause so the simulated Planner paces like a real one.
@@ -76,7 +83,7 @@ export async function reshapeRead(message: string, ctx: ReshapeCtx, model?: stri
     const proposal = changesFromLive(out, ctx)
     return { proposal: proposal && { ...proposal, note: 'Read by the live Planner' } }
   } catch (e) {
-    if (e instanceof KeyMissing) return { proposal: null, note: NO_KEY[e.provider] }
+    if (e instanceof KeyMissing || e instanceof GatewayRefused) return { proposal: null, note: noteOf(e) }
     return { proposal: null, note: `The live Planner failed (${e instanceof Error ? e.message : String(e)}), so I read this myself.` }
   }
 }

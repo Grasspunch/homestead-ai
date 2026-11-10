@@ -110,6 +110,12 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 
 ## A mixed crew
 - Models are grouped by maker wherever you pick one: "Claude" first, then "OpenAI (Codex)". In the plan's select that's an optgroup; on the farmer page each group has a small bold meta heading over its own grid of model buttons.
-- The farmer page names the agent under the farmer's name, in meta ink: "GPT-6.1 Sol on Codex", "Claude Haiku 5.5 on Claude Code".
-- Settings lists the server's keys under Live mode, one row each ("Anthropic key (Claude)", "OpenAI key (Codex)") with a bold Yes in leaf or No in meta ink. Never a value.
-- A plan simulated for want of a key carries a gold tag with the reason, "OpenAI key not set, simulated", instead of the red "Live call failed".
+- The farmer page names the agent under the farmer's name, in meta ink: "GPT-6.1 Sol on Codex", "Claude Sonnet 5 on Claude Code".
+- Settings shows one row under Live mode, "Live: Lovable AI (uses workspace credits)", in bold leaf when it can run, meta ink when it can't. Never a key.
+- A plan simulated for an expected reason carries a gold tag with it ("Out of Lovable credits, simulated instead", "Lovable AI rate limit reached, simulated instead") instead of the red "Live call failed". A wrong model id is a failure: red tag, and the line under it names the id to check.
+
+## Ask me, and proof that leads with the task
+- How often the crew stops for you is one select-styled field (the soft well with the pixel ▾): "Ask me: When it matters". It replaces the row of three level buttons everywhere: the plan's foot, the Control panel and /kit.
+- It opens a custom menu on paper, not a native select: each level on one line in body ink, with what it asks about under it in meta ink, built from the autonomy presets ("Cost, disagreements, failed checks, big changes, merging and shipping again after a rollback" / "Cost, disagreements, big changes and merging" / "Big changes and merging only"). The chosen level has a leaf ✓. In the plan's foot it opens upward.
+- Keyboard: Enter, Space or ↓ opens it; ↑ ↓ move; Enter picks; Esc closes and keeps the old level; Tab closes.
+- A proof pop-up leads with the task: its name in the small pixel caps, then a green "Done" tag (red "Failed" on a failure). Then the proof itself (the test seeds and "5 of 5 tests pass", the screenshot, or the chart). Last, in meta ink, "Checked by the Tester". No swatch or checker name in the header.

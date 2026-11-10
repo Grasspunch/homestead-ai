@@ -1,16 +1,16 @@
 // The live agent calls: the Planner turns a goal into a crew and a plan, and routes the
 // person's messages to the right farmer. Shared by the server route on Lovable (/api/agent)
 // and the Vite dev server, so local and deployed runs use the same prompts.
-// The caller passes in the clients it has keys for: an Anthropic client for Claude models, and an OpenAI key for
-// the Codex models, called through the Responses API with the same JSON schema. Neither key reaches the browser.
+// On Lovable every model, Claude or OpenAI, goes through Lovable's AI gateway with the LOVABLE_API_KEY secret, paid
+// with the workspace's credits. Local dev may call Claude directly with an Anthropic key instead. No key reaches the browser.
 
 import type { Estimate, FarmerId, FarmerSetup, PlanTask } from '../run/types'
 import { reshapeSchema, type Ctx as ReshapeCtx } from '../run/reshape'
-import { MODELS, providerOf, type Provider } from '../run/kit'
+import { MODELS, modelOf, providerOf } from '../run/kit'
 
 export const MODEL = 'claude-opus-5-5'
 // Routing a message is a quick pick from a short list, so it runs on the cheap model.
-export const ROUTE_MODEL = 'claude-haiku-5-5'
+export const ROUTE_MODEL = 'claude-haiku-4-5'
 
 // Minimal shape of the SDK client we use, so this file works on any runtime.
 export interface ClaudeClient {
@@ -25,33 +25,49 @@ export interface ClaudeClient {
   }
 }
 
-// An OpenAI key and, for tests, a stand-in for fetch.
-export interface OpenAIClient {
+// Lovable's AI gateway: the LOVABLE_API_KEY and, for tests, a stand-in for fetch.
+export interface GatewayClient {
   key: string
   fetch?: typeof fetch
 }
+export const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions'
 
-// The clients a server has keys for. A call to a provider without one throws MissingKey, which the server
-// answers with 503 and the browser turns into a simulated answer with a note.
+// The clients a server has. With the gateway, every call goes through it. Without it, Claude models need a direct
+// Anthropic client and OpenAI models can't run: the call throws MissingKey, which the server answers with 503 and the
+// browser turns into a simulated answer with a note.
 export interface Clients {
+  gateway?: GatewayClient
   claude?: ClaudeClient
-  openai?: OpenAIClient
 }
 
 export class MissingKey extends Error {
-  constructor(public provider: Provider) {
-    super(provider === 'openai' ? 'OPENAI_API_KEY is not set' : 'ANTHROPIC_API_KEY is not set')
+  constructor(public provider: 'anthropic' | 'openai') {
+    super(provider === 'openai' ? 'LOVABLE_API_KEY is not set' : 'ANTHROPIC_API_KEY is not set')
   }
 }
 
-// Which model a call runs on: the Planner's own model, picked in the plan. A Codex Planner plans on its model
-// and routes on GPT-6 Luna; a Claude Planner plans on Opus and routes on Haiku, as before.
+// The gateway said no: out of credits (402), rate limited (429), or it doesn't know the model id.
+export class GatewayError extends Error {
+  constructor(public code: 'credits' | 'rate' | 'model', message: string, public model?: string) {
+    super(message)
+  }
+}
+
+// What the server sends back for an error, so both servers (Lovable and Vite) answer the same way.
+export function errorReply(e: unknown): { status: number; body: Record<string, unknown> } {
+  if (e instanceof MissingKey) return { status: 503, body: { error: e.message, missing: e.provider } }
+  if (e instanceof GatewayError) return { status: e.code === 'credits' ? 402 : e.code === 'rate' ? 429 : 502, body: { error: e.message, code: e.code, model: e.model } }
+  return { status: 500, body: { error: e instanceof Error ? e.message : String(e) } }
+}
+
+// Which model a call runs on, by its picker name: the Planner's own model, picked in the plan. Routing and reading a
+// change are quick, so they run on the cheap model from the same maker: GPT-6 Luna for OpenAI, Haiku 4.5 for Claude.
 export function modelFor(task: AgentTask, plannerModel?: string): string {
   const quick = task === 'route' || task === 'reshape'
-  if (providerOf(plannerModel) === 'openai') return quick ? 'gpt-6-luna' : MODELS.find((m) => m.model === plannerModel)!.api
-  return quick ? ROUTE_MODEL : MODEL
+  const m = modelOf(plannerModel)
+  if (providerOf(plannerModel) === 'openai') return quick ? 'GPT-6 Luna' : m!.model
+  return quick ? 'Claude Haiku 4.5' : m?.model ?? 'Claude Opus 5.5'
 }
-export const providerOfApi = (api: string): Provider => (api.startsWith('gpt-') ? 'openai' : 'anthropic')
 
 export interface AgentResult<T> {
   data: T
@@ -59,18 +75,17 @@ export interface AgentResult<T> {
   model: string
 }
 
-async function callJSON<T>(clients: Clients, system: string, user: string, schema: Record<string, unknown>, model = MODEL): Promise<AgentResult<T>> {
-  if (providerOfApi(model) === 'openai') {
-    if (!clients.openai) throw new MissingKey('openai')
-    return callOpenAI<T>(clients.openai, system, user, schema, model)
-  }
+async function callJSON<T>(clients: Clients, system: string, user: string, schema: Record<string, unknown>, name = 'Claude Opus 5.5'): Promise<AgentResult<T>> {
+  const m = modelOf(name) ?? modelOf('Claude Opus 5.5')!
+  if (clients.gateway) return callGateway<T>(clients.gateway, system, user, schema, m.gateway)
+  if (m.provider === 'openai') throw new MissingKey('openai')
   const client = clients.claude
   if (!client) throw new MissingKey('anthropic')
   const res = await client.beta.messages.create({
-    model,
+    model: m.api,
     max_tokens: 16000,
-    // Opus falls back on the server when it declines; Haiku has no server-side fallback.
-    ...(model === MODEL ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
+    // Opus falls back on the server when it declines; the smaller models have no server-side fallback.
+    ...(m.api === MODEL ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
     output_config: { effort: 'low', format: { type: 'json_schema', schema } },
     system,
     messages: [{ role: 'user', content: user }],
@@ -79,37 +94,88 @@ async function callJSON<T>(clients: Clients, system: string, user: string, schem
   if (res.stop_reason === 'max_tokens') throw new Error('The answer was cut off before it finished.')
   const text = res.content.find((b) => b.type === 'text')?.text
   if (!text) throw new Error('No text in the response.')
-  return { data: JSON.parse(text) as T, tokens: res.usage.input_tokens + res.usage.output_tokens, model }
+  return { data: JSON.parse(text) as T, tokens: res.usage.input_tokens + res.usage.output_tokens, model: m.api }
 }
 
-// The OpenAI Responses API, with the schema as a strict json_schema format: the same contract as the Claude call.
-async function callOpenAI<T>(o: OpenAIClient, system: string, user: string, schema: Record<string, unknown>, model: string): Promise<AgentResult<T>> {
-  const res = await (o.fetch ?? fetch)('https://api.openai.com/v1/responses', {
+// Lovable's gateway speaks OpenAI's chat completions for every model. The schema goes as a strict json_schema
+// response format, the system prompt also asks for bare JSON, and the answer is checked against the schema, since
+// not every model behind the gateway enforces the format.
+async function callGateway<T>(g: GatewayClient, system: string, user: string, schema: Record<string, unknown>, model: string): Promise<AgentResult<T>> {
+  const res = await (g.fetch ?? fetch)(GATEWAY_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${o.key}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${g.key}` },
     body: JSON.stringify({
       model,
-      instructions: system,
-      input: user,
-      max_output_tokens: 16000,
-      text: { format: { type: 'json_schema', name: 'homestead_answer', schema, strict: true } },
+      max_tokens: 16000,
+      messages: [
+        { role: 'system', content: `${system}\n\nAnswer with one JSON object that matches the schema, and nothing else: no prose, no code fences.` },
+        { role: 'user', content: user },
+      ],
+      response_format: { type: 'json_schema', json_schema: { name: 'homestead_answer', schema, strict: true } },
     }),
   })
   type Body = {
-    status?: string
-    error?: { message?: string } | null
-    output_text?: string
-    output?: { content?: { type: string; text?: string; refusal?: string }[] }[]
-    usage?: { input_tokens?: number; output_tokens?: number }
+    error?: { message?: string; code?: string } | string | null
+    choices?: { finish_reason?: string; message?: { content?: string | null; refusal?: string | null } }[]
+    usage?: { prompt_tokens?: number; completion_tokens?: number }
   }
   const body = (await res.json().catch(() => ({}))) as Body
-  if (!res.ok) throw new Error(body.error?.message ?? `OpenAI answered ${res.status}.`)
-  const parts = (body.output ?? []).flatMap((x) => x.content ?? [])
-  if (parts.some((c) => c.type === 'refusal')) throw new Error('The model declined this request.')
-  if (body.status === 'incomplete') throw new Error('The answer was cut off before it finished.')
-  const text = body.output_text ?? parts.find((c) => c.type === 'output_text')?.text
+  const said = typeof body.error === 'string' ? body.error : body.error?.message ?? ''
+  if (res.status === 402) throw new GatewayError('credits', 'Out of Lovable credits')
+  if (res.status === 429) throw new GatewayError('rate', 'Lovable AI rate limit reached')
+  if (!res.ok) {
+    if (res.status === 404 || /model/i.test(said)) throw new GatewayError('model', `Lovable AI doesn't offer the model "${model}"`, model)
+    throw new Error(said || `Lovable AI answered ${res.status}.`)
+  }
+  const c = body.choices?.[0]
+  if (c?.message?.refusal) throw new Error('The model declined this request.')
+  if (c?.finish_reason === 'length') throw new Error('The answer was cut off before it finished.')
+  const text = c?.message?.content
   if (!text) throw new Error('No text in the response.')
-  return { data: JSON.parse(text) as T, tokens: (body.usage?.input_tokens ?? 0) + (body.usage?.output_tokens ?? 0), model }
+  let data: unknown
+  try {
+    data = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, ''))
+  } catch {
+    throw new Error('The answer was not JSON.')
+  }
+  const bad = mismatch(schema, data)
+  if (bad) throw new Error(`The answer didn't match the plan's shape (${bad}).`)
+  return { data: data as T, tokens: (body.usage?.prompt_tokens ?? 0) + (body.usage?.completion_tokens ?? 0), model }
+}
+
+// A small check of an answer against the JSON schema subset these calls use: type, enum, required, items, anyOf.
+// Returns where it first goes wrong, or null.
+export function mismatch(schema: Record<string, unknown>, v: unknown, at = 'answer'): string | null {
+  const s = schema as { type?: string; enum?: unknown[]; required?: string[]; properties?: Record<string, Record<string, unknown>>; items?: Record<string, unknown>; anyOf?: Record<string, unknown>[] }
+  if (s.anyOf) return s.anyOf.some((x) => !mismatch(x, v, at)) ? null : `${at} fits none of its options`
+  if (s.enum && !s.enum.includes(v)) return `${at} is not one of ${s.enum.join(', ')}`
+  switch (s.type) {
+    case 'null':
+      return v === null ? null : `${at} should be null`
+    case 'string':
+    case 'number':
+    case 'boolean':
+      return typeof v === s.type ? null : `${at} should be a ${s.type}`
+    case 'array':
+      if (!Array.isArray(v)) return `${at} should be a list`
+      for (let i = 0; i < v.length; i++) {
+        const bad = s.items && mismatch(s.items, v[i], `${at}[${i}]`)
+        if (bad) return bad
+      }
+      return null
+    case 'object': {
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return `${at} should be an object`
+      const o = v as Record<string, unknown>
+      for (const k of s.required ?? []) if (!(k in o)) return `${at}.${k} is missing`
+      for (const [k, sub] of Object.entries(s.properties ?? {})) {
+        if (!(k in o)) continue
+        const bad = mismatch(sub, o[k], `${at}.${k}`)
+        if (bad) return bad
+      }
+      return null
+    }
+  }
+  return null
 }
 
 // ---- The crew ------------------------------------------------------------------------
@@ -120,9 +186,9 @@ export const FARMER_IDS: FarmerId[] = ['planner', 'builder', 'designer', 'tester
 export const CREW: Record<FarmerId, { label: string; role: string; agent: string; model: string }> = {
   planner: { label: 'Planner', role: 'splits the goal into tasks, keeps the plan current, answers the person', agent: 'claude-code', model: 'Claude Opus 5.5' },
   builder: { label: 'Builder', role: 'writes and changes the code', agent: 'codex', model: 'GPT-6.1 Sol' },
-  designer: { label: 'Designer', role: 'designs the screens, copy and flows people see', agent: 'claude-code', model: 'Claude Opus 5.5' },
-  tester: { label: 'Tester', role: 'checks each task against its done-when and runs the tests', agent: 'claude-code', model: 'Claude Haiku 5.5' },
-  deployer: { label: 'Deployer', role: 'ships to staging and production, watches the rollout', agent: 'claude-code', model: 'Claude Haiku 5.5' },
+  designer: { label: 'Designer', role: 'designs the screens, copy and flows people see', agent: 'claude-code', model: 'Claude Sonnet 5' },
+  tester: { label: 'Tester', role: 'checks each task against its done-when and runs the tests', agent: 'codex', model: 'GPT-6 Luna' },
+  deployer: { label: 'Deployer', role: 'ships to staging and production, watches the rollout', agent: 'codex', model: 'GPT-6 Luna' },
 }
 
 const STYLE = 'Write every string as one short plain line. No jargon, no em dashes, no "·" separators, no lists packed into one string.'
@@ -209,7 +275,7 @@ export function crewInstruction(crewSize?: number): string {
   return `Use exactly ${n} farmers, no more and no fewer. Always include the Builder and the Tester. Every task must belong to one of these ${n} farmers.`
 }
 
-export function planGoal(client: Clients, input: PlanInput, model = MODEL) {
+export function planGoal(client: Clients, input: PlanInput, model = 'Claude Opus 5.5') {
   const crew = FARMER_IDS.map((id) => `- ${id} (${CREW[id].label}): ${CREW[id].role}. Runs on ${CREW[id].agent}, model ${CREW[id].model}.`).join('\n')
   return callJSON<PlanOut>(
     client,
@@ -222,7 +288,7 @@ ${input.goal}
 The farmers you can use:
 ${crew}
 
-Model rules: the crew is mixed. The Builder uses agent "codex" with "GPT-6.1 Sol". Everyone else uses agent "claude-code": Planner and Designer on "Claude Opus 5.5", the Tester and Deployer on "Claude Haiku 5.5". A single general agent uses agent "claude-code" with "Claude Opus 5.5".
+Model rules: the crew is mixed. The Planner uses agent "claude-code" with "Claude Opus 5.5" and the Designer "claude-code" with "Claude Sonnet 5". The Builder uses agent "codex" with "GPT-6.1 Sol". The Tester and Deployer use agent "codex" with "GPT-6 Luna", the cheapest model that does checks and shipping well. A single general agent uses agent "claude-code" with "Claude Opus 5.5".
 
 Team size: ${crewInstruction(input.crewSize)}
 
@@ -236,7 +302,7 @@ Tasks: 3 to 8, in run order, kebab-case ids. Each has one farmer from the crew, 
 
 Estimates, for real agent runs: reason from the number of tasks, how long each takes an agent (often 5 to 20 minutes), what each costs in tokens (often $0.50 to $4 per task), and which tasks can run at the same time.
 - estimate: this crew. Minutes follow the longest chain of tasks that must wait on each other, since farmers work in parallel. Dollars add up, plus a little for handoffs and checks.
-- singleAgentEstimate: one general agent doing all tasks alone, one after another, on Claude Opus 5.5. Slower, since nothing runs in parallel and it rereads one growing context. It also has nobody independent checking its work, so some problems surface late and get redone. Per token, Claude Sonnet 5.5 and GPT-6.1 Sol cost half of Opus and Claude Haiku 5.5 a fortieth, which usually pays for the crew's handoffs.
+- singleAgentEstimate: one general agent doing all tasks alone, one after another, on Claude Sonnet 5. Slower, since nothing runs in parallel and it rereads one growing context. It also has nobody independent checking its work, so some problems surface late and get redone. Per token, Claude Sonnet 5 and GPT-6.1 Sol cost half of Opus 5.5 and GPT-6 Luna a fortieth, which usually pays for the crew's handoffs.
 The farmers' limits should add up to roughly the crew estimate, with some headroom.`,
     PLAN_SCHEMA,
     model,
@@ -274,7 +340,7 @@ export function routeSchema(input: RouteInput) {
   }
 }
 
-export async function routeMessage(client: Clients, input: RouteInput, model = ROUTE_MODEL): Promise<AgentResult<RouteOut>> {
+export async function routeMessage(client: Clients, input: RouteInput, model = 'Claude Haiku 4.5'): Promise<AgentResult<RouteOut>> {
   const farmers = input.farmers.map((f) => `- ${f.id} (${f.label}): ${CREW[f.id]?.role ?? ''}`).join('\n')
   const tasks = input.tasks.map((t) => `- ${t.id}: ${t.name} (${t.farmer})`).join('\n')
   const out = await callJSON<{ to: FarmerId; task: string | null; reply: string }>(
@@ -309,7 +375,7 @@ export interface ReshapeOut {
 
 // A request to change how the farm runs ("I'm in an incident, skip the deployer"), as a list of typed changes.
 // The schema only allows the changes the app can make, on this farm's own tasks; the app checks them again.
-export async function reshapeFarm(client: Clients, input: { message: string; ctx: ReshapeCtx }, model = ROUTE_MODEL): Promise<AgentResult<ReshapeOut>> {
+export async function reshapeFarm(client: Clients, input: { message: string; ctx: ReshapeCtx }, model = 'Claude Haiku 4.5'): Promise<AgentResult<ReshapeOut>> {
   const tasks = input.ctx.tasks.map((t) => `- ${t.id}: ${t.name} (${t.farmer}${t.gate ? ', the release' : ''}${t.status ? `, ${t.status}` : ''})`).join('\n')
   return callJSON<ReshapeOut>(
     client,
@@ -332,7 +398,7 @@ ${input.message}
 
 export type AgentTask = 'plan' | 'route' | 'reshape'
 
-// An Anthropic client alone still works, for callers written before the crew was mixed.
+// An Anthropic client alone still works, for local dev without the gateway.
 export async function runAgent(clients: Clients | ClaudeClient, task: AgentTask, input: Record<string, unknown>): Promise<AgentResult<unknown>> {
   const client: Clients = 'beta' in clients ? { claude: clients } : clients
   const model = modelFor(task, typeof input.model === 'string' ? input.model : undefined)

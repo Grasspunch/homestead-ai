@@ -456,6 +456,7 @@ export function FarmView(p: FarmViewProps) {
             <ProofPop
               key={`${pl.id}-${c.t}`}
               check={c}
+              task={t.name}
               state={p.state}
               style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y - 0.7) * T }}
               onOpen={() => p.onTask(pl.id)}

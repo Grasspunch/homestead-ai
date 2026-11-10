@@ -6,6 +6,8 @@ import './kit.css'
 import './hud.css'
 import './panel.css'
 import { Ico, LimitField, Mark, Portrait, Sign, Swatch, Ticks } from './bits'
+import { AskMe } from './Side'
+import type { AutonomyLevel } from '../run/types'
 
 const PAGE = `
 body { overflow: auto !important; background: #8fc77a; }
@@ -105,8 +107,10 @@ export function Kit() {
             <select className="field-box" defaultValue="sol">
               <optgroup label="Claude">
                 <option value="opus">Claude Opus 5.5</option>
-                <option value="sonnet">Claude Sonnet 5.5</option>
-                <option value="haiku">Claude Haiku 5.5</option>
+                <option value="opus5">Claude Opus 5</option>
+                <option value="sonnet">Claude Sonnet 5</option>
+                <option value="haiku">Claude Haiku 4.5</option>
+                <option value="fable">Claude Fable 5.1</option>
               </optgroup>
               <optgroup label="OpenAI (Codex)">
                 <option value="sol">GPT-6.1 Sol</option>
@@ -138,23 +142,13 @@ export function Kit() {
         </form>
       </Sec>
 
-      <Sec title="Choosing" note="On or off is the wooden switch. A choice among a few levels is a row of pack buttons, cream for the chosen one.">
+      <Sec title="Choosing" note="On or off is the wooden switch. How often the crew stops for you is one select-styled field, “Ask me: When it matters”, that opens a menu: each level on one line, with what it asks about under it, read from the autonomy presets. Arrow keys move, Enter picks, Esc closes.">
         <div className="kp-row">
           <button className="plan-setting" onClick={() => setOn(!on)} aria-pressed={on}>
             <span>I accept finished work</span>
             <span className={`switch${on ? ' on' : ''}`} />
           </button>
-          <div className="levels" role="radiogroup">
-            {[
-              ['often', 'Often'],
-              ['matters', 'When it matters'],
-              ['undoable', 'Only what’s hard to undo'],
-            ].map(([k, l]) => (
-              <button key={k} role="radio" aria-checked={level === k} className={level === k ? 'on' : ''} onClick={() => setLevel(k)}>
-                {l}
-              </button>
-            ))}
-          </div>
+          <AskMe level={level as AutonomyLevel} onPick={setLevel} />
         </div>
       </Sec>
 
