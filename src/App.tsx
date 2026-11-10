@@ -266,7 +266,9 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
                 <Swatch farmer={id} />
                 {f.label}
               </button>
-              <span className="why">{f.why}</span>
+              <span className="why" title={f.why}>
+                {f.why}
+              </span>
               <select
                 className="field-box"
                 value={f.model}

@@ -165,8 +165,11 @@ export function FarmView(p: FarmViewProps) {
   const freeRect = () => {
     const w = size.w - (p.side && !narrow ? 470 : 0)
     const top = narrow ? 60 : 80
-    const bottom = narrow ? 250 : p.openAsk ? 270 : 230
-    return { cx: w / 2, cy: top + (size.h - top - bottom) / 2 }
+    // The free space ends where the dialogue starts, measured, so a tall plan or review never covers what it's about.
+    const dlg = document.querySelector('.dlg') as HTMLElement | null
+    const box = wrap.current?.getBoundingClientRect()
+    const bottom = dlg && box ? Math.max(0, box.bottom - dlg.getBoundingClientRect().top) + 8 : narrow ? 250 : 230
+    return { cx: w / 2, cy: top + Math.max(0, size.h - top - bottom) / 2 }
   }
 
   // Every new plot (a task split in two mid-run) stakes itself out over a moment.

@@ -329,3 +329,10 @@ button.crew-x:hover { opacity: 1; }
 /* The rollback moment: the chart under what happened, no wider than the dialogue's text. */
 .rb-chart { max-width: 560px; }
 .rb-chart .nums { font-size: var(--t-meta); }
+/* Short windows: the plan keeps every row, each one line, so the farm still shows above it. */
+@media (max-height: 800px) {
+  .crew-row > * { min-height: calc(var(--field-h) + 4px); }
+  .crew-row > select, .crew-row > .limit-field { margin: 2px 0; }
+  .crew-row .why { display: block; padding: 0; line-height: calc(var(--field-h) + 4px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crew-head span { padding-bottom: 2px; }
+}
