@@ -10,6 +10,7 @@ import { FarmerPage } from './hud/FarmerPage'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, setMoment } from './hud/Side'
 import { getLiveMode, route, setLiveMode } from './run/agent'
 import { planInto } from './run/planning'
+import { scenario } from './run/simPlan'
 import { pendingAsk } from './run/reduce'
 import { store, useStore, type Project } from './run/store'
 import type { Ask, FarmerId, RunState, TaskState } from './run/types'
@@ -109,6 +110,16 @@ function Top({ p, s }: { p: Project; s: RunState }) {
       <div className="title paper">
         <b>{p.name}</b>
         <span>{sub}</span>
+        {p.approved && (
+          <span className="tag grey" title="Every farmer, cost and check in this run is simulated">
+            Simulated run
+          </span>
+        )}
+        {!scenario(p.goal).matched && (
+          <span className="tag gold" title="Your goal matches none of the sample projects, so the farmers act out a generic app">
+            Demo scenario
+          </span>
+        )}
       </div>
       <div className="spacer" />
       {p.approved && (
@@ -199,6 +210,11 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
       <div className="who">
         <b>Planner</b>
         <span className="tag grey">Plan</span>
+        {!scenario(p.goal).matched && (
+          <span className="tag gold" title="Your goal matches none of the sample projects, so the farmers act out a generic app">
+            Demo scenario
+          </span>
+        )}
       </div>
       <p className="plan-lead">
         {ids.length > 1 ? (

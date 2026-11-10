@@ -66,7 +66,7 @@ input, textarea { font: inherit; color: inherit; }
 .top > * { pointer-events: auto; }
 .top .title { height: 56px; padding: 0 6px; display: flex; align-items: center; gap: 10px; min-width: 0; }
 .top .title b { font-family: px7; font-weight: 400; font-size: 24px; white-space: nowrap; }
-.top .title span { font-size: 14px; color: var(--bark-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top .title span:not(.tag) { font-size: 14px; color: var(--bark-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .top .spacer { flex: 1; pointer-events: none; }
 .pill { height: 56px; padding: 0 6px; display: flex; align-items: center; gap: 8px; }
 .pill b { font-family: px7; font-weight: 400; font-size: 20px; font-variant-numeric: tabular-nums; }
@@ -162,7 +162,7 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
   .portrait { display: none; }
   .side { left: 10px; right: 10px; width: auto; top: auto; bottom: 10px; max-height: 62vh; }
   .top { left: 10px; right: 10px; top: 10px; gap: 6px; }
-  .top .title { height: 46px; } .top .title b { font-size: 18px; } .top .title span { display: none; }
+  .top .title { height: 46px; } .top .title b { font-size: 18px; } .top .title span:not(.tag) { display: none; }
   .pill { height: 46px; } .pill b { font-size: 16px; }
   .btn { height: 46px; font-size: 17px; }
   .dlg p { font-size: 15.5px; }
