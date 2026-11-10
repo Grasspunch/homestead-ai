@@ -422,7 +422,6 @@ export function simulateRun(input: SimInput): RunEvent[] {
         at(end + 0.7, {
           type: 'ask', id, farmer: 'designer', task: task.id, reason: 'disagree',
           question: `The Builder and I disagree on ${d.topic}.`,
-          impact: d.impact,
           suggested: d.designer.option, alternatives: [d.builder.option],
           talk,
         })
