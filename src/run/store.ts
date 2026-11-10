@@ -8,7 +8,7 @@ import { soloFromRun } from './compare'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
 import { applyEdit, emptyEdit, type KitEdit } from './kit'
-import { readChanges, reshapedOf, type Change, type Proposal, type Scope } from './reshape'
+import { key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope } from './reshape'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from our help docs, and hands off to a person when it is not sure'
 
@@ -50,7 +50,7 @@ export interface Project {
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean }
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
-  // exactly as it was before it. Scope is kept for a later "every farm"; only "this farm" exists today.
+  // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
 }
 
@@ -62,6 +62,7 @@ export interface ReshapeOn {
   scope: Scope
   at: number // ms into the run it took effect; 0 from the next run on
   notify?: 'desktop' | 'toast' // how stage alerts reach you, when one of the changes asks for them
+  flow?: string[] // set when a new farm started with Your flow: each item in a few words
   before?: { events: RunEvent[]; answers: Record<string, string>; run: Project['run'] } // the run as it was, for Undo
 }
 
@@ -192,6 +193,7 @@ interface Saved {
   seen: string[]
   screen?: Screen
   paused?: boolean
+  flow?: FlowItem[] // changes for every farm, which new farms start with
 }
 
 // Saved farms as they were written, or null when anything in them can't be read.
@@ -217,7 +219,8 @@ function valid(d: unknown): Saved | null {
   const seen = Array.isArray(x.seen) ? x.seen.filter((k): k is string => typeof k === 'string') : []
   const sc = x.screen as Screen | undefined
   const screen = sc && (sc.kind === 'home' || (sc.kind === 'farm' && typeof sc.project === 'string')) ? sc : undefined
-  return { v: 1, projects: x.projects as Project[], kit: o(x.kit), kitAt: o(x.kitAt), chat: o(x.chat), crewNotes: o(x.crewNotes), crewSize: o(x.crewSize), seen, screen, paused: x.paused === true }
+  const flow = Array.isArray(x.flow) ? (x.flow as FlowItem[]).filter((f) => !!f && typeof f.id === 'string' && typeof f.label === 'string' && !!f.change && typeof f.change.kind === 'string') : []
+  return { v: 1, projects: x.projects as Project[], kit: o(x.kit), kitAt: o(x.kitAt), chat: o(x.chat), crewNotes: o(x.crewNotes), crewSize: o(x.crewSize), seen, screen, paused: x.paused === true, flow }
 }
 
 class Store {
@@ -231,6 +234,7 @@ class Store {
   crewSize: Record<string, number> = {} // per own project: how many farmers the plan uses
   chat: Record<string, ChatLine[]> = {}
   settingsOpen = false
+  flow: FlowItem[] = [] // Your flow: changes for every farm
   notifications = false
   toast: { id: number; text: string; undo?: string } | null = null
   seen = new Set<string>() // moments you've already read, such as a rollback
@@ -322,6 +326,7 @@ class Store {
         seen: [...new Set([...(old?.seen ?? []).filter((k) => !mine.has(k.split(':')[0])), ...this.seen])],
         screen: this.screen,
         paused: this.screen.kind === 'farm' && !this.playing,
+        flow: this.flow,
       }
       localStorage.setItem(Store.KEY, JSON.stringify(data))
     } catch {
@@ -345,6 +350,7 @@ class Store {
     for (const [k, v] of Object.entries(d.chat)) if (k !== open) this.chat[k] = v
     for (const [k, v] of Object.entries(d.crewNotes)) if (k !== open) this.crewNotes[k] = v
     for (const [k, v] of Object.entries(d.crewSize)) if (k !== open) this.crewSize[k] = v
+    this.flow = d.flow ?? []
     // Shown without saving again, so two tabs never answer each other's saves forever.
     this.version++
     for (const fn of this.listeners) fn()
@@ -384,6 +390,7 @@ class Store {
     this.crewNotes = d.crewNotes
     this.crewSize = d.crewSize
     this.seen = new Set(d.seen)
+    this.flow = d.flow ?? []
     this.sampleLoading = false
     const screen = d.screen
     if (screen?.kind === 'farm' && this.projects.some((p) => p.id === screen.project)) {
@@ -900,7 +907,7 @@ class Store {
 
   // Apply the rows you kept. A stage alert asks the browser for permission first; blocked, it falls back to a
   // message in the app, and the card says so before it closes.
-  async applyChanges(rowIds: string[]) {
+  async applyChanges(rowIds: string[], scopes: Record<string, Scope> = {}) {
     const pd = this.pending
     const p = pd && this.project(pd.pid)
     if (!pd || !p) return
@@ -922,22 +929,32 @@ class Store {
       }
     }
     const done = this.isDone(p)
+    const scopeOf = (row: (typeof rows)[number]) => scopes[row.id] ?? row.scope ?? 'farm'
+    const every = rows.filter((x) => scopeOf(x) === 'every')
     const r: ReshapeOn = {
       id: `rs-${(p.reshapes?.length ?? 0) + 1}-${Date.now().toString(36)}`,
       title: pd.proposal.title,
       request: pd.request,
       changes: rows.map((x) => x.change),
-      scope: 'farm',
+      scope: every.length === rows.length ? 'every' : 'farm',
       at: done ? 0 : Math.round(p.clock ?? 0),
       notify,
       before: done ? undefined : { events: p.events, answers: { ...(p.answers ?? {}) }, run: p.run && { ...p.run } },
     }
     p.reshapes = [...(p.reshapes ?? []), r]
+    // Every-farm changes join Your flow, replacing one that does the same thing.
+    if (every.length) {
+      const name = (id: string) => this.reshapeCtx(p).tasks.find((t) => t.id === id)?.name ?? id
+      const adds: FlowItem[] = every.map((x, i) => ({ id: `fl-${Date.now().toString(36)}-${i}`, change: x.change, label: x.label, short: shortOf(x.change, name), on: true, from: r.id, notify: x.change.kind === 'notifyOn' ? notify : undefined }))
+      const keys = new Set(adds.map((a) => key(a.change)))
+      this.flow = [...this.flow.filter((f) => !keys.has(key(f.change))), ...adds]
+    }
     this.pending = null
     // Run again, or a finished run: the changes start with the next run, and the finished one stays as it was.
     if (!done && p.approved) this.rebuild(p)
     const n = rows.length
-    this.chatTo(p.id, { from: 'planner', text: done ? `${r.title} is on from the next run: ${n} change${n === 1 ? '' : 's'}.` : `${r.title} is on: ${n} change${n === 1 ? '' : 's'}, from now.` })
+    const flowNote = every.length ? (every.length === n ? ' It’s in your flow for every new farm.' : ` ${every.length} of them ${every.length === 1 ? 'is' : 'are'} in your flow for every new farm.`) : ''
+    this.chatTo(p.id, { from: 'planner', text: (done ? `${r.title} is on from the next run: ${n} change${n === 1 ? '' : 's'}.` : `${r.title} is on: ${n} change${n === 1 ? '' : 's'}, from now.`) + flowNote })
     this.toast = { id: Date.now(), text: `${r.title} is on.`, undo: r.id }
     if (pd.wasPlaying && !done) this.play()
     this.notify()
@@ -952,6 +969,8 @@ class Store {
     if (!p || i < 0) return
     const r = list[i]
     p.reshapes = list.filter((x) => x.id !== id)
+    // Undo takes back what it added to Your flow too.
+    this.flow = this.flow.filter((f) => f.from !== id)
     if (i === list.length - 1 && r.before) {
       const keep = new Set(r.before.events.filter((e) => e.type === 'ask').map((e) => (e.type === 'ask' ? e.id : '')))
       const answers = { ...r.before.answers }
@@ -969,6 +988,18 @@ class Store {
     } else if (p.approved && !this.isDone(p)) this.rebuild(p)
     this.toast = { id: Date.now(), text: `${r.title} is off.` }
     this.chatTo(p.id, { from: 'planner', text: `${r.title} is off. The farm runs as it did before.` })
+    this.notify()
+    this.persist()
+  }
+
+  // Your flow, from Settings: turn an item off (new farms start without it) or take it out.
+  setFlowOn(id: string, on: boolean) {
+    this.flow = this.flow.map((f) => (f.id === id ? { ...f, on } : f))
+    this.notify()
+    this.persist()
+  }
+  removeFlow(id: string) {
+    this.flow = this.flow.filter((f) => f.id !== id)
     this.notify()
     this.persist()
   }
@@ -1006,6 +1037,10 @@ class Store {
   newProject(goal: string): Project {
     const id = `own-${Date.now().toString(36)}`
     const p: Project = { id, name: 'New project', goal, kind: 'own', events: [{ t: 0, type: 'goal', text: goal }], approved: false, planning: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters } }
+    // A new farm starts with Your flow.
+    const flow = this.flow.filter((f) => f.on)
+    if (flow.length)
+      p.reshapes = [{ id: `rs-flow-${Date.now().toString(36)}`, title: 'Your flow', request: 'Your flow', changes: flow.map((f) => f.change), scope: 'every', at: 0, notify: flow.find((f) => f.notify)?.notify, flow: flow.map((f) => f.short) }]
     // The sample stays, whatever you plan next; a farm of your own gets a name of its own (see setPlan).
     this.projects = [...this.projects, p]
     this.open(id)
@@ -1026,6 +1061,15 @@ class Store {
       { t: 2, type: 'plan', tasks, estimate, singleAgentEstimate },
     ]
     this.crewSize[id] = new Set(tasks.map((t) => t.farmer)).size
+    // Your flow came from another farm: point its task changes at this plan's tasks, and drop what has no match.
+    if (p.reshapes?.length) {
+      const ids = new Set(tasks.map((t) => t.id))
+      const gate = tasks.find((t) => t.gate)?.id
+      p.reshapes = p.reshapes.map((r) => ({
+        ...r,
+        changes: r.changes.flatMap((c): Change[] => (c.kind === 'removeTask' ? (ids.has(c.task) ? [c] : []) : c.kind === 'setDoneWhen' ? (ids.has(c.task) ? [c] : gate ? [{ ...c, task: gate }] : []) : [c])),
+      }))
+    }
     this.notify()
   }
 

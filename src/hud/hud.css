@@ -147,6 +147,11 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 .pop { position: absolute; right: 16px; top: 80px; width: 340px; z-index: 8; padding: 6px 8px; display: flex; flex-direction: column; gap: 12px; }
 .pop .toggle span { font-size: 15px; }
 .pop .toggle small { display: block; font-size: 13px; color: var(--bark-3); }
+.pop .flow { display: flex; flex-direction: column; gap: 8px; border-top: 2px solid rgba(106, 74, 52, .2); padding-top: 10px; }
+.pop .flow h4 { margin: 0; }
+.pop .flow-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.pop .flow-remove { border: 0; background: none; color: var(--bark-3); font: 700 18px/1 var(--ui); cursor: pointer; padding: 2px 6px; }
+.pop .flow-remove:hover { color: var(--berry); }
 
 /* ---- home ---- */
 .homehead { position: absolute; left: 24px; top: 18px; z-index: 5; font-family: px7; font-size: 34px; color: var(--bark); }
@@ -249,7 +254,8 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 
 /* The change card: one row per change, a checkbox, what it does, and what it costs in safety. */
 .change-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.change-rows li label { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 10px; align-items: center; padding: 6px 10px; border-radius: 6px; background: rgba(74, 52, 38, .06); cursor: pointer; font: 600 var(--t-body)/1.3 var(--ui); }
+.change-rows li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding-right: 8px; border-radius: 6px; background: rgba(74, 52, 38, .06); }
+.change-rows li label { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 10px; align-items: center; padding: 6px 10px; cursor: pointer; font: 600 var(--t-body)/1.3 var(--ui); }
 .change-rows li:not(.on) label { color: var(--bark-4); }
 .change-rows li:not(.on) .what { text-decoration: line-through; }
 .change-rows input { width: 18px; height: 18px; margin: 0; accent-color: var(--leaf); }
@@ -258,6 +264,10 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 /* The changes you asked for hang under the title, so the title keeps its status. */
 .top .title { position: relative; }
 .top .title .reshapes { position: absolute; top: calc(100% + 18px); left: -12px; display: flex; gap: 6px; }
+.change-rows .scope { display: flex; border-radius: 6px; background: rgba(74, 52, 38, .08); padding: 2px; }
+.change-rows .scope button { border: 0; background: none; border-radius: 4px; padding: 3px 8px; font: 600 var(--t-meta)/1.2 var(--ui); color: var(--bark-3); cursor: pointer; white-space: nowrap; }
+.change-rows .scope button.on { background: #fff6e4; color: var(--bark); box-shadow: 0 1px 0 rgba(74, 52, 38, .25); }
+.change-rows .scope button:disabled { cursor: default; opacity: .5; }
 .reshape-chip { gap: 6px; }
 .reshape-chip button { border: 0; background: none; color: inherit; font: inherit; padding: 0 0 0 2px; cursor: pointer; line-height: 1; }
 .toast.with-undo { display: flex; gap: 10px; align-items: center; animation-duration: 6000ms; }

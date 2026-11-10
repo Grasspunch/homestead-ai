@@ -22,6 +22,42 @@ export interface ChangeRow {
   change: Change
   label: string
   loss?: string // what you give up, for a change that removes a safety step
+  scope: Scope // how long the Planner suggests it lasts: this farm, or every farm from now on
+}
+
+// A change kept for every farm: new farms start with it. Lives beside the farms in the same saved store.
+export interface FlowItem {
+  id: string
+  change: Change
+  label: string // the change card's row
+  short: string // a few words, for the plan's first line
+  on: boolean
+  from: string // the request that added it, so its Undo takes it back out
+  notify?: 'desktop' | 'toast'
+}
+
+// The Planner's suggestion: anything that removes a safety step, incident mode included, and the success
+// criteria last for this farm; a preference like stage alerts is for every farm.
+export const suggestScope = (c: Change): Scope => (c.kind === 'notifyOn' ? 'every' : 'farm')
+
+// A change in a few words, as the plan names your flow.
+export function shortOf(c: Change, name: (id: string) => string = (x) => x): string {
+  switch (c.kind) {
+    case 'removeTask':
+      return `skip “${name(c.task)}”`
+    case 'removeFarmer':
+      return 'no Deployer'
+    case 'setAutonomy':
+      return 'no review'
+    case 'setRollout':
+      return 'no 10% stage'
+    case 'setRolloutCheck':
+      return 'synthetic checks'
+    case 'setDoneWhen':
+      return 'synthetic done-when'
+    case 'notifyOn':
+      return 'stage alerts'
+  }
 }
 
 export interface Proposal {
@@ -149,6 +185,9 @@ export function rowsFor(changes: Change[], ctx: Ctx): ChangeRow[] {
   const noDeployer = changes.some((c) => c.kind === 'removeFarmer')
   return changes.map((c, i) => {
     const id = `row-${i + 1}-${key(c)}`
+    return { ...row(id, c), scope: suggestScope(c) }
+  })
+  function row(id: string, c: Change): Omit<ChangeRow, 'scope'> {
     switch (c.kind) {
       case 'removeTask':
         return { id, change: c, label: `Skip “${name(c.task)}”`, loss: c.task === 'e2e-check' ? 'Nothing checks the tasks together before release' : 'Its part stays out of the release' }
@@ -165,7 +204,7 @@ export function rowsFor(changes: Change[], ctx: Ctx): ChangeRow[] {
       case 'notifyOn':
         return { id, change: c, label: 'A desktop notification at each rollout stage' }
     }
-  })
+  }
 }
 
 // What the simulation needs from a set of changes.

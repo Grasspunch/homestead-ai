@@ -199,3 +199,98 @@ describe('applying from the card, mid-run, and Undo', () => {
     expect(p.reshapes![0].scope).toBe('farm')
   })
 })
+
+describe('Your flow: changes for every farm', () => {
+  const mem = new Map<string, string>()
+  beforeAll(() => {
+    ;(globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => void mem.set(k, v),
+      removeItem: (k: string) => void mem.delete(k),
+    }
+  })
+  const farm = () => {
+    const p = store.newProject(goal)
+    store.setPlan(p.id, plan.name, plan.farmers, plan.tasks, plan.estimate, plan.singleAgentEstimate)
+    store.approve(p.id)
+    store.open(p.id)
+    store.pause()
+    p.clock = 60_000
+    return p
+  }
+  const apply = async (rowScopes?: (r: { change: Change }) => 'farm' | 'every') => {
+    const rows = store.pending!.proposal.rows
+    const scopes = rowScopes ? Object.fromEntries(rows.map((r) => [r.id, rowScopes(r)])) : {}
+    await store.applyChanges(rows.map((r) => r.id), scopes)
+    // No Notification here, so a stage-alert card says so first and applies on the second click.
+    if (store.pending) await store.applyChanges(store.pending.proposal.rows.map((r) => r.id), scopes)
+  }
+
+  it('the Planner suggests this farm for safety steps and the success criteria, every farm for stage alerts', () => {
+    const scopes = (t: string) => {
+      const r = readChanges(t, ctx)
+      return r.kind === 'changes' ? r.proposal.rows.map((x) => x.scope) : []
+    }
+    expect(new Set(scopes("I'm in an incident, skip the deployer and push to main"))).toEqual(new Set(['farm']))
+    expect(scopes('change the success criteria to passing synthetics tests in prod')).toEqual(['farm', 'farm'])
+    expect(scopes('send me a desktop notification at each stage of the rollout')).toEqual(['every'])
+  })
+
+  it('applying an every-farm change adds it to Your flow and saves it with the farms', async () => {
+    store.flow = []
+    const p = farm()
+    await store.proposeChanges(p.id, 'send me a desktop notification at each stage of the rollout')
+    await apply()
+    expect(store.flow.map((f) => [f.short, f.on, f.notify])).toEqual([['stage alerts', true, 'toast']])
+    // A this-farm change stays out of it.
+    await store.proposeChanges(p.id, 'use synthetic tests for the rollout')
+    await apply()
+    expect(store.flow).toHaveLength(1)
+    store.persist()
+    const saved = JSON.parse(mem.get('homestead.v3.farms')!)
+    expect(saved.flow.map((f: { short: string }) => f.short)).toEqual(['stage alerts'])
+    // A reload reads it back.
+    store.flow = []
+    expect(store.restore()).toBe(true)
+    expect(store.flow.map((f) => f.short)).toEqual(['stage alerts'])
+  })
+
+  it('a new farm starts with Your flow, named in the plan, and a flipped row joins it', async () => {
+    store.flow = []
+    const p = farm()
+    await store.proposeChanges(p.id, 'change the success criteria to passing synthetics tests in prod')
+    await apply(() => 'every')
+    expect(store.flow.map((f) => f.short)).toEqual(['synthetic done-when', 'synthetic checks'])
+    const q = farm()
+    expect(q.reshapes?.map((r) => [r.title, r.flow])).toEqual([['Your flow', ['synthetic done-when', 'synthetic checks']]])
+    const s = store.state(q)!
+    expect(s.reshape?.synthetics).toBe(true)
+    // The done-when lands on this plan's release task.
+    const ship = plan.tasks.find((t) => t.gate)!
+    expect(s.tasks.find((t) => t.id === ship.id)?.doneWhen).toBe('Synthetic tests pass in prod at every stage')
+  })
+
+  it('an item turned off or removed in Settings stays off new farms, and Undo takes back what it added', async () => {
+    store.flow = []
+    const p = farm()
+    await store.proposeChanges(p.id, 'send me a desktop notification at each stage of the rollout')
+    await apply()
+    const id = store.flow[0].id
+    store.setFlowOn(id, false)
+    expect(farm().reshapes ?? []).toEqual([])
+    expect(JSON.parse(mem.get('homestead.v3.farms')!).flow[0].on).toBe(false)
+    store.setFlowOn(id, true)
+    expect(farm().reshapes?.[0].title).toBe('Your flow')
+    store.removeFlow(id)
+    expect(store.flow).toEqual([])
+    expect(JSON.parse(mem.get('homestead.v3.farms')!).flow).toEqual([])
+    expect(farm().reshapes ?? []).toEqual([])
+    // Undo of the request that added it takes it out of Your flow too.
+    const r = farm()
+    await store.proposeChanges(r.id, 'send me a desktop notification at each stage of the rollout')
+    await apply()
+    expect(store.flow).toHaveLength(1)
+    store.undoChanges(r.reshapes!.at(-1)!.id)
+    expect(store.flow).toEqual([])
+  })
+})

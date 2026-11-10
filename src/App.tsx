@@ -10,6 +10,7 @@ import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
 import { getLiveMode, reshapeRead, route, setLiveMode } from './run/agent'
+import type { Scope } from './run/reshape'
 import { planInto } from './run/planning'
 import { scenario } from './run/simPlan'
 import { pendingAsk } from './run/reduce'
@@ -141,7 +142,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
         <b>{p.name}</b>
         <span>{sub}</span>
         {p.approved && !s.done && !st.playing && !pendingAsk(p.events, st.clock, st.viewerAnswers) && !st.openRollback(p) && <span className="tag grey">Paused</span>}
-        {!!p.reshapes?.length && (
+        {p.approved && !!p.reshapes?.length && (
           <div className="reshapes">
             {p.reshapes.map((r) => (
               <span key={r.id} className="tag gold reshape-chip" title={r.changes.length + ' changes you asked for: ' + r.request}>
@@ -285,6 +286,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         {!p.plannedLive && !p.liveNote && <DemoTag goal={p.goal} />}
       </div>
       {!p.plannedLive && p.liveNote && <p className="impact">This plan is simulated, because the live call failed: {p.liveNote}</p>}
+      {p.reshapes?.find((r) => r.flow)?.flow && <p className="plan-flow">With your flow: {p.reshapes.find((r) => r.flow)!.flow!.join(', ')}.</p>}
       <p className="plan-lead">
         {ids.length > 1 ? (
           <>
@@ -786,6 +788,7 @@ function ChangeCard({ side }: { side: boolean }) {
   const st = useStore()
   const pd = st.pending!
   const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(pd.proposal.rows.map((r) => [r.id, true])))
+  const [scope, setScope] = useState<Record<string, Scope>>(() => Object.fromEntries(pd.proposal.rows.map((r) => [r.id, r.scope])))
   const [busy, setBusy] = useState(false)
   const n = pd.proposal.rows.filter((r) => on[r.id]).length
   return (
@@ -807,6 +810,13 @@ function ChangeCard({ side }: { side: boolean }) {
               <span className="what">{r.label}</span>
               {r.loss && <span className="loss">{r.loss}</span>}
             </label>
+            <span className="scope" role="radiogroup" aria-label={`How long: ${r.label}`}>
+              {(['farm', 'every'] as const).map((k) => (
+                <button key={k} role="radio" aria-checked={scope[r.id] === k} className={scope[r.id] === k ? 'on' : ''} disabled={!on[r.id]} onClick={() => setScope({ ...scope, [r.id]: k })}>
+                  {k === 'farm' ? 'This farm' : 'Every farm'}
+                </button>
+              ))}
+            </span>
           </li>
         ))}
       </ul>
@@ -817,7 +827,10 @@ function ChangeCard({ side }: { side: boolean }) {
           autoFocus
           onClick={async () => {
             setBusy(true)
-            await store.applyChanges(pd.proposal.rows.filter((r) => on[r.id]).map((r) => r.id))
+            await store.applyChanges(
+              pd.proposal.rows.filter((r) => on[r.id]).map((r) => r.id),
+              scope,
+            )
             setBusy(false)
           }}
         >
@@ -942,6 +955,22 @@ function Settings() {
           <small>When a farmer needs you and this tab is in the background.</small>
         </span>
       </button>
+      {!!st.flow.length && (
+        <div className="flow" aria-label="Your flow">
+          <h4 className="px-s">Your flow</h4>
+          {st.flow.map((f) => (
+            <div key={f.id} className="flow-item">
+              <button className="toggle" onClick={() => store.setFlowOn(f.id, !f.on)} aria-pressed={f.on}>
+                <span className={`switch${f.on ? ' on' : ''}`} />
+                <span>{f.label}</span>
+              </button>
+              <button className="flow-remove" onClick={() => store.removeFlow(f.id)} aria-label={`Remove ${f.label} from your flow`}>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
