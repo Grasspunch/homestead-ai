@@ -9,6 +9,7 @@ import {
   EMOJI_NAMES,
   Energy,
   Field,
+  HoldButton,
   Kbd,
   Progress,
   ReasonLabel,
@@ -22,7 +23,6 @@ import {
   Toggle,
   UiIcon,
   UI_ICON_NAMES,
-  hasSprite,
   type Reason,
 } from '../../ds'
 import { Code, PageHead, Section } from '../Doc'
@@ -41,7 +41,7 @@ export function ComponentsPage(_: { arg?: string }) {
   const [pick, setPick] = useState('1')
   const [chime, setChime] = useState(true)
   const [roll, setRoll] = useState(false)
-  const pixelControls = hasSprite('ui_check')
+  const [deployed, setDeployed] = useState(0)
 
   return (
     <>
@@ -49,13 +49,6 @@ export function ComponentsPage(_: { arg?: string }) {
         The panel’s parts, each with every state. Import them from <Code>src/ds</Code>; the app’s remake uses these and nothing
         hand-rolled.
       </PageHead>
-
-      {!pixelControls && (
-        <p className="cmp-warn">
-          <Emoji name="alert" /> The pixel check mark, switch and tick frames aren’t in the atlas yet, so their flat fallbacks show.
-          Add them to art/manifest.json and run npm run art:atlas.
-        </p>
-      )}
 
       <Section title="Button" note="Sprout for the one main action on a screen. Out (blue) only when the action reaches people outside: deploy, send. Plain for the rest, quiet inside rows.">
         <Spec code={`<Button kind="sprout" keycap="↵">Approve plan</Button>`}>
@@ -99,6 +92,14 @@ export function ComponentsPage(_: { arg?: string }) {
             <Button kind="quiet" size="sm">
               Show all 14
             </Button>
+          </div>
+        </Spec>
+        <Spec title="Press and hold" code={`<HoldButton onHold={deploy}>Hold to deploy</HoldButton>`}>
+          <div className="cmp-row">
+            <HoldButton onHold={() => setDeployed((n) => n + 1)}>Hold to deploy</HoldButton>
+            <span className="cmp-small">
+              {deployed ? `Deployed ${deployed} time${deployed > 1 ? 's' : ''}` : 'For outbound acts that can’t be undone. Letting go early cancels.'}
+            </span>
           </div>
         </Spec>
       </Section>
@@ -147,17 +148,17 @@ export function ComponentsPage(_: { arg?: string }) {
         </Spec>
       </Section>
 
-      <Section title="Choices" note="Options in an ask. The default the agent assumed has a dashed edge until you pick, so you can see what happens if you don’t.">
+      <Section title="Choices" note="Options in an ask. Picked takes the sprout face. The default the agent assumed has a dashed line until you pick, so you can see what happens if you don’t.">
         <Spec>
           <div className="cmp-col" style={{ maxWidth: 420 }}>
-            <Choice keycap="1" title="Selected" detail="A sprout wash and edge" selected />
+            <Choice keycap="1" title="Selected" detail="The sprout face and line" selected />
             <Choice keycap="2" title="Assumed default" detail="Dashed until you choose" assumed />
             <Choice keycap="3" title="Other option" detail="Plain" />
           </div>
         </Spec>
       </Section>
 
-      <Section title="Checkbox and switch" note="The check mark and the switch come from the Sprout Lands UI pack at 2x. A done-when check can’t be ticked until its evidence is in.">
+      <Section title="Checkbox and switch" note="Drawn on the farm’s 3px pixel, like the buttons. The switch knob steps across in three frames. A done-when check can’t be ticked until its evidence is in.">
         <Spec>
           <div className="cmp-col" style={{ maxWidth: 420 }}>
             <Checkbox label="Unit tests pass" hint="42 passed in 3.1s" defaultChecked />
@@ -169,7 +170,7 @@ export function ComponentsPage(_: { arg?: string }) {
         </Spec>
       </Section>
 
-      <Section title="Text fields" note="Inset: a shade darker than the sheet at rest, white when focused. A plain label above; never a placeholder as the label.">
+      <Section title="Text fields" note="A sunk white well with the pixel line. The line turns blue when focused and red with an error. A plain label above; never a placeholder as the label.">
         <Spec>
           <div className="cmp-col cmp-fields" style={{ maxWidth: 480 }}>
             <Field label="Goal" hint="One sentence. The head farmer asks if anything is unclear.">
@@ -217,7 +218,7 @@ export function ComponentsPage(_: { arg?: string }) {
         </Spec>
       </Section>
 
-      <Section title="Meters" note="Energy uses the UI pack’s tick meter: green ticks are what’s left. Low energy is never red, because red means failure.">
+      <Section title="Meters" note="Energy is chunky pixel ticks: green ticks are what’s left. Low energy is never red, because red means failure.">
         <Spec>
           <div className="cmp-col">
             <Energy used={38} total={100} />

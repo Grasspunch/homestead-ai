@@ -38,6 +38,20 @@
     },
     {
       "population": "button",
+      "what": "Ink on the pixel button faces, at rest and on hover. Labels and keycaps on a face are always --ink",
+      "fg": ["--ink"],
+      "bg": ["--sprout-face", "--sprout-face-hover", "--out-face", "--out-face-hover"],
+      "min": 4.5
+    },
+    {
+      "population": "button",
+      "what": "Choice text on a picked choice and on a plain face",
+      "fg": ["--ink", "--ink-2"],
+      "bg": ["--sprout-light", "--face"],
+      "min": 4.5
+    },
+    {
+      "population": "button",
       "what": "White on the filled sprout button, at rest and on hover",
       "fg": ["--on-sprout"],
       "bg": ["--sprout", "--sprout-strong"],

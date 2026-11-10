@@ -42,7 +42,7 @@ export function ShapePage(_: { arg?: string }) {
         </div>
       </Section>
 
-      <Section title="Depth" note="Flat by default. The ink border with the offset shadow says “you act on this”, so only buttons and the one card that needs you get it.">
+      <Section title="Depth" note="Flat by default. The pixel line with a lip says “you act on this”, so only controls and the one card that needs you get it.">
         <div className="shape-depth">
           <div className="shape-flat">
             <b>Flat row</b>
@@ -54,7 +54,7 @@ export function ShapePage(_: { arg?: string }) {
           </div>
           <div className="shape-raised">
             <b>Raised</b>
-            <span>The ask card, the HUD strip, buttons</span>
+            <span>The ask card and the controls</span>
           </div>
         </div>
       </Section>

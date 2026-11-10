@@ -13,92 +13,138 @@
   background-image: url('/ui/emoji.png');
 }
 
-/* ---------- Button ---------- */
+/* ---------- The pixel line ----------
+   Controls are drawn like the farm (the Farm-drawn style, from Stardew Valley, Playdate, A Short Hike
+   and Balatro). Their line is four hard shadows one --px out, which leaves each corner empty: the UI
+   pack's cut corner. Declared on each element so var(--ln) is that element's own line colour.
+   The line sits outside the box, so these controls carry a --px margin to keep their footprint. */
+
+.hs-btn,
+.hs-kbd,
+.hs-check-box,
+.hs-toggle i,
+.hs-toggle i::after,
+.hs-input,
+.hs-choice,
+.hs-ask {
+  --pl: 0 calc(var(--px) * -1) 0 var(--ln), 0 var(--px) 0 var(--ln), calc(var(--px) * -1) 0 0 var(--ln),
+    var(--px) 0 0 var(--ln);
+}
+
+/* ---------- Button ----------
+   A light face, a lighter top edge and a lip two pixels deep. Pressing squashes the lip to one. */
 
 .hs-btn {
-  --b: var(--ink);
-  --bg: var(--sheet);
-  --fg: var(--ink);
-  --bg-hover: var(--sheet-hover);
+  --f: var(--face);
+  --fh: var(--sheet-hover);
+  --lt: var(--face);
+  --lip: var(--face-lip);
+  --ln: var(--line);
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--s-2);
-  height: var(--control);
-  padding: 0 var(--s-4);
-  border: 2px solid var(--b);
-  border-radius: var(--r-2);
-  background: var(--bg);
-  color: var(--fg);
+  height: calc(var(--control) - 2 * var(--px));
+  margin: var(--px);
+  padding: 0 var(--s-4) calc(var(--px) * 2);
+  border: 0;
+  border-radius: 0;
+  background: var(--f);
+  color: var(--ink);
   font: var(--label);
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 2px 0 var(--b);
-  transition:
-    transform var(--t-press) var(--ease),
-    box-shadow var(--t-press) var(--ease),
-    background-color var(--t-quick) var(--ease);
+  box-shadow: inset 0 var(--px) 0 var(--lt), inset 0 calc(var(--px) * -2) 0 var(--lip), var(--pl);
+}
+
+.hs-btn > * {
+  position: relative;
 }
 
 .hs-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
+  background: var(--fh);
 }
 
 .hs-btn:active:not(:disabled) {
-  transform: translateY(2px);
-  box-shadow: 0 0 0 var(--b);
+  padding-top: var(--px);
+  padding-bottom: var(--px);
+  box-shadow: inset 0 var(--px) 0 var(--lip), inset 0 calc(var(--px) * -1) 0 var(--lip), var(--pl);
 }
 
 .hs-btn:focus-visible {
-  outline: none;
-  box-shadow: 0 2px 0 var(--b), var(--focus);
+  outline: var(--px) solid var(--out);
+  outline-offset: calc(var(--px) * 2);
 }
 
 .hs-btn.sprout {
-  --b: var(--sprout-deep);
-  --bg: var(--sprout);
-  --fg: var(--on-sprout);
-  --bg-hover: var(--sprout-strong);
+  --f: var(--sprout-face);
+  --fh: var(--sprout-face-hover);
+  --lt: var(--sprout-light);
+  --lip: var(--sprout-lip);
+  --ln: var(--sprout-line);
 }
 
 .hs-btn.out {
-  --b: var(--out-deep);
-  --bg: var(--out);
-  --fg: var(--on-out);
-  --bg-hover: var(--out-strong);
+  --f: var(--out-face);
+  --fh: var(--out-face-hover);
+  --lt: var(--out-light);
+  --lip: var(--out-lip);
+  --ln: var(--out-line);
 }
 
 .hs-btn.quiet {
-  border-color: transparent;
-  box-shadow: none;
+  --f: transparent;
+  --lt: transparent;
+  --lip: transparent;
+  --ln: transparent;
   color: var(--ink-2);
   padding: 0 var(--s-3);
 }
 
 .hs-btn.quiet:hover:not(:disabled) {
+  --ln: var(--sheet-hover);
   color: var(--ink);
-  background: var(--sheet-hover);
 }
 
 .hs-btn.quiet:active:not(:disabled) {
-  transform: none;
+  --ln: var(--sheet-press);
   background: var(--sheet-press);
+  padding: 0 var(--s-3);
+  box-shadow: var(--pl);
 }
 
 .hs-btn.sm {
-  height: var(--control-sm);
-  padding: 0 var(--s-3);
-  font: var(--label);
+  height: calc(var(--control-sm) - 2 * var(--px));
+  padding: 0 var(--s-3) calc(var(--px) * 2);
   font-size: 13px;
+}
+
+.hs-btn.sm:active:not(:disabled) {
+  padding-top: var(--px);
+  padding-bottom: var(--px);
+}
+
+.hs-btn.quiet.sm,
+.hs-btn.quiet.sm:active:not(:disabled) {
+  padding: 0 var(--s-2);
 }
 
 /* Disabled is a flat grey shape, never a faded copy: text stays at --ink-3. */
 .hs-btn:disabled {
-  --b: var(--rule-strong);
-  --bg: var(--sheet-sunk);
-  --fg: var(--ink-3);
-  box-shadow: none;
+  --f: var(--sheet-sunk);
+  --lt: var(--sheet-sunk);
+  --lip: var(--sheet-press);
+  --ln: var(--line-soft);
+  color: var(--ink-3);
   cursor: not-allowed;
+}
+
+.hs-btn.quiet:disabled {
+  --f: transparent;
+  --lt: transparent;
+  --lip: transparent;
+  --ln: transparent;
 }
 
 .hs-btn[aria-busy='true'] {
@@ -106,14 +152,36 @@
 }
 
 .hs-btn .hs-kbd {
-  margin-left: var(--s-1);
+  --ln: rgba(36, 29, 51, 0.18);
+  margin: 0 var(--px) 0 var(--s-1);
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--ink);
+  box-shadow: var(--pl);
+  padding-bottom: 0;
+  height: 18px;
 }
 
-.hs-btn.sprout .hs-kbd,
-.hs-btn.out .hs-kbd {
-  background: transparent;
-  border-color: rgba(255, 255, 255, 0.55);
-  color: var(--sheet);
+/* Press and hold (Playdate's crank to buy): the fill climbs in eight steps; letting go early cancels.
+   Only for outbound acts that can't be undone. */
+.hs-btn.hold {
+  overflow: hidden;
+}
+
+.hs-btn.hold::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: var(--out-fill);
+  transition: width var(--t-quick) steps(2);
+}
+
+.hs-btn.hold.is-holding::before {
+  width: 100%;
+  /* the hold time itself, not decoration, so it stays under reduced motion */
+  transition: width var(--hold, 680ms) steps(8);
 }
 
 /* ---------- Seed loader ---------- */
@@ -148,25 +216,27 @@
   }
 }
 
-/* ---------- Keycap ---------- */
+/* ---------- Keycap: a small face with a one-pixel lip ---------- */
 
 .hs-kbd {
+  --ln: transparent;
   display: inline-grid;
   place-items: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  border: 1px solid var(--rule-strong);
-  border-bottom-width: 2px;
-  border-radius: var(--r-1);
-  background: var(--sheet);
+  min-width: 21px;
+  height: 21px;
+  padding: 0 5px var(--px);
+  border: 0;
+  border-radius: 0;
+  background: var(--sheet-sunk);
+  box-shadow: inset 0 calc(var(--px) * -1) 0 var(--face-lip);
   color: var(--ink-2);
   font: var(--mono);
   font-size: 12px;
   line-height: 1;
 }
 
-/* ---------- Checkbox ---------- */
+/* ---------- Checkbox ----------
+   A sunk white box with the pixel line. Checked, it fills with the sprout face and a pixel tick. */
 
 .hs-check {
   position: relative;
@@ -186,50 +256,46 @@
 }
 
 .hs-check-box {
+  --ln: var(--line);
   position: relative;
   flex: none;
-  width: 22px;
-  height: 22px;
-  margin-top: -1px;
-  border: 2px solid var(--ink);
-  border-radius: var(--r-1);
-  background: var(--sheet);
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -2px var(--px) 0;
+  background: var(--face);
+  box-shadow: inset 0 var(--px) 0 var(--face-lip), var(--pl);
+  color: var(--sprout-deep);
 }
 
-/* The pack's check mark at 1x, centred in the box. */
 .hs-check-box > * {
-  position: absolute;
-  left: 3px;
-  top: 3px;
   opacity: 0;
-  transform: scale(0.6);
-  transition:
-    opacity var(--t-quick) var(--ease-enter),
-    transform var(--t-quick) var(--ease-enter);
+}
+
+.hs-check input:checked + .hs-check-box {
+  --ln: var(--sprout-line);
+  background: var(--sprout-face);
+  box-shadow: inset 0 var(--px) 0 var(--sprout-light), inset 0 calc(var(--px) * -1) 0 var(--sprout-lip), var(--pl);
 }
 
 .hs-check input:checked + .hs-check-box > * {
   opacity: 1;
-  transform: none;
 }
 
-.hs-check-fallback {
-  width: 12px;
-  height: 11px;
-  background: var(--sprout);
-}
-
-.hs-check:hover .hs-check-box {
+.hs-check:hover input:not(:checked):not(:disabled) + .hs-check-box {
   background: var(--sheet-hover);
 }
 
 .hs-check input:focus-visible + .hs-check-box {
-  box-shadow: var(--focus);
+  outline: var(--px) solid var(--out);
+  outline-offset: calc(var(--px) * 2);
 }
 
 .hs-check input:disabled + .hs-check-box {
-  border-color: var(--rule-strong);
+  --ln: var(--line-soft);
   background: var(--sheet-sunk);
+  box-shadow: var(--pl);
 }
 
 .hs-check:has(input:disabled) {
@@ -247,7 +313,8 @@
   color: var(--ink-3);
 }
 
-/* ---------- Toggle ---------- */
+/* ---------- Toggle ----------
+   A sunk track with a square knob that steps across in three frames. */
 
 .hs-toggle-row {
   display: flex;
@@ -262,52 +329,69 @@
   display: grid;
   place-items: center;
   width: 60px;
-  height: 40px;
+  height: var(--hit);
   padding: 0;
   border: 0;
-  border-radius: var(--r-2);
   background: transparent;
   cursor: pointer;
 }
 
-.hs-toggle:not(.pixel) i {
+.hs-toggle i {
+  --ln: var(--line);
   position: relative;
-  width: 44px;
+  width: 48px;
   height: 24px;
-  border-radius: var(--r-1);
-  background: var(--ink-3);
+  background: var(--sheet-press);
+  box-shadow: inset 0 var(--px) 0 var(--face-lip), var(--pl);
 }
 
-.hs-toggle:not(.pixel) i::after {
+/* 12px square plus its line: one --px clear on every side of the track */
+.hs-toggle i::after {
+  --ln: var(--line);
   content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  background: var(--sheet);
-  transition: transform var(--t-quick) var(--ease);
+  top: calc(var(--px) * 2);
+  left: calc(var(--px) * 2);
+  width: 12px;
+  height: 12px;
+  background: var(--face);
+  box-shadow: inset 0 calc(var(--px) * -1) 0 var(--face-lip), var(--pl);
+  transition: transform 160ms steps(3);
 }
 
-.hs-toggle:not(.pixel)[aria-checked='true'] i {
-  background: var(--sprout);
+.hs-toggle[aria-checked='true'] i {
+  --ln: var(--sprout-line);
+  background: var(--sprout-face);
+  box-shadow: inset 0 var(--px) 0 var(--sprout-lip), var(--pl);
 }
 
-.hs-toggle:not(.pixel)[aria-checked='true'] i::after {
-  transform: translateX(20px);
+.hs-toggle[aria-checked='true'] i::after {
+  transform: translateX(24px);
 }
 
 .hs-toggle:focus-visible {
-  box-shadow: var(--focus);
+  outline: none;
+}
+
+.hs-toggle:focus-visible i {
+  outline: var(--px) solid var(--out);
+  outline-offset: calc(var(--px) * 2);
 }
 
 .hs-toggle:disabled {
   cursor: not-allowed;
-  filter: grayscale(1);
 }
 
-/* ---------- Text fields ---------- */
+.hs-toggle:disabled i,
+.hs-toggle:disabled i::after {
+  --ln: var(--line-soft);
+}
+
+.hs-toggle:disabled i {
+  background: var(--sheet-sunk);
+}
+
+/* ---------- Text fields: a sunk white well with the pixel line ---------- */
 
 .hs-field {
   display: flex;
@@ -320,17 +404,17 @@
 }
 
 .hs-input {
-  width: 100%;
-  height: var(--control);
-  padding: 0 var(--s-3);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-2);
-  background: var(--sheet-sunk);
+  --ln: var(--line);
+  width: calc(100% - 2 * var(--px));
+  height: calc(var(--control) - 2 * var(--px));
+  margin: var(--px);
+  padding: var(--px) var(--s-3) 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--face);
+  box-shadow: inset 0 var(--px) 0 var(--face-lip), var(--pl);
   color: var(--ink);
   font: var(--body);
-  transition:
-    background-color var(--t-quick) var(--ease),
-    border-color var(--t-quick) var(--ease);
 }
 
 .hs-input::placeholder {
@@ -338,20 +422,19 @@
 }
 
 .hs-input:hover {
-  border-color: var(--rule-strong);
+  --ln: var(--ink);
 }
 
 .hs-input:focus {
+  --ln: var(--out-line);
   outline: none;
-  background: var(--sheet);
-  border-color: var(--ink);
-  box-shadow: 0 0 0 1px var(--ink);
+  box-shadow: inset 0 var(--px) 0 var(--out-light), var(--pl), 0 0 0 calc(var(--px) * 2) var(--out-light);
 }
 
 .hs-textarea {
   height: auto;
   min-height: 96px;
-  padding: 10px var(--s-3);
+  padding: 9px var(--s-3);
   resize: vertical;
 }
 
@@ -362,8 +445,8 @@
 }
 
 .hs-field.has-error .hs-input {
-  border-color: var(--fail);
-  box-shadow: 0 0 0 1px var(--fail);
+  --ln: var(--fail);
+  box-shadow: inset 0 var(--px) 0 var(--fail-soft), var(--pl), 0 0 0 calc(var(--px) * 2) var(--fail-soft);
 }
 
 .hs-field-error {
@@ -373,22 +456,24 @@
   color: var(--fail);
 }
 
-/* ---------- Choice (ask options) ---------- */
+/* ---------- Choice (ask options) ----------
+   A plain face with a soft line. Picked, it takes the sprout light and line. The default the agent
+   assumed has a dashed line until you pick. */
 
 .hs-choice {
+  --ln: var(--line-soft);
   display: flex;
   align-items: flex-start;
   gap: var(--s-3);
-  width: 100%;
-  padding: var(--s-3);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r-3);
-  background: var(--sheet);
+  width: calc(100% - 2 * var(--px));
+  margin: var(--px);
+  padding: 9px var(--s-3) 12px;
+  border: 0;
+  background: var(--face);
+  box-shadow: inset 0 calc(var(--px) * -1) 0 var(--sheet-sunk), var(--pl);
+  color: var(--ink);
   text-align: left;
   cursor: pointer;
-  transition:
-    background-color var(--t-quick) var(--ease),
-    border-color var(--t-quick) var(--ease);
 }
 
 .hs-choice > span {
@@ -406,27 +491,35 @@
   color: var(--ink-2);
 }
 
-.hs-choice .hs-kbd {
-  margin-top: 1px;
-}
-
 .hs-choice:hover {
-  background: var(--sheet-hover);
-  border-color: var(--ink-3);
+  --ln: var(--ink-3);
 }
 
 .hs-choice.assumed {
-  border-style: dashed;
-  border-color: var(--ink-3);
+  --ln: transparent;
+  outline: var(--px) dashed var(--ink-3);
+  outline-offset: 0;
 }
 
 .hs-choice[aria-pressed='true'] {
-  border: 1px solid var(--sprout);
-  background: var(--sprout-soft);
-  box-shadow: inset 0 0 0 1px var(--sprout);
+  --ln: var(--sprout-line);
+  outline: none;
+  background: var(--sprout-light);
+  box-shadow: inset 0 calc(var(--px) * -1) 0 var(--sprout-face), var(--pl);
 }
 
-/* ---------- Energy ticks ---------- */
+.hs-choice[aria-pressed='true'] .hs-kbd {
+  background: var(--sprout-face);
+  box-shadow: inset 0 calc(var(--px) * -1) 0 var(--sprout-lip);
+  color: var(--ink);
+}
+
+.hs-choice:focus-visible {
+  outline: var(--px) solid var(--out);
+  outline-offset: calc(var(--px) * 2);
+}
+
+/* ---------- Energy ticks: chunky pixel ticks, green is what's left ---------- */
 
 .hs-energy {
   display: inline-flex;
@@ -436,18 +529,19 @@
 
 .hs-energy-ticks {
   display: inline-flex;
-  gap: 2px;
+  gap: var(--px);
 }
 
 .hs-energy-ticks > i {
-  width: 6px;
-  height: 18px;
-  border-radius: 2px;
-  background: var(--ink-3);
+  width: calc(var(--px) * 2);
+  height: calc(var(--px) * 6);
+  background: var(--sheet-press);
+  box-shadow: inset 0 calc(var(--px) * -1) 0 var(--line-soft);
 }
 
 .hs-energy-ticks > i.on {
-  background: var(--sprout);
+  background: var(--sprout-lip);
+  box-shadow: inset 0 var(--px) 0 var(--sprout-face), inset 0 calc(var(--px) * -1) 0 var(--grass-deep);
 }
 
 .hs-energy b {
@@ -666,12 +760,13 @@
 
 /* ---------- Ask card: the one raised object ---------- */
 
+/* The decision card: the one raised object, drawn in the pixel line with a two-pixel lip. */
 .hs-ask {
-  padding: var(--s-4);
-  border: var(--raise-border);
-  border-radius: var(--r-3);
+  --ln: var(--line);
+  margin: var(--px);
+  padding: 18px 18px 24px;
   background: var(--sheet);
-  box-shadow: var(--raise-shadow);
+  box-shadow: inset 0 calc(var(--px) * -2) 0 var(--face-lip), var(--pl);
 }
 
 .hs-ask header {

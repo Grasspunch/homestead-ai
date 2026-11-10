@@ -9,7 +9,6 @@ import { OverviewPage } from './pages/Overview'
 import { ShapePage } from './pages/Shape'
 import { TypePage } from './pages/Type'
 import { WorkflowPage } from './pages/Workflow'
-import { StylesPage } from './pages/Styles'
 
 export type Route = { path: string; title: string; group: string; Page: ComponentType<{ arg?: string }> }
 
@@ -22,7 +21,6 @@ export const ROUTES: Route[] = [
   { path: 'shape', title: 'Space and shape', group: 'Foundations', Page: ShapePage },
   { path: 'motion', title: 'Motion', group: 'Foundations', Page: MotionPage },
   { path: 'components', title: 'Controls', group: 'Components', Page: ComponentsPage },
-  { path: 'styles', title: 'Control styles (pick one)', group: 'Components', Page: StylesPage },
   { path: 'glyphs', title: 'Field glyphs', group: 'Components', Page: GlyphsPage },
   { path: 'art/sprites-premium', title: 'Sprites, premium', group: 'Art', Page: ArtPage },
   { path: 'art/sprites-basic', title: 'Sprites, basic', group: 'Art', Page: ArtPage },

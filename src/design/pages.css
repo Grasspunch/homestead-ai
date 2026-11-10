@@ -503,8 +503,11 @@
 }
 
 .shape-raised {
-  border: var(--raise-border);
-  box-shadow: var(--raise-shadow);
+  --ln: var(--line);
+  --pl: 0 calc(var(--px) * -1) 0 var(--ln), 0 var(--px) 0 var(--ln), calc(var(--px) * -1) 0 0 var(--ln), var(--px) 0 0 var(--ln);
+  margin: var(--px);
+  border-radius: 0 !important;
+  box-shadow: inset 0 calc(var(--px) * -2) 0 var(--face-lip), var(--pl);
 }
 
 .shape-px-row {
@@ -706,16 +709,18 @@
 
 /* Frozen states for the specimens. */
 .hs-btn.is-hover {
-  background: var(--bg-hover);
+  background: var(--fh);
 }
 
 .hs-btn.is-active {
-  transform: translateY(2px);
-  box-shadow: 0 0 0 var(--b);
+  padding-top: var(--px);
+  padding-bottom: var(--px);
+  box-shadow: inset 0 var(--px) 0 var(--lip), inset 0 calc(var(--px) * -1) 0 var(--lip), var(--pl);
 }
 
 .hs-btn.is-focus {
-  box-shadow: 0 2px 0 var(--b), var(--focus);
+  outline: var(--px) solid var(--out);
+  outline-offset: calc(var(--px) * 2);
 }
 
 .cmp-ask {

@@ -1,8 +1,8 @@
-import { useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react'
-import { hasSprite, Sprite } from './Sprite'
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react'
 
 /* ---------- Button ----------
-   The ink border and the offset shadow mean "you can act on this". Pressing drops it onto its shadow.
+   Drawn like the farm: a light face, a lighter top edge, a lip two pixels deep and a dark line with cut
+   corners, all on the --px grid. Pressing squashes the lip.
    sprout: the one main action on a screen. out: anything that reaches people outside (deploy, send).
    plain: secondary actions. quiet: low-stakes actions inside a row, no border. */
 export type ButtonKind = 'sprout' | 'out' | 'plain' | 'quiet'
@@ -41,14 +41,76 @@ export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="hs-kbd">{children}</kbd>
 }
 
-/* ---------- Checkbox: an ink box with the UI pack's check mark, at 1x, sitting inside the box ---------- */
+/* ---------- Press and hold ----------
+   For outbound acts that can't be undone (deploy, send): the fill climbs while held, and the act runs
+   only when it reaches the end. Letting go early cancels. Keyboard: hold Enter or Space. */
+export function HoldButton({
+  onHold,
+  children,
+  kind = 'out',
+  size = 'md',
+  ms = 680,
+  className,
+  ...rest
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'> & { onHold: () => void; kind?: ButtonKind; size?: 'md' | 'sm'; ms?: number }) {
+  const [holding, setHolding] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+  const stop = () => {
+    window.clearTimeout(timer.current)
+    setHolding(false)
+  }
+  const start = () => {
+    if (rest.disabled) return
+    setHolding(true)
+    timer.current = window.setTimeout(() => {
+      setHolding(false)
+      onHold()
+    }, ms)
+  }
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  return (
+    <button
+      type="button"
+      className={`hs-btn ${kind} ${size} hold ${holding ? 'is-holding' : ''} ${className ?? ''}`}
+      aria-description="Press and hold"
+      onPointerDown={start}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
+          e.preventDefault()
+          start()
+        }
+      }}
+      onKeyUp={stop}
+      onBlur={stop}
+      {...rest}
+      style={{ ['--hold' as string]: `${ms}ms`, ...rest.style }}
+    >
+      <span>{children}</span>
+    </button>
+  )
+}
+
+/* ---------- Pixel tick: 5 by 4 farm pixels ---------- */
+export function PixelTick() {
+  const rows = ['....#', '...#.', '#.#..', '.#...']
+  return (
+    <svg className="hs-tick" viewBox="0 0 5 4" width={15} height={12} shapeRendering="crispEdges" fill="currentColor" aria-hidden>
+      {rows.flatMap((r, y) => [...r].map((c, x) => (c === '#' ? <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} /> : null)))}
+    </svg>
+  )
+}
+
+/* ---------- Checkbox: a sunk box with the pixel line; checked, the sprout face and a pixel tick ---------- */
 export function Checkbox({ label, hint, ...rest }: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode; hint?: ReactNode }) {
   const id = useId()
   return (
     <label className="hs-check" htmlFor={id}>
       <input id={id} type="checkbox" {...rest} />
       <span className="hs-check-box" aria-hidden>
-        {hasSprite('ui_check') ? <Sprite name="ui_check" scale={1} /> : <i className="hs-check-fallback" />}
+        <PixelTick />
       </span>
       <span className="hs-check-text">
         <span>{label}</span>
@@ -58,18 +120,17 @@ export function Checkbox({ label, hint, ...rest }: InputHTMLAttributes<HTMLInput
   )
 }
 
-/* ---------- Toggle: the UI pack's wooden switch, at 2x ---------- */
+/* ---------- Toggle: a sunk track and a square knob that steps across ---------- */
 export function Toggle({ label, hint, checked, onChange, disabled }: { label: ReactNode; hint?: ReactNode; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   const id = useId()
-  const pixel = hasSprite('ui_toggle_off') && hasSprite('ui_toggle_on')
   return (
     <div className="hs-toggle-row">
       <span className="hs-check-text">
         <label htmlFor={id}>{label}</label>
         {hint && <small>{hint}</small>}
       </span>
-      <button id={id} type="button" role="switch" aria-checked={checked} disabled={disabled} className={`hs-toggle ${pixel ? 'pixel' : ''}`} onClick={() => onChange(!checked)}>
-        {pixel ? <Sprite name={checked ? 'ui_toggle_on' : 'ui_toggle_off'} scale={2} /> : <i />}
+      <button id={id} type="button" role="switch" aria-checked={checked} disabled={disabled} className="hs-toggle" onClick={() => onChange(!checked)}>
+        <i />
       </button>
     </div>
   )
@@ -108,17 +169,16 @@ export function Choice({ keycap, title, detail, selected, assumed, onClick }: { 
   )
 }
 
-/* ---------- Energy: the UI pack's tick meter. Green ticks are what's left. Low energy is never red: red means failure. ---------- */
+/* ---------- Energy: chunky pixel ticks. Green ticks are what's left. Low energy is never red: red means failure. ---------- */
 export function Energy({ used, total, ticks = 12, label = 'Energy' }: { used: number; total: number; ticks?: number; label?: string }) {
   const left = Math.max(0, total - used)
   const on = Math.round((left / total) * ticks)
-  const pixel = hasSprite('ui_tick_on') && hasSprite('ui_tick_off')
   return (
     <div className="hs-energy" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={total} aria-valuenow={left}>
       <span className="hs-energy-ticks" aria-hidden>
-        {Array.from({ length: ticks }, (_, i) =>
-          pixel ? <Sprite key={i} name={i < on ? 'ui_tick_on' : 'ui_tick_off'} scale={2} /> : <i key={i} className={i < on ? 'on' : ''} />,
-        )}
+        {Array.from({ length: ticks }, (_, i) => (
+          <i key={i} className={i < on ? 'on' : ''} />
+        ))}
       </span>
       <b>{Math.round((left / total) * 100)}%</b>
     </div>

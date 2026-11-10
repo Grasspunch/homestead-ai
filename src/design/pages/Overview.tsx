@@ -63,7 +63,7 @@ export function OverviewPage(_: { arg?: string }) {
         <Rules>
           <li>One sans, Atkinson Hyperlegible Next, for all UI text. JetBrains Mono only for files, counts, tokens and timestamps. The pixel font only on the map.</li>
           <li>White sheet, ink text, one green for action. Blue only for what reaches people outside. Red only for failure. No beige, no eyebrows, no pills.</li>
-          <li>One raised object at a time: the thing that needs you gets the ink border and the offset shadow. Everything else is flat, ruled rows.</li>
+          <li>One raised object at a time: the thing that needs you gets the pixel line and a lip, like the controls. Everything else is flat, ruled rows.</li>
           <li>Pixel art at whole-number scales only, on the farm’s grid (3x). Anything under about 5 screen pixels carries no meaning.</li>
           <li>Quieter text comes from size and weight, never from a paler grey or transparency. Every text colour passes 4.5:1.</li>
         </Rules>

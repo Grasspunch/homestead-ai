@@ -47,6 +47,25 @@
   --fail-deep: #5f1b14;
   --on-fail: #ffffff;
 
+  /* Pixel controls (the Farm-drawn style). Drawn like the UI pack: a light face, a lighter top edge,
+     a darker lip along the bottom and a dark same-hue line with cut corners, all on the --px grid.
+     Faces, lights, lips and lines are Sprout Lands palette colours; text on every face is --ink. */
+  --sprout-face: #c0d470;
+  --sprout-face-hover: #d2e077;
+  --sprout-light: #e8eeaa;
+  --sprout-lip: #8db15d;
+  --sprout-line: #566560;
+  --out-face: #99c5de;
+  --out-face-hover: #b4d6e8;
+  --out-light: #cbe0de;
+  --out-lip: #7180b1;
+  --out-line: #4c468b;
+  --out-fill: #8599c7; /* the press-and-hold fill */
+  --face: #ffffff;
+  --face-lip: #d6d3de;
+  --line: #4b4459;
+  --line-soft: #c9c5d3;
+
   /* Farm grounds, sampled from the Sprout Lands palette. For specimens and plates over the map. */
   --grass: #9bcf6a;
   --grass-deep: #78a158;
@@ -98,9 +117,8 @@
   /* Pixel: the farm's integer scale. Pixel art is drawn at whole multiples of --px, never in between. */
   --px: 3px;
 
-  /* Depth: flat rules everywhere; the ink border plus offset shadow is reserved for the one thing you act on. */
-  --raise-border: 2px solid var(--ink);
-  --raise-shadow: 0 3px 0 rgba(36, 29, 51, 0.25);
+  /* Depth: flat rules everywhere. What you act on (controls, the ask card) is drawn in the pixel line
+     with a lip: see "The pixel line" in ds.css. */
   --float-shadow: 0 0 0 1px rgba(36, 29, 51, 0.08), 0 8px 24px -12px rgba(36, 29, 51, 0.35);
   --focus: 0 0 0 2px var(--sheet), 0 0 0 4px var(--out);
 
