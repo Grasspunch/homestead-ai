@@ -192,7 +192,7 @@ describe('story setup', () => {
   it('starts from one line, asks four questions, then plans three tasks for three agents, the Reviewer taking no task', async () => {
     const e = freshEngine()
     expect(e.goal).toBe('Build a vet clinic website for Willow Lane Vets.')
-    expect(e.crew).toBe('gstack')
+    expect(e.crew).toBe('feature')
     e.skipIntro()
     e.submitBrief()
     await until(e, () => e.questions.length > 0 && e.headThinking === 0, 'clarify questions')
@@ -204,7 +204,7 @@ describe('story setup', () => {
     expect(e.tasks.map((t) => t.id)).toEqual(['frontend', 'backend', 'messaging'])
     expect(Object.keys(e.farmhands).sort()).toEqual(['backend', 'frontend', 'messaging', 'reviewer'])
     expect(e.tasks.some((t) => t.assignee === 'reviewer')).toBe(false)
-    expect(e.fields.map((f) => f.name)).toEqual(['Frontend', 'Backend', 'Messaging'])
+    expect(e.fields.map((f) => f.name)).toEqual(['Frontend', 'Backend', 'Messaging', 'Tests', 'Reviewer'])
     expect(e.neededYou).toBe(1)
   })
 })

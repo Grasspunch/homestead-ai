@@ -35,7 +35,7 @@ export const LIBRARY: Record<string, LibItem> = {
     owner: 'Practice team',
     updated: 'Oct 6',
     tokens: 900,
-    preview: 'Dr Patel: dogs and cats. Dr Okafor: small pets. Dr Hughes: cats and dogs.\nA checkup or a vaccination takes 15 minutes.',
+    preview: 'Dogs and cats vet, small pets vet, dental vet.\nA checkup or a vaccination takes 15 minutes.',
   },
   'staff-rota/rota.md': {
     kind: 'file',

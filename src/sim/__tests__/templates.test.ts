@@ -23,12 +23,12 @@ describe('Agent and team templates', () => {
     }
   })
 
-  it('the four built-in crews, with the Full-cycle crew as the default', () => {
+  it('the four built-in crews, with the Feature crew as the default', () => {
     expect(TEAM_TEMPLATES.map((t) => t.name)).toEqual(['Feature crew', 'Full-cycle crew', 'Bug fix', 'Design pass'])
-    expect(DEFAULT_TEAM).toBe('gstack')
+    expect(DEFAULT_TEAM).toBe('feature')
     const e = freshEngine()
     expect(e.crew).toBe(DEFAULT_TEAM)
-    expect(e.team.name).toBe('Full-cycle crew')
+    expect(e.team.name).toBe('Feature crew')
   })
 
   it('the full-cycle crew names its upstream pack only in its line, file name and licence notice', () => {
@@ -42,15 +42,27 @@ describe('Agent and team templates', () => {
 
   it('choosing a crew in the Brief updates the Crew row, and it locks once the work starts', () => {
     const e = freshEngine()
-    e.setCrew('feature')
-    expect(e.team.name).toBe('Feature crew')
-    e.setCrew('no-such-crew')
-    expect(e.crew).toBe('feature')
-    e.setCrew(DEFAULT_TEAM)
+    e.setCrew('gstack')
     expect(e.team.name).toBe('Full-cycle crew')
+    e.setCrew('no-such-crew')
+    expect(e.crew).toBe('gstack')
+    e.setCrew(DEFAULT_TEAM)
+    expect(e.team.name).toBe('Feature crew')
     e.phase = 'grow'
     e.setCrew('bug-fix')
     expect(e.crew).toBe(DEFAULT_TEAM)
+  })
+
+  it('every agent in the crew gets a field, and Settings lists the same agents', () => {
+    for (const id of ['feature', 'gstack', 'bug-fix', 'design-pass']) {
+      const e = freshEngine()
+      e.setCrew(id)
+      e.relayout()
+      const agents = new Set(e.team.members.map((m) => m.agent).filter((a) => a !== 'head-farmer'))
+      expect(new Set(e.fields.map((f) => f.id)), id).toEqual(agents)
+      expect(e.crewAgentKeys.length, id).toBe(agents.size + 1)
+      for (const k of e.crewAgentKeys) expect(e.settings.agents[k], `${id} ${k}`).toBeDefined()
+    }
   })
 
   it('saving the crew adds a team template that can be picked', () => {
@@ -66,15 +78,16 @@ describe('Agent and team templates', () => {
 
   it('a team is a valley layout: its fields in order, each with a style', () => {
     const feature = fieldsFor('feature')
-    expect(feature.map((f) => f.agent.name)).toEqual(['Backend', 'Frontend', 'Tests', 'Docs', 'Reviewer'])
+    // The demo's valley: a field for every agent but the head farmer, who works from the farmstead.
+    expect(feature.map((f) => f.agent.name)).toEqual(['Frontend', 'Backend', 'Messaging', 'Tests', 'Reviewer'])
     expect(feature.map((f) => f.index)).toEqual([0, 1, 2, 3, 4])
-    // The demo's valley: three fields, with every review role at the farmstead.
-    expect(fieldsFor('gstack').map((f) => f.agent.name)).toEqual(['Frontend', 'Backend', 'Messaging'])
+    const full = TEAM_TEMPLATES.find((t) => t.id === 'gstack')!
+    expect(fieldsFor('gstack')).toHaveLength(full.members.length - 1)
     for (const a of AGENT_TEMPLATES) {
       expect(a.style.fence).toMatch(/^#[0-9a-f]{6}$/)
       expect(a.style.body).toMatch(/^#[0-9a-f]{6}$/)
       expect(['wheat', 'carrot', 'cabbage', 'tulip', 'pumpkin']).toContain(a.style.crop)
     }
-    expect(fieldsFor('no-such-team').map((f) => f.agent.id)).toEqual(['frontend', 'backend', 'messaging'])
+    expect(fieldsFor('no-such-team').map((f) => f.agent.id)).toEqual(['frontend', 'backend', 'messaging', 'tests', 'reviewer'])
   })
 })

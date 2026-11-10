@@ -51,3 +51,7 @@
   background: var(--sprout);
   border-color: var(--sprout);
 }
+
+.not-started {
+  margin: 0 0 10px;
+}

@@ -95,9 +95,9 @@ export function BookingShot({ screen, after, err }: { screen: BookingScreen; aft
         <Bar back />
         <Steps at={2} />
         <div className="bk-vets">
-          <span className="sel">Dr Patel</span>
-          <span>Dr Okafor</span>
-          <span>Dr Lin</span>
+          <span className="sel">Dogs and cats</span>
+          <span>Small pets</span>
+          <span>Dental</span>
         </div>
         <div className="bk-days">
           {DAYS.map((x) => (
@@ -132,7 +132,7 @@ export function BookingShot({ screen, after, err }: { screen: BookingScreen; aft
           <dt>Visit</dt>
           <dd>Checkup</dd>
           <dt>Vet</dt>
-          <dd>Dr Patel</dd>
+          <dd>Dogs and cats vet</dd>
           <dt>When</dt>
           <dd>Thu 26 Nov, 9:00</dd>
         </dl>
@@ -147,21 +147,21 @@ export function BookingShot({ screen, after, err }: { screen: BookingScreen; aft
           <b>WillowVets</b>
         </div>
         <p className="bk-when">Wed 25 Nov, 10:00</p>
-        <div className="bk-sms">Hi Sam, a reminder that Biscuit sees Dr Patel tomorrow at 9:00 at Willow Lane Vets. Reply C to cancel.</div>
+        <div className="bk-sms">A reminder that Biscuit has a checkup tomorrow at 9:00 at Willow Lane Vets. Reply C to cancel.</div>
         <div className="bk-sms me">Thanks, see you then</div>
       </Phone>
     )
   // Two owners book the same slot at the same moment, and both are told yes: the failing end-to-end case.
   const owners = [
-    { who: 'Sam', pet: 'Biscuit' },
-    { who: 'Priya', pet: 'Pepper' },
+    { who: 'First owner', pet: 'Biscuit' },
+    { who: 'Second owner', pet: 'Pepper' },
   ]
   return (
     <div className={`bk-pair ${err ? 'err' : ''} ${after ? 'after' : ''}`}>
       {owners.map((o, i) => {
         const held = after && i === 1
         return (
-          <Phone key={o.who} label={`${o.who}: ${held ? 'slot taken' : 'confirmed'}, Dr Patel at 9:00`} err={err && !held}>
+          <Phone key={o.who} label={`${o.who}: ${held ? 'slot taken' : 'confirmed'}, 9:00`} err={err && !held}>
             <Bar />
             <p className="bk-who">{o.who}</p>
             <div className={`bk-done ${held ? 'gone' : ''}`} aria-hidden>
@@ -172,7 +172,7 @@ export function BookingShot({ screen, after, err }: { screen: BookingScreen; aft
               <dt>Pet</dt>
               <dd>{o.pet}</dd>
               <dt>Vet</dt>
-              <dd>Dr Patel</dd>
+              <dd>Dogs and cats vet</dd>
               <dt>When</dt>
               <dd>Thu 26 Nov, 9:00</dd>
             </dl>

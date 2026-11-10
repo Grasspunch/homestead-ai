@@ -147,7 +147,7 @@ export function Panel() {
   const valleys = e.view === 'valley' && !e.peekName
   const farm = e.view === 'farm' && !e.peekName ? e.fieldPage : null
   const title = view ? view.title : valleys ? 'Valleys' : farm ? farmTitle(e, farm) : FARM.name
-  const status = view ? view.status : valleys ? valleysStatus(e) : farm ? e.fhStatus(e.farmhands[farm]) : <OverviewStatus />
+  const status = view ? view.status : valleys ? valleysStatus(e) : farm ? (e.phase === 'brief' || e.phase === 'clarify' ? 'Not started' : e.fhStatus(e.farmhands[farm])) : <OverviewStatus />
   const body = view ? view.body : valleys ? <ValleysBody /> : farm ? <FarmBody id={farm} /> : <Overview />
   return (
     <aside className="panel" aria-label={FARM.name}>

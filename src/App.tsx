@@ -248,6 +248,11 @@ export function App() {
     if (location.pathname !== '/' && deep) {
       engine.skipIntro()
       goPage(engine, deep)
+    } else if (location.pathname !== '/') {
+      // An address that names no valley goes to Valleys, the same way an unknown agent goes to its valley.
+      history.replaceState(null, '', '/' + location.search)
+      engine.skipIntro()
+      goPage(engine, { kind: 'region' })
     }
     const onPop = () => {
       const p = parsePath(location.pathname, engine)

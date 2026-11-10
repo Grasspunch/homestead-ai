@@ -80,7 +80,7 @@ function Root() {
   const e = useEngine()
   const S = e.settings
   const live = e.liveAI
-  const agents = Object.values(S.agents)
+  const agents = e.crewAgentKeys
   // Only the missing key needs saying; everything else is in the labels.
   const liveEv = e.live === false ? 'Needs ANTHROPIC_API_KEY on the server.' : undefined
   const rows: { id: string; label: string; sub?: string; end?: string }[] = [
@@ -118,7 +118,7 @@ function Agents() {
   const e = useEngine()
   return (
     <div className="settings">
-      {Object.entries(e.settings.agents).map(([key, a]) => (
+      {e.crewAgentKeys.flatMap((key) => (e.settings.agents[key] ? [[key, e.settings.agents[key]] as const] : [])).map(([key, a]) => (
         <div className="agent" key={key}>
           <div className="agent-h">
             <strong>{a.role}</strong>

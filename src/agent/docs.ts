@@ -14,9 +14,9 @@ Sunday,closed,closed`,
 
   'vets.md': `# Our vets (Willow Lane Vets)
 
-- Dr Priya Patel: dogs and cats. Checkups, vaccinations, surgery on Tuesdays and Thursdays.
-- Dr Tom Okafor: rabbits, guinea pigs and other small pets. Checkups and vaccinations.
-- Dr Ellen Hughes: cats and dogs. Checkups, vaccinations, dental.
+- Dogs and cats vet: checkups, vaccinations, surgery on Tuesdays and Thursdays.
+- Small pets vet: rabbits, guinea pigs and other small pets. Checkups and vaccinations.
+- Dental vet: cats and dogs. Checkups, vaccinations, dental.
 
 A checkup or a vaccination takes 15 minutes. Surgery always starts with a call from a vet.
 Which vet works which day is set by the staff rota, not here.`,
@@ -42,7 +42,7 @@ Updated 3 November. Which vet works when, week by week.
 
 Weekdays: 8:00 to 19:00, two vets on every day.
 Saturdays: no vet works Saturdays from 1 December. The clinic is closed on Saturdays from that date.
-Dr Patel: Monday to Thursday. Dr Okafor: Tuesday to Friday. Dr Hughes: Monday, Wednesday, Friday.`,
+Dogs and cats vet: Monday to Thursday. Small pets vet: Tuesday to Friday. Dental vet: Monday, Wednesday, Friday.`,
 
   'staff-rota/CHANGELOG.md': `# Staff rota: changelog (Practice team)
 
@@ -51,7 +51,7 @@ Dr Patel: Monday to Thursday. Dr Okafor: Tuesday to Friday. Dr Hughes: Monday, W
 - Saturday visits already booked after 1 December move to weekdays. The front desk is calling owners.
 
 ## 6 October
-- Dr Hughes moves to Monday, Wednesday and Friday.`,
+- The dental vet moves to Monday, Wednesday and Friday.`,
 }
 
 // What the neighbouring project (Staff rota) shares with other farms.

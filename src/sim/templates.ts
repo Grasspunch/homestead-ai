@@ -31,7 +31,7 @@ export interface AgentTemplate {
   instructions: string
   upstream?: boolean // its skills come from the pinned upstream pack below
   style: FieldStyle // how its field looks in the valley
-  farmstead?: boolean // works from the shared farmstead, not a field of its own
+  farmstead?: boolean // reviews the whole crew's work rather than building; it still has a field of its own
 }
 
 // An agent template is also a field: its fence, its farmhand's colours and its crop.
@@ -291,7 +291,7 @@ const BASE: Omit<AgentTemplate, 'style'>[] = [
     id: 'retro',
     file: 'retro',
     farmstead: true,
-    name: 'Head farmer (retro)',
+    name: 'Retro',
     does: 'Writes the run’s Lessons saved',
     steps: ['ship'],
     harness: 'claude-code',
@@ -410,7 +410,7 @@ const PLAIN: FieldStyle = { fence: '#a8774a', body: '#f3f2c0', shade: '#ddd5de',
 
 export const AGENT_TEMPLATES: AgentTemplate[] = BASE.map((a) => ({ ...a, style: STYLE[a.id] ?? PLAIN }))
 
-const FEATURE_STAFF: Record<string, string> = { backend: 'backend', frontend: 'frontend', messaging: 'backend', tests: 'tests', docs: 'docs', reviewer: 'reviewer' }
+const FEATURE_STAFF: Record<string, string> = { backend: 'backend', frontend: 'frontend', messaging: 'messaging', tests: 'tests', docs: 'backend', reviewer: 'reviewer' }
 
 export const TEAM_TEMPLATES: TeamTemplate[] = [
   {
@@ -420,10 +420,10 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
     line: 'A feature across the stack.',
     members: [
       { agent: 'head-farmer', steps: ['brief', 'clarify', 'plan', 'grow', 'harvest', 'ship'] },
-      { agent: 'backend', steps: ['grow'] },
       { agent: 'frontend', steps: ['grow'] },
-      { agent: 'tests', steps: ['grow'] },
-      { agent: 'docs', steps: ['grow'] },
+      { agent: 'backend', steps: ['grow'] },
+      { agent: 'messaging', steps: ['grow'] },
+      { agent: 'tests', steps: ['grow', 'harvest'] },
       { agent: 'reviewer', steps: ['harvest'] },
     ],
     gates: ['shots', 'unit', 'integration', 'e2e', 'review'],
@@ -488,8 +488,9 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
   },
 ]
 
-// The demo runs on the Full-cycle crew: three fields (Frontend, Backend, Messaging), reviews from the farmstead.
-export const DEFAULT_TEAM = 'gstack'
+// The demo runs on the Feature crew: a field for each of its five agents, the head farmer at the farmstead.
+export const DEFAULT_TEAM = 'feature'
+export const HEAD_FARMER = 'head-farmer'
 
 // The crews the neighbouring valleys run, in scenario order: the neighbour first, then the other projects.
 // By position, so it holds whatever the valleys are called.
@@ -503,7 +504,7 @@ export function teamTemplate(id: string, custom: TeamTemplate[] = []): TeamTempl
   return [...TEAM_TEMPLATES, ...custom].find((t) => t.id === id)
 }
 
-// A team template is a valley layout: its fields, in order, one per agent that isn't the farmstead's.
+// A team template is a valley layout: its fields, in order, one per agent. Only the head farmer works from the farmstead.
 export interface Field {
   index: number
   agent: AgentTemplate
@@ -515,7 +516,7 @@ export function fieldsFor(teamId: string, custom: TeamTemplate[] = []): Field[] 
   const t = teamTemplate(teamId, custom) ?? teamTemplate(DEFAULT_TEAM)!
   return t.members
     .map((m) => ({ m, a: agentTemplate(m.agent) }))
-    .filter((x): x is { m: TeamTemplate['members'][number]; a: AgentTemplate } => !!x.a && !x.a.farmstead)
+    .filter((x): x is { m: TeamTemplate['members'][number]; a: AgentTemplate } => !!x.a && x.a.id !== HEAD_FARMER)
     .map((x, index) => ({ index, agent: x.a, steps: x.m.steps, style: x.a.style }))
 }
 
@@ -545,7 +546,7 @@ export function agentFile(a: AgentTemplate): string {
   )
   if (a.upstream) lines.push(`skills_version = ${q(UPSTREAM.version)}`)
   lines.push(`gates = ${list(a.gates)}`, `asks = ${q(a.asks)}`)
-  if (!a.farmstead) lines.push('', '[field]', `fence = ${q(a.style.fence)}`, `farmhand = [${q(a.style.body)}, ${q(a.style.shade)}]`, `crop = ${q(a.style.crop)}`)
+  if (a.id !== HEAD_FARMER) lines.push('', '[field]', `fence = ${q(a.style.fence)}`, `farmhand = [${q(a.style.body)}, ${q(a.style.shade)}]`, `crop = ${q(a.style.crop)}`)
   if (a.mcp.length) {
     lines.push('', '[mcp]')
     for (const m of a.mcp) lines.push(`${m.server} = ${q(m.perm)}`)
@@ -580,7 +581,7 @@ export function crewAsTemplate(base: TeamTemplate, name: string, assignees: stri
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
   const used = new Set(['head-farmer', ...assignees.map((r) => base.staffs[r]), base.staffs.reviewer].filter(Boolean))
-  // Farmstead roles come along: they review every field.
+  // Reviewing roles come along: they review every field.
   for (const m of base.members) if (agentTemplate(m.agent)?.farmstead) used.add(m.agent)
   return {
     ...base,

@@ -920,13 +920,20 @@ button.row:hover .chev {
   margin: 0 0 12px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 0;
 }
 
 .diff div {
   display: grid;
   grid-template-columns: 14px 1fr;
   gap: 4px;
+  margin: 0 -10px;
+  padding: 1px 10px;
+}
+
+/* Read like a code review: removed lines on a light red, added lines on a light green. */
+.diff .plus {
+  background: var(--sprout-wash);
 }
 
 .diff .plus span:first-child {
@@ -934,8 +941,11 @@ button.row:hover .chev {
 }
 
 .diff .minus {
-  color: var(--ink-faint);
-  text-decoration: line-through;
+  background: var(--failure-wash);
+}
+
+.diff .minus span:first-child {
+  color: var(--failure);
 }
 
 .diff .mod span:first-child {
@@ -1447,8 +1457,10 @@ textarea.goal:focus {
 }
 
 .doc del {
-  color: var(--ink-faint);
-  text-decoration: line-through;
+  text-decoration: none;
+  background: var(--failure-wash);
+  border-radius: 3px;
+  padding: 0 2px;
 }
 
 .doc ins {

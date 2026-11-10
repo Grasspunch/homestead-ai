@@ -68,7 +68,7 @@ describe('Vet booking, end to end', () => {
     expect(e.harvestGates.e2e.state).toBe('fail')
     expect(e.harvestHeadline).toBe(OUTPUT.failed)
     expect(e.taskStatus(e.task('backend')).text).toBe('End-to-end failed')
-    expect(e.activeAsk!.question).toBe('Two owners booked Dr Patel at 9:00 at the same moment, and both were confirmed. Hold a slot for 5 minutes while someone books, then rerun?')
+    expect(e.activeAsk!.question).toBe('Two owners booked the same 9:00 slot at the same moment, and both were confirmed. Hold a slot for 5 minutes while someone books, then rerun?')
     expect(e.activeAsk!.question).toBe(HARVEST_FAIL.question)
 
     e.answer('hold', 'hold')

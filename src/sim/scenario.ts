@@ -118,17 +118,18 @@ export interface FieldSlot {
 }
 
 // A team template is a valley layout: one field per agent, in member order, around the farmstead.
+// The head farmer is the only one that works from the farmstead itself.
 // Up to five fields fit in two rows; more add rows above and below.
 export function layoutFields(team: TeamTemplate): FieldSlot[] {
   const ids: string[] = []
   for (const m of team.members) {
     const a = AGENT_TEMPLATES.find((x) => x.id === m.agent)
-    if (a && !a.farmstead && !ids.includes(a.id)) ids.push(a.id)
+    if (a && a.id !== 'head-farmer' && !ids.includes(a.id)) ids.push(a.id)
   }
-  // A role staffed by a farmstead agent (the Reviewer's staff engineer, say) works from the farmstead, not a field.
+  // Every agent in the crew gets a field, and so does any agent the crew staffs a role with.
   for (const r of ROLE_ORDER) {
     const id = team.staffs[r]
-    if (id && !ids.includes(id) && !AGENT_TEMPLATES.find((x) => x.id === id)?.farmstead) ids.push(id)
+    if (id && id !== 'head-farmer' && !ids.includes(id)) ids.push(id)
   }
   const rows = Math.max(2, Math.ceil((ids.length + 1) / 3))
   const above = Math.floor((rows - 1) / 2)
@@ -427,7 +428,7 @@ export const LESSON_TRACE: Seed = {
 export const LESSON_HOLD: Seed = {
   file: 'lesson-test-double-booking.md',
   title: 'Test two people booking the same slot',
-  body: 'Two owners booked Dr Patel at 9:00 at the same moment, and both were confirmed. Every booking flow gets an end-to-end test that books one slot from two browsers at once, and a slot is held for 5 minutes while someone books.',
+  body: 'Two owners booked the same 9:00 slot at the same moment, and both were confirmed. Every booking flow gets an end-to-end test that books one slot from two browsers at once, and a slot is held for 5 minutes while someone books.',
   from: 'Harvest: Vet booking (failed end-to-end run)',
   isNew: true,
 }

@@ -97,8 +97,8 @@ export const HARVEST_FAIL = {
   gate: 'e2e' as GateId,
   text: '2 owners booked the same slot',
   short: '2 bookings, 1 slot',
-  detail: 'Two owners booked Dr Patel at 9:00 at the same moment, and both were confirmed.',
-  question: 'Two owners booked Dr Patel at 9:00 at the same moment, and both were confirmed. Hold a slot for 5 minutes while someone books, then rerun?',
+  detail: 'Two owners booked the same 9:00 slot at the same moment, and both were confirmed.',
+  question: 'Two owners booked the same 9:00 slot at the same moment, and both were confirmed. Hold a slot for 5 minutes while someone books, then rerun?',
   fix: 'Backend holds a slot for 5 minutes while someone books, then every gate runs again.',
   fixed: 'Added a 5-minute hold on the slot while someone books',
   refused: 'The second booking is refused at confirm',
@@ -147,11 +147,11 @@ export const GATE_DETAIL: Partial<Record<GateId, { status: string; rows: [string
     ],
   },
   e2e: {
-    status: 'Run by QA in two browsers at once, with the Playwright MCP.',
+    status: 'Run by the Tests agent in two browsers at once, with the Playwright MCP.',
     rows: [
       ['booking.spec.ts', 'One owner books a checkup on a phone', '3 of 3'],
       ['same-slot.spec.ts', 'Two owners, one slot: failed once, passed with the hold', '1 of 1'],
     ],
-    steps: ['Open /book on a phone', 'Pick Biscuit, a dog', 'Reason: vaccination', 'Dr Patel, Tuesday 9:00', 'Confirm: the slot is held for 5 minutes', 'A second owner sees “That time was just taken”'],
+    steps: ['Open /book on a phone', 'Pick Biscuit, a dog', 'Reason: vaccination', 'Dogs and cats vet, Tuesday 9:00', 'Confirm: the slot is held for 5 minutes', 'A second owner sees “That time was just taken”'],
   },
 }

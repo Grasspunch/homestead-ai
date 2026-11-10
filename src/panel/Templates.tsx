@@ -1,7 +1,7 @@
 // Agent and team templates: the Templates page in Settings, its previews, and the Brief's crew picker.
 import './templates.css'
 import { useState } from 'react'
-import { AGENT_TEMPLATES, GATE_NAME, STEP_NAME, TEAM_TEMPLATES, UPSTREAM, agentFile, agentPath, agentTemplate, fieldsFor, teamFile, teamPath, teamSummary, teamTemplate, type AgentTemplate, type FieldStyle, type TeamTemplate } from '../sim/templates'
+import { AGENT_TEMPLATES, GATE_NAME, HEAD_FARMER, STEP_NAME, TEAM_TEMPLATES, UPSTREAM, agentFile, agentPath, agentTemplate, fieldsFor, teamFile, teamPath, teamSummary, teamTemplate, type AgentTemplate, type FieldStyle, type TeamTemplate } from '../sim/templates'
 import { HARNESSES } from '../sim/settings'
 import { engine } from '../sim/engine'
 import { Sprite, useEngine } from '../ui'
@@ -143,7 +143,7 @@ function AgentPreview({ id }: { id: string }) {
   if (!a) return <p className="soft">This template is gone.</p>
   return (
     <div className="settings templates">
-      {!a.farmstead && (
+      {a.id !== HEAD_FARMER && (
         <section className="section">
           <div className="field-style">
             <FieldSwatch style={a.style} label={a.name} />

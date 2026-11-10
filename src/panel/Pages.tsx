@@ -99,6 +99,34 @@ export function FarmBody({ id }: { id: RoleId }) {
   const log = e.log.filter((l) => l.who === fh.role).slice(-6).reverse()
   const used = tasks.reduce((n, t) => n + t.used, 0)
   const budget = tasks.reduce((n, t) => n + t.budget, 0)
+  // Opened from a link before the run has a plan: say so, with the way to start it.
+  if (e.phase === 'brief' || e.phase === 'clarify')
+    return (
+      <>
+        <Section title="Agent">
+          <div className="hand">
+            <Portrait color={fh.color} shade={fh.colorDark} />
+            <span>
+              <b>{tpl?.name ?? fh.role}</b>
+            </span>
+          </div>
+          <dl className="agent-facts">
+            <dt>Harness</dt>
+            <dd className="mono">{cfg?.harness ?? tpl?.harness}</dd>
+            <dt>Model</dt>
+            <dd className="mono">{cfg?.model ?? tpl?.model}</dd>
+          </dl>
+        </Section>
+        <Section title="Not started">
+          <p className="not-started" data-testid="farm-not-started">
+            Plant the run from {FARM.name} to start.
+          </p>
+          <button className="btn primary" onClick={() => goPage(e, { kind: 'valley', id: FARM.name })} data-testid="farm-plant">
+            Go to {FARM.name}
+          </button>
+        </Section>
+      </>
+    )
   return (
     <>
       {ask && <AskCard ask={ask} key={ask.id} />}

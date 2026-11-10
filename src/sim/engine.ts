@@ -11,7 +11,7 @@ import { CHECKS, COMMITS, GATE_ORDER, GATES, HARVEST_FAIL, INTEGRATION_FAIL, OUT
 import { defaultSettings, toml, usd, type Settings } from './settings'
 import { ANNOUNCE, BREACH, breachText, cartGate, CI_JOBS, HEALTH, LESSON_QUERY, RELEASE, SHIP_TEXT, SHIP_TIMES, healthOk, fmtHealth, type CiOutcome, type CiState, type ShipStage } from './ship'
 import { expandSignposts } from '../agent/docs'
-import { DEFAULT_TEAM, crewAsTemplate, teamTemplate, type GateKey, type TeamTemplate } from './templates'
+import { DEFAULT_TEAM, HEAD_FARMER, agentTemplate, crewAsTemplate, teamTemplate, type GateKey, type TeamTemplate } from './templates'
 import type { Ask, CropKind, Dir, Farmhand, Flag, Job, LedgerEvent, LogEntry, Phase, ReasonLabel, Rect, Replan, RoleId, Seed, Subtask, Task, Toast } from './types'
 
 const WALK_SPEED = 3.4 // tiles per second
@@ -455,6 +455,7 @@ export class Engine {
     if (key === this.layoutKey) return
     this.layoutKey = key
     this.fields = layoutFields(this.team)
+    this.syncCrewSettings()
     for (const f of this.fields) {
       const ts = this.tasks.filter((t) => f.roles.includes(t.assignee))
       if (!ts.length) continue
@@ -525,6 +526,24 @@ export class Engine {
 
   get team(): TeamTemplate {
     return teamTemplate(this.crew, this.customTeams) ?? teamTemplate(DEFAULT_TEAM)!
+  }
+
+  // The settings key for each agent in the crew: the head farmer, the roles it staffs, then the rest by template.
+  get crewAgentKeys(): string[] {
+    const t = this.team
+    const keys = t.members.map((m) => (m.agent === HEAD_FARMER ? 'head' : (ROLE_ORDER.find((r) => t.staffs[r] === m.agent) ?? m.agent)))
+    return keys.filter((k, i) => keys.indexOf(k) === i)
+  }
+
+  // Every agent in the crew has a row in Settings, filled from its template the first time it's seen.
+  private syncCrewSettings() {
+    const t = this.team
+    for (const m of t.members) {
+      const key = m.agent === HEAD_FARMER ? 'head' : (ROLE_ORDER.find((r) => t.staffs[r] === m.agent) ?? m.agent)
+      if (this.settings.agents[key]) continue
+      const a = agentTemplate(m.agent)
+      if (a) this.settings.agents[key] = { role: a.name, does: a.does, harness: a.harness, model: a.model }
+    }
   }
 
   // The crew can change until the plan is approved and the work starts.
@@ -1369,7 +1388,7 @@ export class Engine {
     const t = this.task(HARVEST_FAIL.taskId)
     const fh = this.farmhands[t.assignee]
     this.harvestGates[HARVEST_FAIL.gate] = { state: 'fail', text: HARVEST_FAIL.text }
-    this.addLog('Gates', `End-to-end failed: ${HARVEST_FAIL.detail}`, 'pest', t.id, 'same-slot.spec.ts, run by QA in two browsers at once.')
+    this.addLog('Gates', `End-to-end failed: ${HARVEST_FAIL.detail}`, 'pest', t.id, 'same-slot.spec.ts, run by the Tests agent in two browsers at once.')
     this.raise({
       id: 'hold',
       label: 'Failure',
@@ -2495,7 +2514,7 @@ export class Engine {
       this.addLog(fh.role, 'Dropped Saturday slots from 1 December', 'info', task.id, 'After your answer. Hours now come from the staff rota.')
     }
     if (sub.id === 'b4') this.addLog(fh.role, 'Added POST /bookings', 'info', task.id, 'Confirms a slot and stores the booking.')
-    if (sub.id === 'm2') this.addLog(fh.role, 'Texted a staging phone: “Biscuit sees Dr Patel tomorrow at 9:00”', 'info', task.id, 'Through Twilio, between 9:00 and 20:00, with how to cancel.')
+    if (sub.id === 'm2') this.addLog(fh.role, 'Texted a staging phone: “Biscuit’s checkup is tomorrow at 9:00”', 'info', task.id, 'Through Twilio, between 9:00 and 20:00, with how to cancel.')
   }
 
   private raiseCrow() {
