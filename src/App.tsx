@@ -102,6 +102,7 @@ function Farm() {
         onChest={() => store.setDrawer({ kind: 'summary' })}
       />
       <Top p={p} s={s} />
+      <InboxYields win={st.settingsOpen ? 'settings' : st.pending?.pid === p.id ? 'change' : ask ? `ask:${ask.id}` : rolled ? `rollback:${rolled.t}` : trust ? 'trust' : null} />
       {d?.kind === 'task' && <TaskPanel p={p} s={s} id={d.id} />}
       {d?.kind === 'farmer' && <FarmerPage p={p} s={s} id={d.id} />}
       {d?.kind === 'inbox' && <InboxPanel s={s} />}
@@ -123,6 +124,16 @@ function Farm() {
       )}
     </>
   )
+}
+
+// The inbox is a glance, so it steps aside when a window opens that wants you: an ask, a change card, a rollback, the trust offer or settings.
+function InboxYields({ win }: { win: string | null }) {
+  const last = useRef(win)
+  useEffect(() => {
+    if (win && win !== last.current && store.drawer?.kind === 'inbox') store.setDrawer(null)
+    last.current = win
+  }, [win])
+  return null
 }
 
 function Top({ p, s }: { p: Project; s: RunState }) {
