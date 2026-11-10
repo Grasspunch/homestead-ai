@@ -97,7 +97,11 @@ export interface SimInput {
   deployAsks?: boolean
   // The models the plan was priced on, by farmer, when you've since changed one. A pricier model costs more per step.
   plannedModels?: Partial<Record<FarmerId, string>>
+  // Work you sent back from the pull request review, by the ask you answered: which task, and what should change.
+  sendBacks?: Record<string, { task: string; note: string }>
 }
+
+export const SEND_BACK = 'Send back'
 
 export function simulateRun(input: SimInput): RunEvent[] {
   const { goal, farmers } = input
@@ -118,6 +122,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const checkerOf = (f: FarmerId): FarmerId => (f !== checker ? checker : has('planner') && f !== 'planner' ? 'planner' : farmers.find((x) => x.id !== f)?.id ?? f)
   const stopped = new Set<string>()
   const finished = new Set<string>()
+  let changes = 0 // commits from work you sent back
 
   at(0, { type: 'goal', text: goal })
   for (const f of farmers) at(0.02, { type: 'farmer', ...f })
@@ -152,8 +157,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
     finished.add(task.id)
     at(end + 0.3, { type: 'task_ripe', task: task.id, summary: notes, evidence })
     at(end + 0.4, { type: 'verify', task: task.id, by: checkerOf(task.farmer), pass: true })
-    // Unless you review finished work yourself, the checker's pass is the acceptance.
-    if (!asks('review')) at(end + 0.6, { type: 'accept', task: task.id, by: checkerOf(task.farmer) })
+    // The checker's pass is the commit: the task goes into the pull request. You review once, at the merge.
+    at(end + 0.45, { type: 'accept', task: task.id, by: checkerOf(task.farmer) })
     free[task.farmer] = end + 0.5
     lastBuilt = Math.max(lastBuilt, end + 0.5)
   }
@@ -329,25 +334,56 @@ export function simulateRun(input: SimInput): RunEvent[] {
     const start = lastBuilt + 0.5
     at(start, { type: 'task_start', task: task.id, farmer: f })
     const isShip = /ship|deploy|launch|release|live/i.test(task.name + task.id)
-    const commits = [...finished].filter((id) => !plan.find((t) => t.id === id)?.gate).length
+    const commits = () => [...finished].filter((id) => !plan.find((t) => t.id === id)?.gate).length + changes
+    // A failed check always asks; otherwise, with shipping set to "just do it", the Deployer merges by itself.
     let everyone = false
-    if (asks('ship')) {
-      const id = `ask-${++askN}`
-      const suggested = isShip ? 'Merge and ship to 10%' : 'Go ahead'
-      at(start + 0.3, {
-        type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible',
-        question: isShip ? `Everything passed. The pull request has ${commits} commits, one per task.` : `${task.name} reaches real people. Go ahead?`,
-        impact: isShip ? `Merging puts it in front of 10% of users first. If errors pass ${ERROR_LIMIT * 100}%, I roll back by myself.` : 'This one is hard to undo.',
-        suggested,
-        alternatives: isShip ? ['Not yet', 'Ship to everyone'] : ['Not yet'],
-      })
-      const c = choose(id, suggested)
-      at(start + 1.5, { type: 'answer', id, choice: c, by: 'human' })
-      everyone = c === 'Ship to everyone'
+    let reviewAt = start
+    if (asks('ship') || stopped.size > 0) {
+      for (let round = 0; ; round++) {
+        const id = `ask-${++askN}`
+        const suggested = isShip ? 'Merge and ship to 10%' : 'Go ahead'
+        at(reviewAt + 0.3, {
+          type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible',
+          question: isShip
+            ? `${round ? 'The pull request is ready again' : 'The pull request is ready'}: ${commits()} commits, and every check passed.`
+            : `${task.name} reaches real people. Go ahead?`,
+          impact: isShip ? `Merging puts it in front of 10% of users first. If errors pass ${ERROR_LIMIT * 100}%, I roll back by myself.` : 'This one is hard to undo.',
+          suggested,
+          alternatives: isShip ? [SEND_BACK, 'Ship to everyone', 'Not yet'] : ['Not yet'],
+        })
+        const c = choose(id, suggested)
+        at(reviewAt + 1.5, { type: 'answer', id, choice: c, by: 'human' })
+        const sb = c === SEND_BACK ? input.sendBacks?.[id] : undefined
+        const back = sb && plan.find((x) => x.id === sb.task && !x.gate)
+        if (sb && back) {
+          // Sent back: its farmer changes it at a retry cost, a different farmer checks it, and it's a new commit.
+          const bf = back.farmer
+          const t0 = reviewAt + 1.6
+          r = rng(hash(goal + back.id + sb.note))
+          at(t0, { type: 'task_start', task: back.id, farmer: bf })
+          at(t0 + 0.4, { type: 'tool', farmer: bf, task: back.id, tool: 'edit', summary: `Changing it: ${sb.note}` })
+          usage(t0 + 0.41, bf, back.id, usdPer(bf) * 0.35, 'retry')
+          at(t0 + 0.42, { type: 'progress', task: back.id, value: 0.5 })
+          at(t0 + 1.2, { type: 'tool', farmer: bf, task: back.id, tool: 'edit', summary: 'Ran the tests' })
+          at(t0 + 1.4, { type: 'task_built', task: back.id })
+          at(t0 + 1.8, { type: 'check', task: back.id, by: checkerOf(bf), pass: true, notes: `Changed as you asked: ${sb.note}`, evidence: ['tests/report.json'], proof: back.farmer === 'designer' ? shot(sc.screen, 'ok') : unit(back) })
+          at(t0 + 2.1, { type: 'task_ripe', task: back.id, summary: `Changed as you asked: ${sb.note}`, evidence: ['tests/report.json'], change: sb.note })
+          at(t0 + 2.2, { type: 'verify', task: back.id, by: checkerOf(bf), pass: true })
+          at(t0 + 2.25, { type: 'accept', task: back.id, by: checkerOf(bf) })
+          changes++
+          reviewAt = t0 + 2.3
+          continue
+        }
+        everyone = c === 'Ship to everyone'
+        break
+      }
+    } else if (isShip) {
+      at(start + 1.5, { type: 'auto_fix', task: task.id, what: `Every check passed, so the ${label(f)} merged the pull request by itself (${commits()} commits) and shipped to 10% first.` })
     }
-    let t = start + 1.7
+    const shipStart = reviewAt
+    let t = shipStart + 1.7
     if (isShip) {
-      at(t - 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: `Merged the pull request (${commits} commits)` })
+      at(t - 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: `Merged the pull request (${commits()} commits)` })
     }
     for (const line of steps(task, f)) {
       at(t, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: line })

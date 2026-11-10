@@ -104,7 +104,7 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
                         ))}
                       </select>
                     ) : (
-                      <span className="sub">{t.status === 'ripe' ? 'Done' : t.status === 'waiting' ? 'Next' : `${Math.round(t.progress * 100)}%`}</span>
+                      <span className="sub">{t.status === 'ripe' || t.status === 'accepted' ? 'Done' : t.status === 'waiting' ? 'Next' : `${Math.round(t.progress * 100)}%`}</span>
                     )}
                   </div>
                 ))}

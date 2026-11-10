@@ -88,7 +88,7 @@ export type RunEvent =
       files?: number
     }
   | { t: number; type: 'answer'; id: string; choice: string; by: 'human' | 'session' }
-  | { t: number; type: 'task_ripe'; task: string; evidence?: string[]; summary?: string }
+  | { t: number; type: 'task_ripe'; task: string; evidence?: string[]; summary?: string; change?: string }
   | { t: number; type: 'verify'; task: string; by: FarmerId; pass: boolean; notes?: string }
   | { t: number; type: 'deploy'; stage: DeployStage; url?: string; reason?: string; metrics?: Metrics }
   | { t: number; type: 'monitor'; stage: '10%' | '100%'; metrics: Metrics }
@@ -109,12 +109,9 @@ export interface TaskState extends PlanTask {
   summary?: string
   verified?: boolean
   acceptedBy?: FarmerId | 'you'
-  sentBack?: string // your note, when you sent it back
+  changes?: string[] // what you asked to change when you sent it back, one commit each
   stopped?: string // why it was stopped, when you stopped it
 }
-
-// What you did with finished work while watching: accepted it, or sent it back with a note.
-export type Review = { kind: 'accept' } | { kind: 'back'; note: string }
 
 export type FarmerState = 'idle' | 'working' | 'stuck' | 'needs' | 'done'
 
@@ -169,12 +166,12 @@ export interface RunState {
 }
 
 // How often the crew stops for you: each kind of moment either asks you or is handled by the crew.
-export type Moment = 'cost' | 'disagree' | 'failed' | 'big' | 'review' | 'ship' | 'reship'
+export type Moment = 'cost' | 'disagree' | 'failed' | 'big' | 'ship' | 'reship'
 export type Autonomy = Record<Moment, 'ask' | 'auto'>
 export type AutonomyLevel = 'often' | 'matters' | 'undoable'
 
 export const AUTONOMY_PRESETS: Record<AutonomyLevel, Autonomy> = {
-  often: { cost: 'ask', disagree: 'ask', failed: 'ask', big: 'ask', review: 'ask', ship: 'ask', reship: 'ask' },
-  matters: { cost: 'ask', disagree: 'ask', failed: 'auto', big: 'ask', review: 'ask', ship: 'ask', reship: 'auto' },
-  undoable: { cost: 'auto', disagree: 'auto', failed: 'auto', big: 'ask', review: 'auto', ship: 'ask', reship: 'auto' },
+  often: { cost: 'ask', disagree: 'ask', failed: 'ask', big: 'ask', ship: 'ask', reship: 'ask' },
+  matters: { cost: 'ask', disagree: 'ask', failed: 'auto', big: 'ask', ship: 'ask', reship: 'auto' },
+  undoable: { cost: 'auto', disagree: 'auto', failed: 'auto', big: 'ask', ship: 'ask', reship: 'auto' },
 }

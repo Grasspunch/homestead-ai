@@ -44,7 +44,7 @@ describe('simulated run', () => {
         for (const e of ev) if (e.type === 'answer') answers[e.id] = e.choice
         const end = reduce(ev, duration(ev), answers)
         expect(end.done).toBeTruthy()
-        expect(end.tasks.every((t) => t.status === 'ripe')).toBe(true)
+        expect(end.tasks.every((t) => t.status === 'accepted')).toBe(true)
         expect(end.asks.length).toBeGreaterThan(0)
         expect(end.usage.usd).toBeGreaterThan(0)
         expect(pendingAsk(ev, duration(ev), answers)).toBeNull()
@@ -72,7 +72,7 @@ describe('the moments in a run', () => {
     expect(ev.filter((e) => e.type === 'monitor').length).toBeGreaterThan(5)
     const end = reduce(ev, duration(ev))
     expect(end.tasks.length).toBe(plan.tasks.length + 1)
-    expect(end.tasks.every((t) => t.status === 'ripe')).toBe(true)
+    expect(end.tasks.every((t) => t.status === 'accepted')).toBe(true)
   })
 
   it('asks more the more cautious you set it', () => {
@@ -135,7 +135,51 @@ describe('your answers branch the run', () => {
     const s = reduce(ev, Number.MAX_SAFE_INTEGER)
     const t = s.tasks.find((x) => x.id === fail.task)!
     expect(t.stopped).toBeTruthy()
-    expect(t.status).not.toBe('ripe')
+    expect(t.status).not.toBe('accepted')
+  })
+})
+
+describe('one pull request review', () => {
+  const plan = simulatePlan(GOAL)
+  const base = { goal: GOAL, ...plan, autonomy: AUTONOMY_PRESETS.matters }
+  const shipAsk = (ev: ReturnType<typeof simulateRun>) => ev.filter((e) => e.type === 'ask' && e.reason === 'irreversible').pop()
+
+  it('commits each task when its check passes, with no ask per task', () => {
+    const ev = simulateRun(base)
+    const s = reduce(ev, Number.MAX_SAFE_INTEGER)
+    expect(s.tasks.filter((t) => !t.gate).every((t) => t.status === 'accepted')).toBe(true)
+    const ship = shipAsk(ev)
+    expect(ship && ship.type === 'ask' && ship.alternatives).toContain('Send back')
+    expect(ship && ship.type === 'ask' && ship.question).toMatch(/\d+ commits/)
+  })
+
+  it('sends a task back from the review: a new check, a retry cost, and the review again', () => {
+    const first = shipAsk(simulateRun(base))
+    if (!first || first.type !== 'ask') throw new Error('no ship ask')
+    const task = plan.tasks.find((t) => !t.gate)!
+    const ev = simulateRun({ ...base, choices: { [first.id]: 'Send back' }, sendBacks: { [first.id]: { task: task.id, note: 'friendlier copy' } } })
+    const again = shipAsk(ev)
+    expect(again && again.type === 'ask' && again.id).not.toBe(first.id)
+    expect(again && again.type === 'ask' && again.question).toMatch(/ready again/)
+    expect(ev.some((e) => e.type === 'check' && e.task === task.id && e.notes.includes('friendlier copy'))).toBe(true)
+    expect(ev.some((e) => e.type === 'usage' && e.task === task.id && e.kind === 'retry')).toBe(true)
+    const usd = (x: typeof ev) => x.reduce((n, e) => n + (e.type === 'usage' ? e.usd : 0), 0)
+    expect(usd(ev)).toBeGreaterThan(usd(simulateRun(base)))
+    const s = reduce(ev, Number.MAX_SAFE_INTEGER, { [first.id]: 'Send back' })
+    expect(s.tasks.find((t) => t.id === task.id)?.changes).toEqual(['friendlier copy'])
+  })
+
+  it('merges by itself when shipping is trusted and every check passed', () => {
+    const ev = simulateRun({ ...base, autonomy: { ...AUTONOMY_PRESETS.matters, ship: 'auto' } })
+    expect(shipAsk(ev)).toBeUndefined()
+    expect(ev.some((e) => e.type === 'auto_fix' && /merged the pull request by itself/.test(e.what))).toBe(true)
+  })
+
+  it('still asks to merge when a task was stopped', () => {
+    const often = { ...base, autonomy: { ...AUTONOMY_PRESETS.often, ship: 'auto' as const } }
+    const fail = simulateRun(often).find((e) => e.type === 'ask' && e.reason === 'anomaly')
+    if (!fail || fail.type !== 'ask') throw new Error('no failed-check ask')
+    expect(shipAsk(simulateRun({ ...often, choices: { [fail.id]: 'Stop this task' } }))).toBeTruthy()
   })
 })
 

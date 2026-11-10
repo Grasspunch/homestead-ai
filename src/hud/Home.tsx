@@ -26,9 +26,9 @@ function minis(projects: Project[]): Mini[] {
     const firstAsk = p.events.find((e) => e.type === 'ask')
     // A farm you haven't opened yet waits at its first question; the rest show where they are.
     const t = !p.approved ? Number.MAX_SAFE_INTEGER : store.screen.kind === 'farm' || store.clock > 0 ? store.clock : firstAsk ? firstAsk.t : 0
-    const s = reduce(p.events, p.approved ? t : Number.MAX_SAFE_INTEGER, store.viewerAnswers, store.reviews)
+    const s = reduce(p.events, p.approved ? t : Number.MAX_SAFE_INTEGER, store.viewerAnswers)
     const waiting = p.approved && pendingAsk(p.events, t, store.viewerAnswers)
-    const done = s.tasks.filter((k) => k.status === 'ripe').length
+    const done = s.tasks.filter((k) => k.status === 'ripe' || k.status === 'accepted').length
     const prog = s.tasks.length ? done / s.tasks.length : 0
     const busy = Object.values(s.farmers).find((f) => f && f.state === 'working')
     return {

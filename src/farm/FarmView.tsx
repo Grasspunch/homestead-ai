@@ -302,7 +302,7 @@ export function FarmView(p: FarmViewProps) {
             {p.planning && <span className="plot-when">Done when {t.doneWhen.charAt(0).toLowerCase() + t.doneWhen.slice(1)}</span>}
             {!p.planning && t.status !== 'waiting' && (
               <span className="plot-bar" aria-hidden>
-                <i style={{ width: `${Math.round(t.progress * 100)}%`, background: t.status === 'wilted' || (t.gate && p.state.deploy[p.state.deploy.length - 1]?.stage === 'rollback' && t.status !== 'ripe') ? 'var(--berry)' : 'var(--leaf)' }} />
+                <i style={{ width: `${Math.round(t.progress * 100)}%`, background: t.status === 'wilted' || (t.gate && p.state.deploy[p.state.deploy.length - 1]?.stage === 'rollback' && t.status !== 'ripe' && t.status !== 'accepted') ? 'var(--berry)' : 'var(--leaf)' }} />
               </span>
             )}
           </button>
@@ -530,13 +530,13 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
     if (at !== undefined && now - at < 1400) heart(g, c.x, c.y, now - at)
   })
 
-  // Mailbox: a letter when something needs you, a question or finished work to review.
-  const letter = !!p.openAsk || s.tasks.some((t) => t.status === 'ripe' && !t.gate)
+  // Mailbox: a letter when a farmer has a question for you.
+  const letter = !!p.openAsk
   const mail = letter ? 'mailbox_letter' : 'mailbox'
   if (ok(mail)) g.drawImage(IMG[mail], MAILBOX.x * PX, (MAILBOX.y - (letter ? 2.05 : 1.8)) * PX)
-  // The shipping chest, open once something is ready to review.
-  const anyRipe = s.tasks.some((t) => t.status === 'ripe' || t.status === 'accepted')
-  spr(g, anyRipe ? 'chest_open' : 'chest', CHEST.x, CHEST.y)
+  // The shipping chest is the pull request: shut until the first commit goes in.
+  const committed = s.tasks.some((t) => t.status === 'accepted' && !t.gate)
+  spr(g, committed ? 'chest_open' : 'chest', CHEST.x, CHEST.y)
   // Crates stack up by the chest as tasks come in.
   if (ok('crates')) {
     const n = Math.min(3, s.tasks.filter((t) => t.status === 'accepted').length)
@@ -563,20 +563,20 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
       crops(
         g,
         pl,
-        (i) => (lastDeploy.stage === '100%' || t.status === 'ripe' ? 3 : i === 0 ? 3 : 1),
+        (i) => (lastDeploy.stage === '100%' || t.status === 'ripe' || t.status === 'accepted' ? 3 : i === 0 ? 3 : 1),
         (i) => back && i === 0,
       )
       if (!back && ok('crates')) g.drawImage(IMG.crates, 20, 3, 24, 26, (pl.x + pl.w + 1.1) * PX, (pl.y - 0.9) * PX, 16, 17)
-    } else if (t.status === 'accepted') {
-      // Accepted: harvested into the chest, the soil left bare.
+    } else if (t.status === 'accepted' && lastDeploy) {
+      // Merged: harvested into the chest, the soil left bare. Until then a committed task stands ripe.
       bed(g, pl, true)
     } else {
       bed(g, pl, t.status !== 'wilted')
       crops(g, pl, (i) => (st < 0 ? -1 : t.status === 'growing' && st < 2 && (i * 7) % 3 === 0 ? Math.max(0, st - 1) : st), () => t.status === 'wilted')
     }
     // One emote per plot when no farmer speaks for it.
-    const rolledBack = pl.gate && lastDeploy?.stage === 'rollback' && t.status !== 'ripe'
-    const plotEmote: Emote | null = t.status === 'wilted' || rolledBack ? 'x' : t.status === 'ripe' ? 'check' : t.status === 'checking' ? 'read' : null
+    const rolledBack = pl.gate && lastDeploy?.stage === 'rollback' && t.status !== 'ripe' && t.status !== 'accepted'
+    const plotEmote: Emote | null = t.status === 'wilted' || rolledBack ? 'x' : t.status === 'ripe' || (t.status === 'accepted' && !lastDeploy) ? 'check' : t.status === 'checking' ? 'read' : null
     if (plotEmote) emote(g, pl.x + pl.w / 2, pl.y + 1.3, plotEmote, now)
   }
   // A big change: every plot whose code it reaches glows with it, in time with its own plot.

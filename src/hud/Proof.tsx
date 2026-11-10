@@ -91,7 +91,7 @@ export function Rollout({ state, compact = false }: { state: RunState; compact?:
         {deploys.map((d) => (
           <g key={d.t}>
             <line x1={x(d.t)} x2={x(d.t)} y1="4" y2={H - 14} className={d.stage === 'rollback' ? 'mark back' : 'mark'} />
-            <text x={x(d.t) + 3} y={H - 3} className={d.stage === 'rollback' ? 'axis bad' : 'axis'}>
+            <text x={x(d.t) > W - 80 ? x(d.t) - 3 : x(d.t) + 3} textAnchor={x(d.t) > W - 80 ? 'end' : 'start'} y={H - 3} className={d.stage === 'rollback' ? 'axis bad' : 'axis'}>
               {d.stage === 'rollback' ? 'rolled back' : d.stage === '100%' ? 'everyone' : '10%'}
             </text>
           </g>

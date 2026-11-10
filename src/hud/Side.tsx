@@ -1,11 +1,11 @@
 // The wood panel on the right: one page at a time (a task, a farmer, the inbox, spend, the harvest, control).
-import { useState } from 'react'
 import { CREW } from '../agent/agents'
 import { store, type Project } from '../run/store'
 import type { Autonomy, AutonomyLevel, FarmerId, Moment, RunState, TaskState } from '../run/types'
 import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
 import { Ico, Mark, Portrait, Swatch, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
+import { BY_YOU } from '../run/rollback'
 
 const STATUS: Record<TaskState['status'], string> = {
   waiting: 'Not started',
@@ -13,7 +13,7 @@ const STATUS: Record<TaskState['status'], string> = {
   checking: 'Being checked',
   wilted: 'Failed a check',
   ripe: 'Done and checked',
-  accepted: 'Accepted and in the chest',
+  accepted: 'Committed to the pull request',
 }
 
 const ago = (s: RunState, t: number) => {
@@ -49,10 +49,10 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
       {!planning && (
         <div className="sum">
           {ask ? <b>Waiting for you. </b> : null}
-          {t.gate && s.deploy.length && s.deploy[s.deploy.length - 1].stage === 'rollback' && t.status !== 'ripe' ? <b>Rolled back by itself. </b> : null}
+          {t.gate && s.deploy.length && s.deploy[s.deploy.length - 1].stage === 'rollback' && t.status !== 'ripe' && t.status !== 'accepted' ? <b>{s.deploy[s.deploy.length - 1].reason === BY_YOU ? 'Rolled back by you. ' : 'Rolled back by itself. '}</b> : null}
           {STATUS[t.status]}
-          {t.status === 'growing' ? `, about ${Math.round(t.progress * 100)}% there.` : '.'} {f && t.status !== 'ripe' && t.status !== 'accepted' ? `${f.label} is on it.` : ''}{t.status === 'accepted' && t.acceptedBy && t.acceptedBy !== 'you' ? ` The ${s.farmers[t.acceptedBy]?.label ?? 'checker'} accepted it when its check passed.` : ''}
-          {t.summary && t.status === 'ripe' ? ` ${t.summary}.` : ''}
+          {t.status === 'growing' ? `, about ${Math.round(t.progress * 100)}% there.` : '.'} {f && t.status !== 'ripe' && t.status !== 'accepted' ? `${f.label} is on it.` : ''}{t.status === 'accepted' && t.acceptedBy && t.acceptedBy !== 'you' ? ` The ${s.farmers[t.acceptedBy]?.label ?? 'checker'} checked it.` : ''}
+          {t.summary && (t.status === 'ripe' || t.status === 'accepted') ? ` ${t.summary}.` : ''}
         </div>
       )}
       <div className="meta">
@@ -72,8 +72,6 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
         )}
         {t.gate && <span className="tag sky">Waits for you</span>}
       </div>
-
-      {!planning && t.status === 'ripe' && !t.gate && <Review t={t} s={s} />}
 
       <div>
         {planning ? (
@@ -174,46 +172,6 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
   )
 }
 
-// Finished work waits for you: accept it into the chest, or send it back with a note.
-function Review({ t, s }: { t: TaskState; s: RunState }) {
-  const [note, setNote] = useState('')
-  const [writing, setWriting] = useState(false)
-  const check = t.checks[t.checks.length - 1]
-  return (
-    <div className="review paper">
-      <p>
-        {t.sentBack ? <>Changed as you asked: “{t.sentBack}”. </> : null}
-        {check ? <>Checked by the {s.farmers[check.by]?.label ?? check.by}: {check.notes}.</> : 'Done.'}
-      </p>
-      {writing ? (
-        <form
-          className="row"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!note.trim()) return
-            store.sendBack(t.id, note.trim())
-            setWriting(false)
-            setNote('')
-          }}
-        >
-          <span className="field grow"><input autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What should change?" aria-label="What should change" /></span>
-          <button className="btn xs" type="submit">Send back</button>
-        </form>
-      ) : (
-        <div className="row">
-          <button className="btn sm" onClick={() => store.accept(t.id)}>
-            <Ico name="check" size={20} />
-            Accept
-          </button>
-          <button className="btn tan sm" onClick={() => setWriting(true)}>
-            Send back with a note
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
 export function FarmerPanel({ s, id, p }: { s: RunState; id: FarmerId; p: Project }) {
   const f = s.farmers[id]
   if (!f) return null
@@ -282,14 +240,13 @@ export function FarmerPanel({ s, id, p }: { s: RunState; id: FarmerId; p: Projec
 
 export function InboxPanel({ s }: { s: RunState }) {
   const open = s.asks.filter((a) => !a.answer)
-  const review = s.tasks.filter((t) => t.status === 'ripe' && !t.gate)
   const decided = s.asks.filter((a) => a.answer).reverse()
   const fixed = [...s.autoFixes].reverse()
   return (
     <Panel label="Inbox">
       <div>
         <h3>Inbox</h3>
-        <h2>{open.length + review.length ? `${open.length + review.length} need${open.length + review.length === 1 ? 's' : ''} you` : 'Nothing needs you'}</h2>
+        <h2>{open.length ? `${open.length} need${open.length === 1 ? 's' : ''} you` : 'Nothing needs you'}</h2>
       </div>
       {open.length > 0 && (
         <div className="list">
@@ -302,22 +259,6 @@ export function InboxPanel({ s }: { s: RunState }) {
               </span>
             </button>
           ))}
-        </div>
-      )}
-      {review.length > 0 && (
-        <div>
-          <h3>Ready for you to review</h3>
-          <div className="list">
-            {review.map((t) => (
-              <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
-                <Swatch farmer={t.farmer} />
-                <span className="grow">
-                  {t.name}
-                  <span className="sub">{t.sentBack ? `Changed: ${t.sentBack}` : t.doneWhen}</span>
-                </span>
-              </button>
-            ))}
-          </div>
         </div>
       )}
       <div>
@@ -547,23 +488,32 @@ export function UsagePanel({ s }: { s: RunState }) {
   )
 }
 
-// The chest is the pull request: a commit per accepted task, the checks that ran on it, then the merge and rollout.
+// The chest is the pull request: a commit per checked task, then the merge and the release.
 export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
-  const built = s.tasks.filter((t) => !t.gate)
-  const inPr = built.filter((t) => t.status === 'accepted')
-  const waiting = built.filter((t) => t.status === 'ripe')
+  const inPr = s.tasks.filter((t) => t.status === 'accepted' && !t.gate)
+  const commits = inPr.reduce((n, t) => n + 1 + (t.changes?.length ?? 0), 0)
   const decided = s.asks.filter((a) => a.answer)
   const est = s.estimate
   const merged = s.deploy.length > 0
-  const live = s.deploy[s.deploy.length - 1]?.stage
-  const state = !merged ? 'Open' : live === '100%' ? 'Live for everyone' : live === 'rollback' ? 'Rolled back' : 'Merged, live for 10%'
+  const last = s.deploy[s.deploy.length - 1]
+  const live = !!last && last.stage !== 'rollback' && !s.tasks.some((t) => t.gate && t.stopped)
+  const state = !merged ? 'Open' : last.stage === '100%' ? 'Live for everyone' : last.stage === 'rollback' ? 'Rolled back' : 'Live for 10%'
+  if (!inPr.length)
+    return (
+      <Panel label="Pull request">
+        <div>
+          <h3>Pull request</h3>
+          <h2>No commits yet</h2>
+        </div>
+      </Panel>
+    )
   return (
     <Panel label="Pull request">
       <div>
         <h3>Pull request</h3>
         <h2>{p.name}</h2>
         <div className="meta pr-meta">
-          <span className={`tag ${merged ? (live === 'rollback' ? 'red' : 'green') : 'grey'}`}>{state}</span>
+          <span className={`tag ${merged ? (last.stage === 'rollback' ? 'red' : 'green') : 'grey'}`}>{state}</span>
           <span className="mono">homestead/{p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}</span>
         </div>
       </div>
@@ -576,11 +526,11 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
         </div>
       )}
       <div>
-        <h3>Commits, one per accepted task</h3>
+        <h3>{commits} commit{commits === 1 ? '' : 's'}</h3>
         <div className="list">
-          {inPr.map((t) => {
+          {inPr.flatMap((t) => {
             const check = [...t.checks].reverse().find((c) => c.pass)
-            return (
+            const row = (
               <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
                 <Mark pass />
                 <span className="grow">
@@ -593,30 +543,43 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
                 <span className="mono">{usd(t.usd)}</span>
               </button>
             )
+            return [
+              row,
+              ...(t.changes ?? []).map((c, i) => (
+                <button key={`${t.id}-${i}`} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
+                  <Mark pass />
+                  <span className="grow">
+                    {t.name}: changed
+                    <span className="sub">You asked: {c}</span>
+                  </span>
+                </button>
+              )),
+            ]
           })}
-          {!inPr.length && <div className="sub">Nothing accepted yet.</div>}
         </div>
       </div>
-      {waiting.length > 0 && (
+      {merged && (
         <div>
-          <h3>Waiting for you to accept</h3>
+          <h3>Release</h3>
           <div className="list">
-            {waiting.map((t) => (
-              <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
-                <Swatch farmer={t.farmer} />
+            {s.deploy.map((d) => (
+              <div key={d.t}>
+                {d.stage === 'rollback' ? <Mark pass={false} /> : <Ico name="play" size={16} tone="green" />}
                 <span className="grow">
-                  {t.name}
-                  <span className="sub">{t.doneWhen}</span>
+                  {d.stage === 'rollback' ? (d.reason === BY_YOU ? 'Rolled back by you' : 'Rolled back by itself') : d.stage === '100%' ? 'Live for everyone' : 'Live for 10% of users'}
+                  {d.stage === 'rollback' && d.reason !== BY_YOU && d.reason ? <span className="sub">{d.reason}</span> : null}
                 </span>
-              </button>
+                <span className="mono">{mins(Math.round(d.t / 60000))}</span>
+              </div>
             ))}
           </div>
-        </div>
-      )}
-      {s.deploy.length > 0 && (
-        <div>
-          <h3>After the merge</h3>
           <Rollout state={s} compact />
+          {live && !s.done && (
+            <button className="btn tan sm" onClick={() => store.rollBackNow()}>
+              <Ico name="back" size={20} />
+              Roll back
+            </button>
+          )}
         </div>
       )}
       {decided.length > 0 && (
@@ -650,8 +613,7 @@ export const MOMENTS: { key: Moment | 'rollback'; label: string; auto: string }[
   { key: 'disagree', label: 'Two farmers disagree', auto: 'The Planner picks, using the done-when' },
   { key: 'failed', label: 'A check fails', auto: 'The farmer fixes it and checks again' },
   { key: 'big', label: 'A big change across many files', auto: 'Lands it as one commit, with every test run before and after' },
-  { key: 'review', label: 'A task is finished', auto: 'Accepted once its check passes' },
-  { key: 'ship', label: 'Shipping to real users', auto: 'Ships to 10% first' },
+  { key: 'ship', label: 'Merging the pull request', auto: 'Merges when every check passes, then ships to 10% first' },
   { key: 'reship', label: 'Shipping again after a rollback', auto: 'Ships to 10% again once fixed' },
   { key: 'rollback', label: 'A rollout goes bad', auto: 'Rolls back by itself, always' },
 ]

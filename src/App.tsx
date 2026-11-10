@@ -5,16 +5,18 @@ import './hud/panel.css'
 import { useEffect, useRef, useState } from 'react'
 import { FarmView, cropOf } from './farm/FarmView'
 import { Home } from './hud/Home'
-import { Ico, LimitField, Portrait, Sign, Swatch, mins, usd, type IconName } from './hud/bits'
+import { Ico, LimitField, Mark, Portrait, Sign, Swatch, mins, usd, type IconName } from './hud/bits'
 import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
-import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, setMoment } from './hud/Side'
+import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel } from './hud/Side'
 import { getLiveMode, route, setLiveMode } from './run/agent'
 import { planInto } from './run/planning'
 import { scenario } from './run/simPlan'
 import { pendingAsk } from './run/reduce'
 import { store, useStore, type Project } from './run/store'
-import type { Ask, FarmerId, RunState, TaskState } from './run/types'
+import { SEND_BACK } from './run/simulate'
+import { BY_YOU } from './run/rollback'
+import type { Ask, FarmerId, RunState } from './run/types'
 import { FARMER_ORDER } from './run/types'
 import { MODELS, applyEdit } from './run/kit'
 
@@ -56,9 +58,8 @@ function Farm() {
   if (!p || !s) return null
   const pending = p.approved ? pendingAsk(p.events, st.clock, st.viewerAnswers) : null
   const ask = pending ? s.asks.find((a) => a.id === pending) ?? null : null
-  // Finished work waiting for you. While any waits, the ship ask can't be answered.
-  const toReview = p.approved ? s.tasks.filter((t) => t.status === 'ripe' && !t.gate) : []
-  const review = toReview[0]
+  // After a clean merge you made yourself, the Planner offers once to merge future pull requests by itself.
+  const trust = p.approved && !!s.done && !p.trust && p.autonomy.ship === 'ask' && cleanMerge(s)
   // A rollback is a moment of its own until the next release goes out, or until you carry on.
   const lastDeploy = s.deploy[s.deploy.length - 1]
   const rolled = lastDeploy?.stage === 'rollback' && !st.seen.has(`${p.id}:${lastDeploy.t}`) ? lastDeploy : null
@@ -88,14 +89,12 @@ function Farm() {
       {d?.kind === 'control' && <ControlPanel p={p} />}
       {!p.approved ? (
         <PlanDialogue p={p} s={s} side={side} />
-      ) : ask && !(review && isShipAsk(ask)) ? (
+      ) : ask ? (
         <AskDialogue key={ask.id} s={s} ask={ask} side={side} />
       ) : rolled ? (
         <RollbackDialogue key={rolled.t} s={s} side={side} t={rolled.t} />
-      ) : st.trustOffer === p.id ? (
-        <TrustDialogue s={s} side={side} />
-      ) : review ? (
-        <ReviewDialogue key={review.id} s={s} t={review} side={side} waiting={toReview.length} />
+      ) : trust ? (
+        <TrustDialogue side={side} />
       ) : (
         <PlannerDialogue p={p} s={s} side={side} />
       )}
@@ -105,9 +104,9 @@ function Farm() {
 
 function Top({ p, s }: { p: Project; s: RunState }) {
   const st = useStore()
-  const open = s.asks.filter((a) => !a.answer).length + s.tasks.filter((t) => t.status === 'ripe' && !t.gate).length
+  const open = s.asks.filter((a) => !a.answer).length
   const done = s.tasks.filter((t) => t.status === 'ripe' || t.status === 'accepted').length
-  const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? 'Done and live' : `${done} of ${s.tasks.length} tasks done`
+  const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? (s.deploy[s.deploy.length - 1]?.stage === 'rollback' ? 'Done, rolled back' : 'Done and live') : `${done} of ${s.tasks.length} tasks done`
   return (
     <header className="top">
       <button className="btn white top-ico" onClick={() => store.home()} aria-label="Your farms">
@@ -315,10 +314,6 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           <span>Stops for you</span>
           <LevelPicker p={p} compact />
         </div>
-        <button className="plan-setting" onClick={() => setMoment(p, 'review', p.autonomy.review === 'ask' ? 'auto' : 'ask')} aria-pressed={p.autonomy.review === 'ask'}>
-          <span>I accept finished work</span>
-          <span className={`switch${p.autonomy.review === 'ask' ? ' on' : ''}`} />
-        </button>
         <button
           className="btn approve"
           onClick={() => {
@@ -335,7 +330,6 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
   )
 }
 
-// Offered once, after five accepts with nothing sent back.
 // The release went bad and rolled itself back: what happened, who saw it, and what's being done.
 function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: number }) {
   const p = store.project()!
@@ -346,6 +340,7 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
   const peak = Math.max(0, ...s.monitor.filter((m) => m.t <= t && (!before || m.t >= before.t)).map((m) => m.metrics.errorRate ?? 0))
   const cause = s.activity.find((a) => a.t > t && a.kind !== 'ask' && /error|time out|timeout/i.test(a.text))
   const shipper = (s.tasks.find((x) => x.gate)?.farmer ?? 'deployer') as FarmerId
+  const mine = s.deploy[i]?.reason === BY_YOU
   const done = () => {
     store.seen.add(`${p.id}:${t}`)
     store.play()
@@ -363,10 +358,10 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
         </span>
       </div>
       <p>
-        Errors reached <b>{(peak * 100).toFixed(1)}%</b>, so I rolled back by myself.{' '}
-        {everyone ? <>Every user saw it for {live} min.</> : <>1 in 10 users saw it for {live} min. Nobody else did.</>}
+        {mine ? <>Rolled back as you asked, with errors at <b>{(peak * 100).toFixed(1)}%</b>.</> : <>Errors reached <b>{(peak * 100).toFixed(1)}%</b>, so I rolled back by myself.</>}{' '}
+        {mine ? <>It was live for {everyone ? 'every user' : '1 in 10 users'} for {live} min.</> : everyone ? <>Every user saw it for {live} min.</> : <>1 in 10 users saw it for {live} min. Nobody else did.</>}
       </p>
-      {cause && <p className="impact">{cause.text}</p>}
+      {cause && !mine && <p className="impact">{cause.text}</p>}
       <div className="rb-chart">
         <Rollout state={s} compact />
       </div>
@@ -389,19 +384,19 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
   )
 }
 
-function TrustDialogue({ s, side }: { s: RunState; side: boolean }) {
-  const checker = s.farmers.tester ? 'Tester' : 'Planner'
+// Offered once, after you merged a pull request with nothing sent back. It applies from the next run.
+function TrustDialogue({ side }: { side: boolean }) {
   return (
     <Dialogue farmer="planner" side={side}>
       <div className="who">
         <b>Planner</b>
       </div>
-      <p>You’ve accepted five tasks in a row without sending any back. Want the {checker} to accept finished work once its check passes?</p>
-      <p className="impact">You’d still see every task in the pull request, and you can turn it back on in Stops for you.</p>
+      <p>That pull request went in clean. Merge future pull requests by itself when every check passes?</p>
+      <p className="impact">A failed check always asks you. You can change it in Stops for you.</p>
       <div className="row">
         <button className="btn" onClick={() => store.answerTrust(true)} autoFocus>
           <Ico name="check" />
-          Let the {checker} accept
+          Let it merge
         </button>
         <button className="btn tan" onClick={() => store.answerTrust(false)}>
           Keep asking me
@@ -422,62 +417,94 @@ const REASON: Record<Ask['reason'], { label: string; urgency: 'red' | 'honey' | 
   disagree: { label: 'Disagreement', urgency: 'calm', icon: 'chat' },
 }
 
-const isShipAsk = (a: Ask) => a.reason === 'irreversible' && /merge|ship/i.test(a.suggested)
-// Commits in the pull request: one per task you (or the checker) accepted.
-export const accepted = (s: RunState) => s.tasks.filter((t) => t.status === 'accepted' && !t.gate).length
+const isShipAsk = (a: Ask) => a.reason === 'irreversible' && /merge/i.test(a.suggested)
+// You merged it yourself, sent nothing back, and stopped nothing.
+const cleanMerge = (s: RunState) =>
+  s.asks.some((a) => isShipAsk(a) && a.answer && /^merge|everyone/i.test(a.answer.choice)) &&
+  !s.asks.some((a) => a.answer?.choice === SEND_BACK) &&
+  !s.tasks.some((t) => t.stopped && t.status !== 'accepted')
 
-// Finished work, from the farmer who made it: accept it, or send it back with what should change.
-function ReviewDialogue({ s, t, side, waiting }: { s: RunState; t: TaskState; side: boolean; waiting: number }) {
-  const [note, setNote] = useState('')
+// The pull request review: every commit with the check that let it in. Merge it, or send one task back with a note.
+function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: boolean; hold: () => void }) {
+  const list = s.tasks.filter((t) => t.status === 'accepted' && !t.gate)
   const [writing, setWriting] = useState(false)
-  const check = t.checks[t.checks.length - 1]
+  const [task, setTask] = useState(list[0]?.id ?? '')
+  const [note, setNote] = useState('')
+  const r = REASON[ask.reason]
+  const merge = ask.suggested
+  const rest = ask.alternatives.filter((a) => a !== SEND_BACK)
   return (
-    <Dialogue farmer={t.farmer} side={side}>
+    <>
       <div className="who">
-        <button className="plot-chip" onClick={() => store.setDrawer({ kind: 'task', id: t.id })} title="Open this task">
-          <Sign crop={cropOf(s.tasks, t.id)} />
-          {t.name}
-        </button>
-        <span className="urgency calm">
-          <Ico name="check" tone="light" />
-          Ready for you
+        <b>Pull request</b>
+        <span className={`urgency ${r.urgency}`}>
+          <Ico name={r.icon} tone="light" />
+          Your review
         </span>
-        {waiting > 1 && <span className="aside">{waiting - 1} more after this</span>}
       </div>
-      <p>
-        {t.sentBack ? <>Changed as you asked: “{t.sentBack}”. </> : null}
-        {check ? <>Checked by the {s.farmers[check.by]?.label ?? check.by}: {check.notes}.</> : 'Done.'}
-      </p>
+      <p>{holding ? 'Holding. Nothing merges until you say so.' : ask.question}</p>
+      <div className="list pr-commits">
+        {list.map((t) => {
+          const check = [...t.checks].reverse().find((c) => c.pass)
+          return (
+            <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
+              <Mark pass />
+              <span className="grow">
+                {t.name}
+                {t.changes?.length ? <span className="tag grey">Changed</span> : null}
+                <span className="sub">{check ? `${s.farmers[check.by]?.label ?? check.by}: ${check.notes}` : t.doneWhen}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
       {writing ? (
         <form
-          className="row"
+          className="row send-back"
           onSubmit={(e) => {
             e.preventDefault()
-            if (!note.trim()) return
-            store.sendBack(t.id, note.trim())
-            setWriting(false)
-            setNote('')
+            if (!note.trim() || !task) return
+            store.sendBack(ask.id, task, note.trim())
           }}
         >
+          <select className="field-box" value={task} onChange={(e) => setTask(e.target.value)} aria-label="Which task">
+            {list.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
           <span className="field">
             <input autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What should change?" aria-label="What should change" />
           </span>
-          <button className="btn" type="submit">
+          <button className="btn" type="submit" disabled={!note.trim()}>
             Send back
+          </button>
+          <button className="btn tan" type="button" onClick={() => setWriting(false)}>
+            Cancel
           </button>
         </form>
       ) : (
         <div className="row">
-          <button className="btn" onClick={() => store.accept(t.id)} autoFocus>
+          <button className={`btn${long(merge)}`} onClick={() => store.answer(ask.id, merge)} autoFocus>
             <Ico name="check" />
-            Accept
+            {merge}
           </button>
-          <button className="btn tan" onClick={() => setWriting(true)}>
-            Send back
-          </button>
+          {!holding && (
+            <>
+              <button className="btn tan" onClick={() => setWriting(true)}>
+                {SEND_BACK}
+              </button>
+              {rest.map((a) => (
+                <button key={a} className={`btn tan${long(a)}`} onClick={() => (/^not yet/i.test(a) ? hold() : store.answer(ask.id, a))}>
+                  {a}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
-    </Dialogue>
+    </>
   )
 }
 
@@ -498,6 +525,12 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
     }
     store.answer(ask.id, choice)
   }
+  if (isShipAsk(ask))
+    return (
+      <Dialogue farmer={ask.farmer} side={side}>
+        <PrReview s={s} ask={ask} holding={holding} hold={() => setHolding(true)} />
+      </Dialogue>
+    )
   return (
     <Dialogue farmer={ask.farmer} side={side}>
       <div className="who">
@@ -516,7 +549,7 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
         <p>Holding. Nothing ships until you say so.</p>
       ) : (
         <>
-          <p>{isShipAsk(ask) ? `Everything is accepted. The pull request has ${accepted(s)} commit${accepted(s) === 1 ? '' : 's'}, one per accepted task.` : ask.question}</p>
+          <p>{ask.question}</p>
           {dis && (
             <div className="sides">
               {dis.sides.map((x) => (
@@ -588,7 +621,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
       </div>
       {s.done ? (
         <p>
-          Everything is in and live for everyone. {usd(s.done.usd)} in {mins(s.done.minutes)}, {s.autoFixes.length} things fixed without you, and you made {s.asks.filter((a) => a.answer).length} calls.
+          {s.deploy[s.deploy.length - 1]?.stage === 'rollback' ? 'Everything is merged, and you rolled it back, so nothing is live.' : 'Everything is in and live for everyone.'} {usd(s.done.usd)} in {mins(s.done.minutes)}, {s.autoFixes.length} things fixed without you, and you made {s.asks.filter((a) => a.answer).length} calls.
         </p>
       ) : (
         lines.length > 0 && (

@@ -35,11 +35,12 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - One sentence: the crew's time and price against one agent alone.
 - A row per farmer: name, why that model, model, spend limit, drop. Missing roles are links to add them.
 - Tasks and done-whens live on the plots. While planning, each plot label shows its done-when, and clicking a plot opens it to edit.
-- The foot holds Stops for you, I accept finished work, and Approve with its price.
+- The foot holds Stops for you and Approve with its price.
 
 ## Map
 - Status lives on the field: a progress bar under each plot's name and at most one emote over it.
 - The mailbox is the inbox. It shows a letter when a question or finished work is waiting.
-- Accepted work clears its plot and stacks crates by the chest.
+- A task commits when its check passes: its crop stands ripe and crates stack by the chest. The chest stays shut until the first commit. After the merge the plots are harvested bare.
+- The pull request review is the one ask with a list: each commit with its check line, scrolling inside the bubble. Send back opens a task picker and a note in one row.
 - Chickens stand still and peck; clicking one floats a heart. Idle farmers do chores. Nothing on the map is decoration without a job or a reaction.
 - No text on the map beyond plot names (and done-whens while planning).

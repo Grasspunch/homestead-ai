@@ -1,5 +1,5 @@
 // Folds a run log into the state shown on screen at time t.
-import type { ActivityLine, Ask, FarmerId, FarmerRun, Review, RunEvent, RunState, TaskState } from './types'
+import type { ActivityLine, Ask, FarmerId, FarmerRun, RunEvent, RunState, TaskState } from './types'
 
 export function emptyState(): RunState {
   return {
@@ -29,7 +29,7 @@ export function parseLog(text: string): RunEvent[] {
 }
 
 // viewerAnswers: answers the person watching gave on replay, by ask id.
-export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<string, string> = {}, reviews: Record<string, Review> = {}): RunState {
+export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<string, string> = {}): RunState {
   const s = emptyState()
   s.t = t
   const task = (id?: string) => (id ? s.tasks.find((x) => x.id === id) : undefined)
@@ -171,15 +171,17 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
           k.progress = 1
           k.evidence = e.evidence ?? k.evidence
           k.summary = e.summary
+          if (e.change) k.changes = [...(k.changes ?? []), e.change]
         }
         const f = farmer(k?.farmer)
         if (f && f.task === e.task) f.state = 'idle'
-        log({ task: e.task, text: e.summary ?? 'Ready to review', kind: 'ripe' }, e.t)
+        log({ task: e.task, text: e.summary ?? 'Done and checked', kind: 'ripe' }, e.t)
         break
       }
       case 'accept': {
         const k = task(e.task)
         if (k && k.status === 'ripe') {
+          // Committed: the checker's pass puts it in the pull request.
           k.status = 'accepted'
           k.acceptedBy = e.by
         }
@@ -192,7 +194,7 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
       }
       case 'deploy':
         s.deploy.push({ stage: e.stage, t: e.t, url: e.url, reason: e.reason, metrics: e.metrics })
-        log({ farmer: 'deployer', text: e.stage === 'rollback' ? `Rolled back: ${e.reason ?? ''}`.trim() : `Live for ${e.stage === '100%' ? 'everyone' : '10% of users'}`, kind: 'deploy' }, e.t)
+        log({ farmer: 'deployer', text: e.stage === 'rollback' ? (e.reason === 'Rolled back by you' ? e.reason : `Rolled back: ${e.reason ?? ''}`.trim()) : `Live for ${e.stage === '100%' ? 'everyone' : '10% of users'}`, kind: 'deploy' }, e.t)
         break
       case 'monitor':
         s.monitor.push({ t: e.t, stage: e.stage, metrics: e.metrics })
@@ -229,17 +231,6 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
     if (k && k.status === 'wilted' && !k.stopped) f.state = 'stuck'
   }
 
-  // Your reviews: accepted work leaves its plot for the chest. Sent-back work is real events in the log;
-  // here it only keeps your note beside the task.
-  for (const [id, r] of Object.entries(reviews)) {
-    const k = task(id)
-    if (!k) continue
-    if (r.kind === 'back') k.sentBack = r.note
-    else if (k.status === 'ripe') {
-      k.status = 'accepted'
-      k.acceptedBy = 'you'
-    }
-  }
   return s
 }
 

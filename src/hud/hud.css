@@ -203,3 +203,10 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 .urgency.red { background: var(--berry); }
 .urgency.honey { background: #b98322; }
 .urgency.calm { background: var(--bark-3); }
+
+/* The pull request review: the commits scroll inside the bubble; the send-back form is one row. */
+.dlg .pr-commits { max-height: 150px; overflow-y: auto; }
+.dlg .pr-commits .tag { margin-left: 8px; vertical-align: 1px; }
+.dlg .send-back { flex-wrap: nowrap; }
+.dlg .send-back select.field-box { width: 220px; flex: none; }
+.dlg .send-back select.field-box { height: 44px; }
