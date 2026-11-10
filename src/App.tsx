@@ -32,8 +32,19 @@ export function App() {
         } else if (store.drawer) store.setDrawer(null)
       }
     }
+    // A save from another tab of this app, and a last save when the page closes.
+    const other = (e: StorageEvent) => {
+      if (e.key === 'homestead.v3.farms') store.fromOtherTab(e.newValue)
+    }
+    const leave = () => store.persist()
     window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    window.addEventListener('storage', other)
+    window.addEventListener('pagehide', leave)
+    return () => {
+      window.removeEventListener('keydown', key)
+      window.removeEventListener('storage', other)
+      window.removeEventListener('pagehide', leave)
+    }
   }, [])
 
   return (
@@ -125,7 +136,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
         {p.approved && !s.done && !st.playing && !pendingAsk(p.events, st.clock, st.viewerAnswers) && !st.openRollback(p) && <span className="tag grey">Paused</span>}
         {p.kind === 'sample' ? (
           <span className="tag grey" title="Every farmer, cost and check is simulated, and the run replays the same way each time">
-            Sample, replays the same run
+            Simulated sample
           </span>
         ) : (
           !p.plannedLive && <DemoTag goal={p.goal} />
@@ -134,6 +145,12 @@ function Top({ p, s }: { p: Project; s: RunState }) {
       <div className="spacer" />
       {p.approved && (
         <>
+          {/* Run again has its own place, never the one Play or skip was in, so a fast click can't restart the run. */}
+          {s.done && (
+            <button className="btn white top-ico top-pr" onClick={() => store.runAgain()}>
+              Run again
+            </button>
+          )}
           <button className="btn white top-ico top-pr" onClick={() => store.setDrawer({ kind: 'summary' })}>
             Pull request
           </button>
@@ -145,21 +162,13 @@ function Top({ p, s }: { p: Project; s: RunState }) {
             <i className="coin" />
             <b>{usd(s.usage.usd)}</b>
           </button>
-          {s.done ? (
-            <button className="btn white top-ico top-pr" onClick={() => store.runAgain()}>
-              Run again
-            </button>
-          ) : (
-            <>
-              <button className="btn white top-ico" onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
-                <Ico name={st.playing ? 'pause' : 'play'} size={32} />
-              </button>
-              {/* Always in the same place, so Play/Pause never moves under the cursor. */}
-              <button className="btn white top-ico" disabled={!st.canSkip(p)} onClick={() => store.skipToNext()} aria-label="Skip to the next thing that needs you" title="Skip to the next thing that needs you">
-                <Ico name="skip" size={32} />
-              </button>
-            </>
-          )}
+          <button className="btn white top-ico" disabled={!!s.done} onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
+            <Ico name={st.playing ? 'pause' : 'play'} size={32} />
+          </button>
+          {/* Always in the same place, so Play/Pause never moves under the cursor. */}
+          <button className="btn white top-ico" disabled={!st.canSkip(p)} onClick={() => store.skipToNext()} aria-label="Skip to the next thing that needs you" title="Skip to the next thing that needs you">
+            <Ico name="skip" size={32} />
+          </button>
         </>
       )}
       <button
@@ -198,7 +207,7 @@ function DemoTag({ goal }: { goal: string }) {
   const sc = scenario(goal)
   return (
     <span className="tag gold" title={sc.matched ? `Simulated: the farmers act out the ${sc.name.toLowerCase()} scenario` : 'Simulated: your goal matches none of the scenarios, so the farmers act out a generic app'}>
-      Demo scenario
+      Simulated
     </span>
   )
 }
@@ -729,7 +738,10 @@ function doneLead(s: RunState) {
   const shipped = work.filter((t) => t.status === 'accepted').length
   const last = s.deploy[s.deploy.length - 1]?.stage
   const where = last === '100%' ? 'live for everyone' : last === '10%' ? 'live for 10% of users' : last === 'rollback' ? 'rolled back, so nothing is live' : 'not shipped yet'
-  return shipped < work.length ? `${shipped} of ${work.length} tasks shipped, ${where}.` : `Everything is in and ${where}.`
+  // A task you stopped part way is in, but not all of it.
+  const cut = work.filter((t) => t.stopped && t.status === 'accepted').length
+  if (shipped < work.length) return `${shipped} of ${work.length} tasks shipped, ${where}.`
+  return cut ? `All ${work.length} tasks are in, ${cut} of them cut short by you, and ${where}.` : `Everything is in and ${where}.`
 }
 
 function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }) {

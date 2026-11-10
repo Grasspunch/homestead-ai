@@ -75,3 +75,11 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - A grey "Paused" tag sits in the title when you paused the run yourself.
 - Plot labels stay on one line, with an ellipsis and the full name on hover; the split task is just "Hard cases".
 - Notes you send the crew show at the top of that farmer page under "Your notes".
+
+## Checkpoint 18
+- When a run is done, "Run again" appears left of "Pull request". Play and skip stay where they were, disabled, so no button ever takes another's place under the cursor. (Replaces the Checkpoint 15 rule.)
+- The title tag says "Simulated" on your farms and "Simulated sample" on the sample, in the open, not only in a tooltip.
+- A free-text answer is applied by itself only when it is the suggestion. Anything else is said back first: "I read that as “X”. Go ahead?"
+- A proof that pops up pulls the camera to its plot and the pop above it, so it never shows over a hidden plot.
+- Farms never share a name: a second "Support assistant" is "Support assistant 2", beside the sample.
+- Saved farms that can't be read clear themselves, and you start at Home with a toast.

@@ -159,6 +159,27 @@ export function FarmView(p: FarmViewProps) {
   if (cam.s !== scale) setCam({ s: scale, ox: 0, oy: 0 })
   const focusId = p.openAsk?.task ?? (p.selected?.kind === 'task' ? p.selected.id : undefined)
   const activeIds = p.state.tasks.filter((t) => t.status === 'growing' || t.status === 'checking' || t.status === 'wilted').map((t) => t.id)
+  const popShown = () => {
+    let latest: { id: string; c: TaskState['checks'][number] } | null = null
+    for (const x of p.state.tasks) {
+      const c = x.checks[x.checks.length - 1]
+      if (c && c.t <= p.state.t && (!latest || c.t > latest.c.t)) latest = { id: x.id, c }
+    }
+    const now = performance.now()
+    if (latest && !latest.c.pass && failHold.current?.key !== `${latest.id}-${latest.c.t}`) {
+      failHold.current = { key: `${latest.id}-${latest.c.t}`, at: now, id: latest.id, c: latest.c }
+      setTimeout(() => setPopTick((n) => n + 1), 4100)
+    }
+    const held = failHold.current && now - failHold.current.at < 4000 && p.state.t >= failHold.current.c.t ? failHold.current : null
+    return held ?? latest
+  }
+  // The plot whose proof is popped up now: the camera keeps it, and the pop above it, in view.
+  const popNow = (() => {
+    const sh = popShown()
+    if (!sh) return undefined
+    const at = popSeen.current.get(`${sh.id}-${sh.c.t}`)
+    return at === undefined || performance.now() - at <= 7000 ? sh.id : undefined
+  })()
   // The space the HUD leaves for the farm: below the top bar, above the dialogue, beside any open panel.
   const freeSize = () => {
     const top = narrow ? 60 : 80
@@ -182,10 +203,13 @@ export function FarmView(p: FarmViewProps) {
       const free = freeSize()
       const S = scale * PX
       if ((box.x1 - box.x0) * S <= free.w && (box.y1 - box.y0) * S <= free.h) return { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 }
-      const ps = layout.plots.filter((q) => activeIds.includes(q.id))
+      // A popped proof comes first: its plot and the pop above it, about 190 px tall.
+      const popped = layout.plots.find((q) => q.id === popNow)
+      const ps = popped ? [popped] : layout.plots.filter((q) => activeIds.includes(q.id))
       if (!ps.length) return null
+      const up = 190 / S
       const x0 = Math.min(...ps.map((q) => q.x)), x1 = Math.max(...ps.map((q) => q.x + q.w))
-      const y0 = Math.min(...ps.map((q) => q.y - 1)), y1 = Math.max(...ps.map((q) => q.y + q.h + 2))
+      const y0 = Math.min(...ps.map((q) => q.y - (q === popped ? up : 1))), y1 = Math.max(...ps.map((q) => q.y + q.h + 2))
       return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }
     })()
     const tgt = !pl ? plots ?? idle ?? home : asking ? { x: pl.x + pl.w / 2, y: pl.y + pl.h / 2 } : { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) }
@@ -196,7 +220,7 @@ export function FarmView(p: FarmViewProps) {
       c.cx = tgt.x
       c.cy = tgt.y
     }
-  }, [focusId, layout, !!p.openAsk, docked, activeIds.join(), size.w, size.h, scale])
+  }, [focusId, layout, !!p.openAsk, docked, activeIds.join(), popNow, size.w, size.h, scale])
   const freeRect = () => {
     if (docked) {
       const w = size.w - DOCK - (p.side ? 470 : 0)
@@ -296,20 +320,6 @@ export function FarmView(p: FarmViewProps) {
   }
 
   const T = PX * cam.s
-  const popShown = () => {
-    let latest: { id: string; c: TaskState['checks'][number] } | null = null
-    for (const x of p.state.tasks) {
-      const c = x.checks[x.checks.length - 1]
-      if (c && c.t <= p.state.t && (!latest || c.t > latest.c.t)) latest = { id: x.id, c }
-    }
-    const now = performance.now()
-    if (latest && !latest.c.pass && failHold.current?.key !== `${latest.id}-${latest.c.t}`) {
-      failHold.current = { key: `${latest.id}-${latest.c.t}`, at: now, id: latest.id, c: latest.c }
-      setTimeout(() => setPopTick((n) => n + 1), 4100)
-    }
-    const held = failHold.current && now - failHold.current.at < 4000 && p.state.t >= failHold.current.c.t ? failHold.current : null
-    return held ?? latest
-  }
   return (
     <div ref={wrap} className="map-layer" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onClick} onPointerLeave={() => (hover.current = null)} style={{ touchAction: 'none' }}>
       <canvas ref={canvas} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} aria-label="The farm" role="img" />

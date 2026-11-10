@@ -103,6 +103,8 @@ export interface SimInput {
   sendBacks?: Record<string, { task: string; note: string }>
   // A later run of the same farm: last run's release bug is already fixed, so this release goes out clean.
   bugFixed?: boolean
+  // When you changed each farmer's model mid-run (ms): its steps before then were paid at the planned model's rate.
+  modelFrom?: Partial<Record<FarmerId, number>>
   // Farmers you stopped at their spend limit, and the run minute they reached it. Set by the run itself:
   // a stop re-runs the simulation so nothing after it involves that farmer.
   halts?: Partial<Record<FarmerId, number>>
@@ -137,7 +139,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const halted = (id: FarmerId, min: number) => input.halts?.[id] !== undefined && min > input.halts[id]!
 
   at(0, { type: 'goal', text: goal })
-  for (const f of farmers) at(0.02, { type: 'farmer', ...f })
+  for (const f of farmers) at(0.02, { type: 'farmer', ...f, plannedModel: input.plannedModels?.[f.id] ?? f.plannedModel ?? f.model })
   const basis = input.basis ?? input.estimate
   at(0.05, { type: 'plan', tasks: plan, estimate: input.estimate, singleAgentEstimate: input.singleAgentEstimate, basis })
 
@@ -161,8 +163,13 @@ export function simulateRun(input: SimInput): RunEvent[] {
   let lastBuilt = 0
   let askN = 0
   const queue = [...build]
+  // A split keeps its promise: the first part ends on its budget and the hard cases on their own share.
+  type Split = { task: string; after: number; budget: number; rest: string; rest$: number }
+  let split = null as Split | null
 
-  const usage = (min: number, f: FarmerId, task: string, usd: number, kind: 'read' | 'write' | 'retry') => {
+  const usage = (min: number, f: FarmerId, task: string, usd0: number, kind: 'read' | 'write' | 'retry') => {
+    const from = input.modelFrom?.[f]
+    const usd = from !== undefined && min * MIN < from ? (usd0 * planned(f)) / rateOf(modelOf(f)) : usd0
     const tokIn = Math.round((usd / 0.000004) * (0.8 + r() * 0.4))
     at(min, { type: 'usage', farmer: f, task, tokensIn: tokIn, tokensOut: Math.round(tokIn * 0.12), usd: +usd.toFixed(3), kind })
   }
@@ -196,6 +203,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     let cutAt = -1 // the line where you stopped it, if you did
     let note = task.doneWhen
     let haltedHere = false
+    const stepCosts: number[] = []
     lines.forEach((line, i) => {
       if (cutAt >= 0 || haltedHere) return
       const tt = start + (len * (i + 1)) / (lines.length + 1) + extra
@@ -205,8 +213,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
         return
       }
       at(tt, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: line })
-      // The pricey task burns through its share twice as fast as planned.
-      const cost = (usdPer(f) / lines.length) * (task === pricey && i < 2 ? 2.4 : 1)
+      // The pricey task burns through its share more than twice as fast as planned; how much faster varies by task.
+      const burn = i === 0 ? 2.4 : 2.4 * (0.8 + ((hash(goal + task.id + 'burn') % 1000) / 1000) * 0.5)
+      const cost = (usdPer(f) / lines.length) * (task === pricey && i < 2 ? burn : 1)
+      stepCosts.push(cost)
       spent += cost
       usage(tt + 0.01, f, task.id, cost, i === 0 ? 'read' : 'write')
       at(tt + 0.02, { type: 'progress', task: task.id, value: ((i + 1) / lines.length) * 0.85 })
@@ -259,7 +269,11 @@ export function simulateRun(input: SimInput): RunEvent[] {
       if (task === pricey && i === 1) {
         // Too expensive: about half done, most of its money gone. The Planner asks what to do.
         const budget = Math.ceil(spent * 1.15 * 20) / 20
-        const projected = spent * 3.4
+        // The steps left cost what the last one did, twice over: the hard cases are in them.
+        const projected = spent + (lines.length - i - 1) * stepCosts[i] * 2
+        // How sure: how much of the task it has seen, and how steady its steps have cost.
+        const steady = Math.abs(stepCosts[i] - stepCosts[0]) / stepCosts[0] < 0.12
+        const seen = (i + 1) / lines.length
         const rest$ = usdPer(f) * 0.9
         const suggested = 'Split it in two'
         const raise = `Raise its limit to ${money(projected)}`
@@ -270,10 +284,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
           at(tt + 0.1, {
             type: 'ask', id, farmer: lead, task: task.id, reason: 'cost',
             // How sure: how much of the task it has seen. Its hard cases are still ahead, and cost the most.
-            confidence: (i + 1) / lines.length >= 0.75 ? 'high' : (i + 1) / lines.length >= 0.5 ? 'medium' : 'low',
-            basis: `From ${i + 1} of its ${lines.length} steps. The hard cases are in the steps left, and cost the most.`,
-            question: `${task.name} is costing more than planned. It has used ${money(spent)} of its ${money(budget)} and is about half done.`,
-            impact: `At this rate it ends near ${money(projected)}. Splitting it keeps this part on budget and gives the hard cases their own ${money(rest$)}, about ${money(projected - budget - rest$)} less.`,
+            confidence: seen >= 0.75 && steady ? 'high' : seen >= 0.5 && steady ? 'medium' : 'low',
+            basis: `From ${i + 1} of its ${lines.length} steps, at ${stepCosts.slice(0, i + 1).map(money).join(' and ')}${steady ? ', a steady rate' : ', and rising'}. The hard cases are in the steps left, and cost the most.`,
+            question: `${task.name} is costing more than planned. It has used ${cents(spent)} of its ${cents(budget)} and is about half done.`,
+            impact: `At this rate it ends near ${money(projected)}. Splitting it keeps this part at ${cents(budget)} and gives the hard cases their own ${cents(rest$)}, about ${money(projected - budget - rest$)} less.`,
             suggested,
             alternatives: [raise, 'Stop it here'],
           })
@@ -291,6 +305,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
           const e2e = queue.findIndex((t) => t.id === 'e2e-check')
           queue.splice(e2e < 0 ? queue.length : e2e, 0, rest)
           extra += 1.3
+          split = { task: task.id, after: at$ * MIN, budget, rest: rest.id, rest$ }
         } else if (c === raise) {
           // Kept whole: it finishes, at the price it was heading for.
           at(at$ + 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `Kept going under a ${money(projected)} limit` })
@@ -536,6 +551,23 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (e.type === 'replan') usage(e.t / MIN - 0.02, lead, plan[0]?.id ?? '', usdPer(lead) * 0.1, 'read')
     if (e.type === 'ask') usage(e.t / MIN - 0.02, e.farmer, e.task ?? '', usdPer(e.farmer) * 0.03, 'read')
   }
+  const sp = split as Split | null
+  if (sp) {
+    const scaleTo = (pick: (e: Extract<RunEvent, { type: 'usage' }>) => boolean, fixed: number, to: number) => {
+      const them = ev.filter((e): e is Extract<RunEvent, { type: 'usage' }> => e.type === 'usage' && pick(e))
+      const sum = them.reduce((n, e) => n + e.usd, 0)
+      const k = sum > 0 ? Math.max(0, to - fixed) / sum : 1
+      for (const e of them) {
+        e.usd = +(e.usd * k).toFixed(3)
+        e.tokensIn = Math.round(e.tokensIn * k)
+        e.tokensOut = Math.round(e.tokensOut * k)
+      }
+    }
+    // What the task had spent before the split (the plan's own reading comes before its tasks exist).
+    const before = ev.reduce((n, e) => n + (e.type === 'usage' && e.task === sp.task && e.t > 0.05 * MIN && e.t <= sp.after ? e.usd : 0), 0)
+    scaleTo((e) => e.task === sp.task && e.t > sp.after, before, sp.budget)
+    scaleTo((e) => e.task === sp.rest, 0, sp.rest$)
+  }
   ev.sort((a, b) => a.t - b.t)
   // Spend limits, the same rule for every farmer at every level: the Planner pauses a farmer before the step that
   // would take it over its limit, and asks you to raise the limit or stop it there. A stop runs the whole
@@ -608,6 +640,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const last = ev[ev.length - 1].t
   ev.push({ t: last + 30_000, type: 'done', usd: +usd.toFixed(2), minutes: Math.round(last / MIN), asks: askN, autoFixes: ev.filter((e) => e.type === 'auto_fix').length, actions })
   return ev
+}
+
+function cents(n: number) {
+  return `$${n.toFixed(2)}`
 }
 
 function money(n: number) {

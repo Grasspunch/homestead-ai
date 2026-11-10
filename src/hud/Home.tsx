@@ -30,8 +30,10 @@ function minis(projects: Project[]): Mini[] {
     const answers = p.answers ?? {}
     const s = reduce(p.events, t, answers)
     const waiting = p.approved && pendingAsk(p.events, t, answers)
-    const done = s.tasks.filter((k) => k.status === 'ripe' || k.status === 'accepted').length
-    const prog = s.tasks.length ? done / s.tasks.length : 0
+    // The same count as the top bar: the work tasks, not the release.
+    const work = s.tasks.filter((k) => !k.gate)
+    const done = work.filter((k) => k.status === 'ripe' || k.status === 'accepted').length
+    const prog = work.length ? done / work.length : 0
     const busy = Object.values(s.farmers).find((f) => f && f.state === 'working')
     return {
       p,
@@ -40,7 +42,7 @@ function minis(projects: Project[]): Mini[] {
       stage: !p.approved ? -1 : s.done ? 3 : Math.min(2, Math.floor(prog * 3)),
       emote: !p.approved ? 'read' : waiting ? 'alert' : s.done ? 'hearts' : 'notes',
       farmer: waiting ? (s.asks.find((a) => !a.answer)?.farmer ?? 'planner') : busy?.id ?? 'builder',
-      words: !p.approved ? 'Plan, not started' : waiting ? 'Needs you' : s.done ? doneWords(p, s, t) : `${done} of ${s.tasks.length} done`,
+      words: !p.approved ? 'Plan, not started' : waiting ? 'Needs you' : s.done ? doneWords(p, s, t) : `${done} of ${work.length} done`,
     }
   })
 }

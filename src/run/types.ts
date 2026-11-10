@@ -21,6 +21,7 @@ export interface FarmerSetup {
   constraints: string[]
   limits: Limits
   why?: string // why the Planner put it on this crew, on this model
+  plannedModel?: string // the model the plan priced it on, when you've changed it since
 }
 
 export interface PlanTask {

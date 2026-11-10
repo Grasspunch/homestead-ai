@@ -3,11 +3,11 @@ import { useSyncExternalStore } from 'react'
 import { duration, pendingAsk, reduce } from './reduce'
 import { SEND_BACK, simulateRun } from './simulate'
 import { liveStage, rollBack } from './rollback'
-import { scenario, simulatePlan } from './simPlan'
+import { simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
-import { MODELS, applyEdit, emptyEdit, type KitEdit } from './kit'
+import { applyEdit, emptyEdit, type KitEdit } from './kit'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from our help docs, and hands off to a person when it is not sure'
 
@@ -62,20 +62,35 @@ export interface Forecast {
 //   its words: it holds when the ask can hold, takes Stop only when you say stop, and otherwise asks again.
 // - An amount that isn't one of the options ("raise it to $100") is never rounded to one: you're told and asked again.
 // - Otherwise naming an option's own words wins, then a plain yes takes the suggestion.
-const CONTRACTED = /\b(dont|dnt|didnt|doesnt|shouldnt|wouldnt|couldnt|cant|cannot|isnt|arent|wasnt|werent|wont|havent|hasnt|hadnt|mustnt|neednt|aint)\b/
-const NEGATION = /\b(no|nah|nope|not|never|stop|wait|hold|later|cancel|halt|leave it|rather not)\b/
-const QUESTION = /\?|^\s*(should|shall|do|does|did|can|could|would|will|is|are|what|how|why|when|which)\b|\b(what|how|why|explain|can you|could you)\b/i
-const norm = (text: string) => ` ${text.toLowerCase().replace(/n[’']t\b/g, 'nt').replace(/[’']/g, '').replace(/[^a-z0-9%$. ]+/g, ' ')} `
+const CONTRACTED = /\b(dont|dnt|didnt|doesnt|dosnt|dosent|doesent|shant|shouldnt|wouldnt|couldnt|cant|cannot|isnt|arent|wasnt|werent|wont|havent|hasnt|hadnt|mustnt|neednt|aint)\b/
+const NEGATION = /\b(no|nah|nope|not|never|stop|wait|hold|later|cancel|halt|leave it|rather not|avoid|avoiding|reject|refuse|against|bad idea|terrible idea)\b/
+// Short replies that start like a question but answer: "do it", "can do", "is fine".
+const AFFIRM = /^\s*(do it|do that|do so|can do|will do|is fine|is ok|is okay|are fine)\b/i
+const QUESTION =/\?|^\s*(should|shall|do|does|did|can|could|would|will|is|are|what|how|why|when|which)\b|\b(what|how|why|explain|can you|could you)\b/i
+// Every apostrophe-like character reads as one: ´ ` ’ ‘ ʼ ′.
+const APOS = /[´`’‘ʼ′]/g
+const norm = (text: string) => ` ${text.toLowerCase().replace(APOS, "'").replace(/n[’']t\b/g, 'nt').replace(/[’']/g, '').replace(/[^a-z0-9%$. ]+/g, ' ')} `
 
 export type Reading = { choice: string } | { none: 'question' | 'no' | 'amount' | 'unclear'; amount?: string }
 
-export function readAnswerWhy(text: string, suggested: string, options: string[]): Reading {
-  if (QUESTION.test(text.trim())) return { none: 'question' }
+// sides: who stands behind which option, such as the Builder and the Designer when they disagree.
+export function readAnswerWhy(text: string, suggested: string, options: string[], sides: Record<string, string> = {}): Reading {
+  const plain = (x: string) => norm(x).replace(/[.!]+/g, ' ').replace(/\s+/g, ' ').trim()
+  // An option's own words, typed as they are, are that option: "Fix it", "Leave it rolled back".
+  const exact = options.find((o) => plain(o) === plain(text))
+  if (exact) return { choice: exact }
+  if (QUESTION.test(text.trim()) && !(AFFIRM.test(text.replace(APOS, "'")) && !text.includes('?'))) return { none: 'question' }
   // "not just 10%" and "not only" widen, they don't refuse.
   const t = norm(text).replace(/\bnot (just|only)\b/g, ' ')
   const rather = /\brather\b/.test(t) && /\b(not|didnt|wouldnt|dont)\b/.test(t)
   const no = rather || CONTRACTED.test(t) || NEGATION.test(t)
   if (no) {
+    // An option that is itself a no, named by what it refuses: "no refactor" is "Keep it small, no refactor".
+    const refusing = options.filter((o) => {
+      const m = norm(o).match(/\b(?:no|not|never|without) ([a-z]{4,})/)
+      return !!m && new RegExp(`\\b(no|not|never|without|dont|skip) (the |a )?${m[1].slice(0, 6)}`).test(t)
+    })
+    if (refusing.length === 1) return { choice: refusing[0] }
     const stop = options.find((o) => /^stop/i.test(o))
     const sayStop = /\bstop\b/.test(t) && !/\b(dont|dnt|do not|not|never|didnt|shouldnt|wouldnt) stop\b/.test(t)
     if (stop && sayStop) return { choice: stop }
@@ -88,11 +103,17 @@ export function readAnswerWhy(text: string, suggested: string, options: string[]
     const amounts = options.flatMap((o) => o.match(/\$\d+(\.\d+)?/g) ?? []).map((a) => Number(a.slice(1)))
     const wanted = typed.map((n) => Number(n.replace('$', '')))
     if (!wanted.every((w) => amounts.includes(w))) return { none: 'amount', amount: `$${wanted.find((w) => !amounts.includes(w))}` }
+    // An amount that is one option's own amount picks that option: "$29 is fine" is the raise.
+    const withIt = options.filter((o) => (o.match(/\$\d+(\.\d+)?/g) ?? []).some((a) => wanted.includes(Number(a.slice(1)))))
+    if (withIt.length === 1) return { choice: withIt[0] }
   }
+  // Naming who you side with: "go with the builder".
+  const named = Object.entries(sides).filter(([who]) => new RegExp(`\\b${who.toLowerCase()}s?\\b`).test(t))
+  if (named.length === 1 && options.includes(named[0][1])) return { choice: named[0][1] }
   const words = (o: string) => o.toLowerCase().replace(/[^a-z0-9%$ ]+/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !['again', 'with', 'here', 'your', 'from', 'that', 'this'].includes(w))
   const scored = options.map((o) => ({ o, n: words(o).filter((w) => t.includes(` ${w}`)).length })).sort((a, b) => b.n - a.n)
   if (scored[0]?.n && scored[0].n > (scored[1]?.n ?? 0)) return { choice: scored[0].o }
-  if (/\b(yes|yep|yeah|sure|ok|okay|go|go ahead|do it|fine|sounds good|agreed)\b/.test(t)) return { choice: suggested }
+  if (/\b(yes|yep|yeah|sure|ok|okay|go|go ahead|do it|do that|do so|can do|will do|fine|sounds good|agreed)\b/.test(t)) return { choice: suggested }
   return { none: 'unclear' }
 }
 
@@ -123,6 +144,36 @@ export interface ChatLine {
   from: 'you' | 'planner'
   text: string
   to?: FarmerId
+}
+
+interface Saved {
+  v: 1
+  projects: Project[]
+  kit: Record<string, Partial<Record<FarmerId, KitEdit>>>
+  kitAt: Record<string, Partial<Record<FarmerId, number>>>
+  chat: Record<string, ChatLine[]>
+  crewNotes: Record<string, Partial<Record<FarmerId, string[]>>>
+  crewSize: Record<string, number>
+  seen: string[]
+  screen?: Screen
+  paused?: boolean
+}
+
+// Saved farms as they were written, or null when anything in them can't be read.
+function valid(d: unknown): Saved | null {
+  const o = (x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? (x as Record<string, never>) : {})
+  if (!d || typeof d !== 'object') return null
+  const x = d as Record<string, unknown>
+  if (x.v !== 1 || !Array.isArray(x.projects) || !x.projects.length) return null
+  const okProject = (p: unknown) => {
+    const q = p as Project
+    return !!q && typeof q.id === 'string' && typeof q.name === 'string' && typeof q.goal === 'string' && Array.isArray(q.events) && q.events.every((e) => !!e && typeof e.t === 'number' && typeof e.type === 'string') && !!q.autonomy && typeof q.autonomy === 'object'
+  }
+  if (!x.projects.every(okProject)) return null
+  const seen = Array.isArray(x.seen) ? x.seen.filter((k): k is string => typeof k === 'string') : []
+  const sc = x.screen as Screen | undefined
+  const screen = sc && (sc.kind === 'home' || (sc.kind === 'farm' && typeof sc.project === 'string')) ? sc : undefined
+  return { v: 1, projects: x.projects as Project[], kit: o(x.kit), kitAt: o(x.kitAt), chat: o(x.chat), crewNotes: o(x.crewNotes), crewSize: o(x.crewSize), seen, screen, paused: x.paused === true }
 }
 
 class Store {
@@ -197,42 +248,106 @@ class Store {
       this.persist()
     }, wait)
   }
+  // Another tab may have saved farms this one hasn't seen. Saving keeps them: each farm is whatever the tab
+  // that last touched it saved, and a farm made in the other tab is never wiped by this one.
+  private readSaved(): Saved | null {
+    try {
+      if (typeof localStorage === 'undefined') return null
+      const raw = localStorage.getItem(Store.KEY)
+      return raw ? valid(JSON.parse(raw)) : null
+    } catch {
+      return null
+    }
+  }
   persist() {
     this.saveAt = Date.now()
     try {
       if (typeof localStorage === 'undefined') return
-      const data = { v: 1, projects: this.projects, kit: this.kit, kitAt: this.kitAt, chat: this.chat, crewNotes: this.crewNotes, crewSize: this.crewSize, seen: [...this.seen], screen: this.screen }
+      const old = this.readSaved()
+      const mine = new Set(this.projects.map((p) => p.id))
+      const theirs = (old?.projects ?? []).filter((p) => !mine.has(p.id))
+      const keep = <T,>(o: Record<string, T> | undefined, m: Record<string, T>) => ({ ...Object.fromEntries(Object.entries(o ?? {}).filter(([k]) => !mine.has(k))), ...m })
+      const data: Saved = {
+        v: 1,
+        projects: [...this.projects, ...theirs],
+        kit: keep(old?.kit, this.kit),
+        kitAt: keep(old?.kitAt, this.kitAt),
+        chat: keep(old?.chat, this.chat),
+        crewNotes: keep(old?.crewNotes, this.crewNotes),
+        crewSize: keep(old?.crewSize, this.crewSize),
+        seen: [...new Set([...(old?.seen ?? []).filter((k) => !mine.has(k.split(':')[0])), ...this.seen])],
+        screen: this.screen,
+        paused: this.screen.kind === 'farm' && !this.playing,
+      }
       localStorage.setItem(Store.KEY, JSON.stringify(data))
     } catch {
       // Storage full or blocked: the farms still work, they just won't survive a reload.
     }
   }
-  // Returns true when saved farms were found.
+  // A save from another tab: take its farms, except the one open here, which this tab is driving.
+  fromOtherTab(raw: string | null) {
+    let d: Saved | null = null
+    try {
+      d = raw ? valid(JSON.parse(raw)) : null
+    } catch {
+      d = null
+    }
+    if (!d) return
+    const open = this.screen.kind === 'farm' ? this.screen.project : undefined
+    const byId = new Map(this.projects.map((p) => [p.id, p]))
+    for (const p of d.projects) if (p.id !== open) byId.set(p.id, p)
+    this.projects = [...byId.values()]
+    for (const [k, v] of Object.entries(d.kit)) if (k !== open) this.kit[k] = v
+    for (const [k, v] of Object.entries(d.chat)) if (k !== open) this.chat[k] = v
+    for (const [k, v] of Object.entries(d.crewNotes)) if (k !== open) this.crewNotes[k] = v
+    for (const [k, v] of Object.entries(d.crewSize)) if (k !== open) this.crewSize[k] = v
+    // Shown without saving again, so two tabs never answer each other's saves forever.
+    this.version++
+    for (const fn of this.listeners) fn()
+  }
+  // Returns true when saved farms were found. Saved farms that can't be read are cleared, and you start at Home.
   restore(): boolean {
+    let raw: string | null = null
     try {
       if (typeof localStorage === 'undefined') return false
-      const raw = localStorage.getItem(Store.KEY)
-      if (!raw) return false
-      const d = JSON.parse(raw)
-      if (d?.v !== 1 || !Array.isArray(d.projects) || !d.projects.length) return false
-      this.projects = (d.projects as Project[]).map((p) =>
-        // A plan that was still being made when the page closed: say so, and offer to try again.
-        p.planning ? { ...p, planning: false, error: p.events.some((e) => e.type === 'plan') ? undefined : 'Planning stopped when the page closed.' } : p,
-      )
-      this.kit = d.kit ?? {}
-      this.kitAt = d.kitAt ?? {}
-      this.chat = d.chat ?? {}
-      this.crewNotes = d.crewNotes ?? {}
-      this.crewSize = d.crewSize ?? {}
-      this.seen = new Set(d.seen ?? [])
-      this.sampleLoading = false
-      const screen = d.screen as Screen | undefined
-      if (screen?.kind === 'farm' && this.projects.some((p) => p.id === screen.project)) this.open(screen.project)
-      else this.notify()
-      return true
+      raw = localStorage.getItem(Store.KEY)
     } catch {
       return false
     }
+    if (!raw) return false
+    let d: Saved | null = null
+    try {
+      d = valid(JSON.parse(raw))
+    } catch {
+      d = null
+    }
+    if (!d) {
+      try {
+        localStorage.removeItem(Store.KEY)
+      } catch {
+        // Nothing more to do: the sample loads as on a first visit.
+      }
+      this.toast = { id: Date.now(), text: 'Your saved farms couldn’t be read, so this starts fresh.' }
+      return false
+    }
+    this.projects = d.projects.map((p) =>
+      // A plan that was still being made when the page closed: say so, and offer to try again.
+      p.planning ? { ...p, planning: false, error: p.events.some((e) => e.type === 'plan') ? undefined : 'Planning stopped when the page closed.' } : p,
+    )
+    this.kit = d.kit
+    this.kitAt = d.kitAt
+    this.chat = d.chat
+    this.crewNotes = d.crewNotes
+    this.crewSize = d.crewSize
+    this.seen = new Set(d.seen)
+    this.sampleLoading = false
+    const screen = d.screen
+    if (screen?.kind === 'farm' && this.projects.some((p) => p.id === screen.project)) {
+      this.open(screen.project)
+      // Paused when the page closed: still paused.
+      if (d.paused) this.pause()
+    } else this.notify()
+    return true
   }
 
   project(id?: string) {
@@ -310,6 +425,8 @@ class Store {
     p.sendBacks = {}
     p.rollbacks = []
     this.kitAt[p.id] = {}
+    // Every run shows its own moments again, such as its rollback.
+    for (const k of [...this.seen]) if (k.startsWith(`${p.id}:`)) this.seen.delete(k)
     p.run = { bugFixed: this.nextBugFixed(p), kit: structuredClone(this.kit[p.id] ?? {}), autonomy: { ...p.autonomy }, forecast: this.forecast(p) ?? undefined }
     this.rebuild(p)
     if (this.project()?.id === p.id) this.play()
@@ -387,9 +504,12 @@ class Store {
     const rb = [...p.events].reverse().find((e) => e.type === 'deploy' && e.t <= this.clock)
     return !!rb && rb.type === 'deploy' && rb.stage === 'rollback' && !this.seen.has(`${p.id}:${rb.t}`)
   }
+  // A second click within a second of a skip is the same click: it never skips twice.
+  private skippedAt = 0
   skipToNext() {
     const p = this.project()
-    if (!p || !this.canSkip(p)) return
+    if (!p || !this.canSkip(p) || Date.now() - this.skippedAt < 1000) return
+    this.skippedAt = Date.now()
     const next = p.events.find(
       (e) =>
         e.t > this.clock &&
@@ -419,11 +539,17 @@ class Store {
     // A different answer from the one in the log: the run forks from here.
     const rec = p?.events.find((e) => e.type === 'answer' && e.id === askId)
     if (p && rec && rec.type === 'answer' && rec.choice !== choice) this.rebuild(p)
-    // Jump to the moment the run carried on.
+    // Jump to the moment the run carried on, but never past an ask you haven't answered yet,
+    // such as a new spend limit ask that a model change brought in.
     const ans = p?.events.find((e) => e.type === 'answer' && e.id === askId)
-    if (ans && ans.t > this.clock) this.clock = ans.t
+    if (p && ans && ans.t > this.clock) {
+      const next = p.events.find((e) => e.type === 'ask' && e.t > this.clock && e.t < ans.t && !this.viewerAnswers[e.id])
+      this.clock = next ? next.t : ans.t
+    }
     if (this.drawer?.kind === 'ask' && this.drawer.id === askId) this.drawer = null
     this.notify()
+    // An answer is saved at once, so a reload straight after it keeps it.
+    this.persist()
   }
 
   // An answer in your own words. Yes-like words take the suggestion; no-like words, or words that name another
@@ -435,7 +561,11 @@ class Store {
     if (!p || !ask || ask.type !== 'ask') return { kind: 'none', why: 'unclear' }
     // Sending work back needs a task and a note, so it goes through its own form.
     const options = [ask.suggested, ...(ask.alternatives ?? [])].filter((o) => !/^show me/i.test(o) && o !== SEND_BACK)
-    const r = readAnswerWhy(text, ask.suggested, options)
+    // When two farmers disagree, naming one picks their way.
+    const dis = ask.reason === 'disagree' ? p.events.find((e) => e.type === 'disagree' && e.task === ask.task) : undefined
+    const other = dis && dis.type === 'disagree' ? dis.sides.find((x) => x.farmer !== ask.farmer)?.farmer : undefined
+    const sides: Record<string, string> = dis && other && ask.alternatives?.[0] ? { [ask.farmer]: ask.suggested, [other]: ask.alternatives[0] } : {}
+    const r = readAnswerWhy(text, ask.suggested, options, sides)
     if (!('choice' in r)) return { kind: 'none', why: r.none, amount: r.amount }
     const choice = r.choice
     if (/^not yet/i.test(choice)) {
@@ -443,7 +573,8 @@ class Store {
       this.chatTo(p.id, { from: 'planner', text: 'Holding. Nothing moves on this until you say so.' })
       return { kind: 'hold', choice }
     }
-    if (needsConfirm(choice, ask.reason)) return { kind: 'confirm', choice }
+    // Anything but the suggestion is said back first, so a misreading never applies by itself.
+    if (choice !== ask.suggested || needsConfirm(choice, ask.reason)) return { kind: 'confirm', choice }
     this.confirmInWords(askId, text, choice)
     return { kind: 'answered', choice }
   }
@@ -464,15 +595,16 @@ class Store {
   }
 
   // The simulation's input for this farm's plan, with the given farmers' changes, rules and answers.
-  private inputFor(p: Project, kit: Partial<Record<FarmerId, KitEdit>>, autonomy: Autonomy, answers: Record<string, string>, sendBacks: Project['sendBacks'], bugFixed: boolean) {
+  private inputFor(p: Project, kit: Partial<Record<FarmerId, KitEdit>>, autonomy: Autonomy, answers: Record<string, string>, sendBacks: Project['sendBacks'], bugFixed: boolean, modelFrom: Partial<Record<FarmerId, number>> = {}) {
     const plan = p.events.find((e) => e.type === 'plan')
     if (!plan || plan.type !== 'plan') return null
     const planned = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => f)
     const farmers = planned.map((f) => applyEdit(f, kit[f.id]))
-    const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.model]))
+    // Priced on the plan's models, however many times the run was rebuilt since a change.
+    const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.plannedModel ?? f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
     const basis = plan.basis ?? plan.estimate
-    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed } }
+    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom } }
   }
 
   // What the plan will cost and take, by simulating it on its default path with your current farmers and rules,
@@ -499,9 +631,9 @@ class Store {
     const run = p.run
     const kit = run.kit
     const answers = p.answers ?? {}
-    const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed)
+    // Steps a farmer took before you changed its model were paid at the old rate.
+    const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed, this.kitAt[p.id] ?? {})
     if (!built) return
-    const { planned, farmers } = built
     let events = simulateRun(built.input)
     // An ask you've answered keeps the words you answered: a later change (a model, say) never rewrites it.
     // An ask already on screen keeps its numbers too, until you answer it.
@@ -524,22 +656,13 @@ class Store {
       const fc = run.forecast
       events = events.map((e) => (e.type === 'plan' ? { ...e, estimate: fc.crew, singleAgentEstimate: fc.solo } : e))
     }
-    // Steps a farmer took before you changed its model were paid at the old rate.
-    const at = this.kitAt[p.id] ?? {}
-    const rate = (m: string) => MODELS.find((x) => x.model === m)?.rate ?? 1
-    events = events.map((e) => {
-      if (e.type !== 'usage') return e
-      const before = planned.find((f) => f.id === e.farmer)
-      const now = farmers.find((f) => f.id === e.farmer)
-      const t = at[e.farmer]
-      if (!before || !now || t === undefined || e.t >= t || before.model === now.model) return e
-      const k = rate(before.model) / rate(now.model)
-      return { ...e, usd: +(e.usd * k).toFixed(3), tokensIn: Math.round(e.tokensIn * k), tokensOut: Math.round(e.tokensOut * k) }
-    })
     ;(p.rollbacks ?? []).forEach((t0, i) => {
       const id = `ask-rb-${i + 1}`
       events = rollBack(events, t0, id, answers[id])
     })
+    // Done's total is what Spend adds up: every step at the rate it was paid.
+    const usd = +events.reduce((n, e) => n + (e.type === 'usage' ? e.usd : 0), 0).toFixed(2)
+    events = events.map((e) => (e.type === 'done' ? { ...e, usd } : e))
     p.events = events
     this.setSpeed(events)
   }
@@ -607,12 +730,20 @@ class Store {
 
   // ---- your own project: a live plan you can change and approve ----
 
+  // No two farms share a name: "Support assistant", then "Support assistant 2".
+  private uniqueName(name: string, id: string) {
+    const taken = new Set(this.projects.filter((x) => x.id !== id).map((x) => x.name))
+    if (!taken.has(name)) return name
+    let n = 2
+    while (taken.has(`${name} ${n}`)) n++
+    return `${name} ${n}`
+  }
+
   newProject(goal: string): Project {
     const id = `own-${Date.now().toString(36)}`
     const p: Project = { id, name: 'New project', goal, kind: 'own', events: [{ t: 0, type: 'goal', text: goal }], approved: false, planning: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters } }
-    // A farm of your own for the sample's kind of app takes the sample's place, so Home never shows two.
-    const same = scenario(goal).name === scenario(SAMPLE_GOAL).name
-    this.projects = [...this.projects.filter((x) => !(same && x.kind === 'sample')), p]
+    // The sample stays, whatever you plan next; a farm of your own gets a name of its own (see setPlan).
+    this.projects = [...this.projects, p]
     this.open(id)
     return p
   }
@@ -620,7 +751,7 @@ class Store {
   setPlan(id: string, name: string, farmers: FarmerSetup[], tasks: PlanTask[], estimate: Estimate, singleAgentEstimate?: Estimate) {
     const p = this.project(id)
     if (!p) return
-    p.name = name
+    p.name = this.uniqueName(name, id)
     p.planning = false
     p.error = undefined
     p.events = [
