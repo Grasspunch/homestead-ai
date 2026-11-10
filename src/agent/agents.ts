@@ -1,10 +1,12 @@
 // The live agent calls: the Planner turns a goal into a crew and a plan, and routes the
 // person's messages to the right farmer. Shared by the server route on Lovable (/api/agent)
 // and the Vite dev server, so local and deployed runs use the same prompts.
-// The caller passes in an Anthropic client, which keeps this file free of runtime-specific imports.
+// The caller passes in the clients it has keys for: an Anthropic client for Claude models, and an OpenAI key for
+// the Codex models, called through the Responses API with the same JSON schema. Neither key reaches the browser.
 
 import type { Estimate, FarmerId, FarmerSetup, PlanTask } from '../run/types'
 import { reshapeSchema, type Ctx as ReshapeCtx } from '../run/reshape'
+import { MODELS, providerOf, type Provider } from '../run/kit'
 
 export const MODEL = 'claude-opus-5-5'
 // Routing a message is a quick pick from a short list, so it runs on the cheap model.
@@ -23,13 +25,47 @@ export interface ClaudeClient {
   }
 }
 
+// An OpenAI key and, for tests, a stand-in for fetch.
+export interface OpenAIClient {
+  key: string
+  fetch?: typeof fetch
+}
+
+// The clients a server has keys for. A call to a provider without one throws MissingKey, which the server
+// answers with 503 and the browser turns into a simulated answer with a note.
+export interface Clients {
+  claude?: ClaudeClient
+  openai?: OpenAIClient
+}
+
+export class MissingKey extends Error {
+  constructor(public provider: Provider) {
+    super(provider === 'openai' ? 'OPENAI_API_KEY is not set' : 'ANTHROPIC_API_KEY is not set')
+  }
+}
+
+// Which model a call runs on: the Planner's own model, picked in the plan. A Codex Planner plans on its model
+// and routes on GPT-6 Luna; a Claude Planner plans on Opus and routes on Haiku, as before.
+export function modelFor(task: AgentTask, plannerModel?: string): string {
+  const quick = task === 'route' || task === 'reshape'
+  if (providerOf(plannerModel) === 'openai') return quick ? 'gpt-6-luna' : MODELS.find((m) => m.model === plannerModel)!.api
+  return quick ? ROUTE_MODEL : MODEL
+}
+export const providerOfApi = (api: string): Provider => (api.startsWith('gpt-') ? 'openai' : 'anthropic')
+
 export interface AgentResult<T> {
   data: T
   tokens: number
   model: string
 }
 
-async function callJSON<T>(client: ClaudeClient, system: string, user: string, schema: Record<string, unknown>, model = MODEL): Promise<AgentResult<T>> {
+async function callJSON<T>(clients: Clients, system: string, user: string, schema: Record<string, unknown>, model = MODEL): Promise<AgentResult<T>> {
+  if (providerOfApi(model) === 'openai') {
+    if (!clients.openai) throw new MissingKey('openai')
+    return callOpenAI<T>(clients.openai, system, user, schema, model)
+  }
+  const client = clients.claude
+  if (!client) throw new MissingKey('anthropic')
   const res = await client.beta.messages.create({
     model,
     max_tokens: 16000,
@@ -46,6 +82,36 @@ async function callJSON<T>(client: ClaudeClient, system: string, user: string, s
   return { data: JSON.parse(text) as T, tokens: res.usage.input_tokens + res.usage.output_tokens, model }
 }
 
+// The OpenAI Responses API, with the schema as a strict json_schema format: the same contract as the Claude call.
+async function callOpenAI<T>(o: OpenAIClient, system: string, user: string, schema: Record<string, unknown>, model: string): Promise<AgentResult<T>> {
+  const res = await (o.fetch ?? fetch)('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${o.key}` },
+    body: JSON.stringify({
+      model,
+      instructions: system,
+      input: user,
+      max_output_tokens: 16000,
+      text: { format: { type: 'json_schema', name: 'homestead_answer', schema, strict: true } },
+    }),
+  })
+  type Body = {
+    status?: string
+    error?: { message?: string } | null
+    output_text?: string
+    output?: { content?: { type: string; text?: string; refusal?: string }[] }[]
+    usage?: { input_tokens?: number; output_tokens?: number }
+  }
+  const body = (await res.json().catch(() => ({}))) as Body
+  if (!res.ok) throw new Error(body.error?.message ?? `OpenAI answered ${res.status}.`)
+  const parts = (body.output ?? []).flatMap((x) => x.content ?? [])
+  if (parts.some((c) => c.type === 'refusal')) throw new Error('The model declined this request.')
+  if (body.status === 'incomplete') throw new Error('The answer was cut off before it finished.')
+  const text = body.output_text ?? parts.find((c) => c.type === 'output_text')?.text
+  if (!text) throw new Error('No text in the response.')
+  return { data: JSON.parse(text) as T, tokens: (body.usage?.input_tokens ?? 0) + (body.usage?.output_tokens ?? 0), model }
+}
+
 // ---- The crew ------------------------------------------------------------------------
 
 export const FARMER_IDS: FarmerId[] = ['planner', 'builder', 'designer', 'tester', 'deployer']
@@ -53,7 +119,7 @@ export const FARMER_IDS: FarmerId[] = ['planner', 'builder', 'designer', 'tester
 // Which agent and model each farmer runs on in the product.
 export const CREW: Record<FarmerId, { label: string; role: string; agent: string; model: string }> = {
   planner: { label: 'Planner', role: 'splits the goal into tasks, keeps the plan current, answers the person', agent: 'claude-code', model: 'Claude Opus 5.5' },
-  builder: { label: 'Builder', role: 'writes and changes the code', agent: 'claude-code', model: 'Claude Sonnet 5.5' },
+  builder: { label: 'Builder', role: 'writes and changes the code', agent: 'codex', model: 'GPT-6.1 Sol' },
   designer: { label: 'Designer', role: 'designs the screens, copy and flows people see', agent: 'claude-code', model: 'Claude Opus 5.5' },
   tester: { label: 'Tester', role: 'checks each task against its done-when and runs the tests', agent: 'claude-code', model: 'Claude Haiku 5.5' },
   deployer: { label: 'Deployer', role: 'ships to staging and production, watches the rollout', agent: 'claude-code', model: 'Claude Haiku 5.5' },
@@ -102,8 +168,8 @@ export const PLAN_SCHEMA = {
         properties: {
           id: { type: 'string', enum: FARMER_IDS },
           label: { type: 'string', description: 'For example "Builder"' },
-          agent: { type: 'string', enum: ['claude-code'] },
-          model: { type: 'string', enum: ['Claude Opus 5.5', 'Claude Sonnet 5.5', 'Claude Haiku 5.5'] },
+          agent: { type: 'string', enum: ['claude-code', 'codex'] },
+          model: { type: 'string', enum: MODELS.map((m) => m.model) },
           context: { type: 'array', items: { type: 'string' }, description: 'The only paths and docs this farmer may read, 2 to 5 entries, for example "docs/pricing.md" or "src/checkout/"' },
           constraints: { type: 'array', items: { type: 'string' }, description: 'What it may and may not do, 2 to 4 entries, for example "May not deploy" or "Read only: src/"' },
           limits: limitsSchema,
@@ -143,7 +209,7 @@ export function crewInstruction(crewSize?: number): string {
   return `Use exactly ${n} farmers, no more and no fewer. Always include the Builder and the Tester. Every task must belong to one of these ${n} farmers.`
 }
 
-export function planGoal(client: ClaudeClient, input: PlanInput) {
+export function planGoal(client: Clients, input: PlanInput, model = MODEL) {
   const crew = FARMER_IDS.map((id) => `- ${id} (${CREW[id].label}): ${CREW[id].role}. Runs on ${CREW[id].agent}, model ${CREW[id].model}.`).join('\n')
   return callJSON<PlanOut>(
     client,
@@ -156,7 +222,7 @@ ${input.goal}
 The farmers you can use:
 ${crew}
 
-Model rules: every farmer uses agent "claude-code". Planner and Designer use "Claude Opus 5.5". The Builder uses "Claude Sonnet 5.5". The Tester and Deployer use "Claude Haiku 5.5". A single general agent uses "Claude Opus 5.5".
+Model rules: the crew is mixed. The Builder uses agent "codex" with "GPT-6.1 Sol". Everyone else uses agent "claude-code": Planner and Designer on "Claude Opus 5.5", the Tester and Deployer on "Claude Haiku 5.5". A single general agent uses agent "claude-code" with "Claude Opus 5.5".
 
 Team size: ${crewInstruction(input.crewSize)}
 
@@ -170,9 +236,10 @@ Tasks: 3 to 8, in run order, kebab-case ids. Each has one farmer from the crew, 
 
 Estimates, for real agent runs: reason from the number of tasks, how long each takes an agent (often 5 to 20 minutes), what each costs in tokens (often $0.50 to $4 per task), and which tasks can run at the same time.
 - estimate: this crew. Minutes follow the longest chain of tasks that must wait on each other, since farmers work in parallel. Dollars add up, plus a little for handoffs and checks.
-- singleAgentEstimate: one general agent doing all tasks alone, one after another, on Claude Opus 5.5. Slower, since nothing runs in parallel and it rereads one growing context. It also has nobody independent checking its work, so some problems surface late and get redone. Per token, Claude Sonnet 5.5 costs half of Opus and Claude Haiku 5.5 a fortieth, which usually pays for the crew's handoffs.
+- singleAgentEstimate: one general agent doing all tasks alone, one after another, on Claude Opus 5.5. Slower, since nothing runs in parallel and it rereads one growing context. It also has nobody independent checking its work, so some problems surface late and get redone. Per token, Claude Sonnet 5.5 and GPT-6.1 Sol cost half of Opus and Claude Haiku 5.5 a fortieth, which usually pays for the crew's handoffs.
 The farmers' limits should add up to roughly the crew estimate, with some headroom.`,
     PLAN_SCHEMA,
+    model,
   )
 }
 
@@ -207,7 +274,7 @@ export function routeSchema(input: RouteInput) {
   }
 }
 
-export async function routeMessage(client: ClaudeClient, input: RouteInput): Promise<AgentResult<RouteOut>> {
+export async function routeMessage(client: Clients, input: RouteInput, model = ROUTE_MODEL): Promise<AgentResult<RouteOut>> {
   const farmers = input.farmers.map((f) => `- ${f.id} (${f.label}): ${CREW[f.id]?.role ?? ''}`).join('\n')
   const tasks = input.tasks.map((t) => `- ${t.id}: ${t.name} (${t.farmer})`).join('\n')
   const out = await callJSON<{ to: FarmerId; task: string | null; reply: string }>(
@@ -226,7 +293,7 @@ ${input.message}
 
 Pick the farmer, the task it is about (or null), and write one short sentence to the person saying who you handed it to and why, for example "Handed to the Designer, since it is about the button colour."`,
     routeSchema(input),
-    ROUTE_MODEL,
+    model,
   )
   const { task, ...rest } = out.data
   return { ...out, data: task ? { ...rest, task } : rest }
@@ -242,7 +309,7 @@ export interface ReshapeOut {
 
 // A request to change how the farm runs ("I'm in an incident, skip the deployer"), as a list of typed changes.
 // The schema only allows the changes the app can make, on this farm's own tasks; the app checks them again.
-export async function reshapeFarm(client: ClaudeClient, input: { message: string; ctx: ReshapeCtx }): Promise<AgentResult<ReshapeOut>> {
+export async function reshapeFarm(client: Clients, input: { message: string; ctx: ReshapeCtx }, model = ROUTE_MODEL): Promise<AgentResult<ReshapeOut>> {
   const tasks = input.ctx.tasks.map((t) => `- ${t.id}: ${t.name} (${t.farmer}${t.gate ? ', the release' : ''}${t.status ? `, ${t.status}` : ''})`).join('\n')
   return callJSON<ReshapeOut>(
     client,
@@ -257,7 +324,7 @@ The person's request:
 ${input.message}
 </message>`,
     reshapeSchema(input.ctx),
-    ROUTE_MODEL,
+    model,
   )
 }
 
@@ -265,13 +332,16 @@ ${input.message}
 
 export type AgentTask = 'plan' | 'route' | 'reshape'
 
-export async function runAgent(client: ClaudeClient, task: AgentTask, input: Record<string, unknown>): Promise<AgentResult<unknown>> {
+// An Anthropic client alone still works, for callers written before the crew was mixed.
+export async function runAgent(clients: Clients | ClaudeClient, task: AgentTask, input: Record<string, unknown>): Promise<AgentResult<unknown>> {
+  const client: Clients = 'beta' in clients ? { claude: clients } : clients
+  const model = modelFor(task, typeof input.model === 'string' ? input.model : undefined)
   switch (task) {
     case 'plan': {
       const goal = typeof input.goal === 'string' ? input.goal.trim() : ''
       if (!goal) throw new Error('A goal is needed to make a plan.')
       const crewSize = typeof input.crewSize === 'number' ? input.crewSize : undefined
-      return planGoal(client, { goal, crewSize })
+      return planGoal(client, { goal, crewSize }, model)
     }
     case 'route': {
       const message = typeof input.message === 'string' ? input.message.trim() : ''
@@ -280,13 +350,13 @@ export async function runAgent(client: ClaudeClient, task: AgentTask, input: Rec
         message,
         farmers: Array.isArray(input.farmers) ? (input.farmers as RouteInput['farmers']) : [],
         tasks: Array.isArray(input.tasks) ? (input.tasks as RouteInput['tasks']) : [],
-      })
+      }, model)
     }
     case 'reshape': {
       const message = typeof input.message === 'string' ? input.message.trim() : ''
       const ctx = input.ctx as ReshapeCtx | undefined
       if (!message || !ctx || !Array.isArray(ctx.tasks) || !Array.isArray(ctx.farmers)) throw new Error('A message and the farm are needed to change it.')
-      return reshapeFarm(client, { message, ctx })
+      return reshapeFarm(client, { message, ctx }, model)
     }
     default:
       throw new Error(`Unknown task: ${String(task)}`)

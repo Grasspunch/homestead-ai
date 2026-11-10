@@ -1,7 +1,7 @@
 // A farmer's own page: what it is doing right now, and everything it carries, all changeable.
 // Task, model, skills and connectors, the files it may read, its rules and its limits.
 import { store, useStore, type Project } from '../run/store'
-import { MODELS, RULES, SKILLS, applyEdit, contextTokens, defaultRules, emptyEdit, type KitItem } from '../run/kit'
+import { MODELS, MODEL_GROUPS, RULES, agentName, SKILLS, applyEdit, contextTokens, defaultRules, emptyEdit, type KitItem } from '../run/kit'
 import type { FarmerId, RunState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
 import { Ico, LimitField, Portrait, Swatch, Ticks, tokens, usd } from './bits'
@@ -53,6 +53,9 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
           </div>
           <div className="grow">
             <h2>{f.label}</h2>
+            <div className="runs-on">
+              {f.model} on {agentName(f.agent)}
+            </div>
             <div className="now">
               {working && <span className="live-dot" aria-hidden />}
               <span>{p.approved ? status : 'Not started'}</span>
@@ -126,23 +129,28 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
 
             <section>
               <h3>Model</h3>
-              <div className="models" role="radiogroup" aria-label="Model">
-                {MODELS.map((m) => (
-                  <button
-                    key={m.model}
-                    role="radio"
-                    aria-checked={f.model === m.model}
-                    className={`model${f.model === m.model ? ' on' : ''}`}
-                    onClick={() => set((e) => {
-                      e.model = m.model === base.model ? undefined : m.model
-                      e.agent = m.model === base.model ? undefined : m.agent
-                    })}
-                  >
-                    <b>{m.label}</b>
-                    <small>{m.about}</small>
-                  </button>
-                ))}
-              </div>
+              {MODEL_GROUPS.map((g) => (
+                <div key={g.provider} className="model-group">
+                  <h4>{g.label}</h4>
+                  <div className="models" role="radiogroup" aria-label={`${g.label} models`}>
+                    {MODELS.filter((m) => m.provider === g.provider).map((m) => (
+                      <button
+                        key={m.model}
+                        role="radio"
+                        aria-checked={f.model === m.model}
+                        className={`model${f.model === m.model ? ' on' : ''}`}
+                        onClick={() => set((e) => {
+                          e.model = m.model === base.model ? undefined : m.model
+                          e.agent = m.model === base.model ? undefined : m.agent
+                        })}
+                      >
+                        <b>{m.label}</b>
+                        <small>{m.about}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
               {rate !== baseRate && (
                 <p className="fine">
                   About {usd(f.limits.usd * (rate / baseRate))} for its share, against {usd(f.limits.usd)} on {base.model}.

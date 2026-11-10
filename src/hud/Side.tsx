@@ -6,6 +6,7 @@ import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
 import { Ico, Mark, Portrait, Swatch, cents, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 import { BY_YOU } from '../run/rollback'
+import { agentName } from '../run/kit'
 
 const STATUS: Record<TaskState['status'], string> = {
   waiting: 'Not started',
@@ -177,7 +178,7 @@ export function FarmerPanel({ s, id, p }: { s: RunState; id: FarmerId; p: Projec
   if (!f) return null
   const mine = s.tasks.filter((t) => t.farmer === id)
   const pct = Math.min(1, f.usd / Math.max(0.01, f.limits.usd))
-  const agent = f.agent === 'claude-code' ? 'Claude Code' : f.agent
+  const agent = agentName(f.agent)
   const words = { idle: 'Waiting for its next task', working: f.lastTool ?? 'Working', stuck: 'Fixing a failed check', needs: 'Waiting for you', done: 'Finished' }[f.state]
   return (
     <Panel label={`Farmer: ${f.label}`}>

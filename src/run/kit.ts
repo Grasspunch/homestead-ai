@@ -44,20 +44,42 @@ export const SKILLS: Record<FarmerId, KitItem[]> = {
   ],
 }
 
+export type Provider = 'anthropic' | 'openai'
+
 export interface ModelChoice {
   model: string
-  agent: string
+  agent: 'claude-code' | 'codex'
+  provider: Provider
+  api: string // the provider's model id, for live calls
   label: string
   about: string
   rate: number // cost relative to Claude Opus 5.5
 }
 
+// Every rate is per token, against Claude Opus 5.5 ($4 in, $20 out per million tokens), from list prices.
 export const MODELS: ModelChoice[] = [
-// Rates follow Anthropic's list prices per million tokens: Opus $4 in, $20 out; Sonnet $2, $10; Haiku $0.10, $0.50.
-  { model: 'Claude Opus 5.5', agent: 'claude-code', label: 'Claude Opus 5.5', about: 'Best at plans, design and judgment', rate: 1 },
-  { model: 'Claude Sonnet 5.5', agent: 'claude-code', label: 'Claude Sonnet 5.5', about: 'Everyday coding at half the price', rate: 0.5 },
-  { model: 'Claude Haiku 5.5', agent: 'claude-code', label: 'Claude Haiku 5.5', about: 'Checks, routing and shipping, for very little', rate: 0.025 },
+  // Anthropic's list prices per million tokens: Opus $4 in, $20 out; Sonnet $2, $10; Haiku $0.10, $0.50.
+  { model: 'Claude Opus 5.5', agent: 'claude-code', provider: 'anthropic', api: 'claude-opus-5-5', label: 'Claude Opus 5.5', about: 'Best at plans, design and judgment', rate: 1 },
+  { model: 'Claude Sonnet 5.5', agent: 'claude-code', provider: 'anthropic', api: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', about: 'Everyday coding at half the price', rate: 0.5 },
+  { model: 'Claude Haiku 5.5', agent: 'claude-code', provider: 'anthropic', api: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', about: 'Checks, routing and shipping, for very little', rate: 0.025 },
+  // OpenAI's models in Codex, per million tokens: Astra $10 in, $50 out; Sol $2, $10; Terra $1, $5; Luna $0.10, $0.50.
+  // Source: https://developers.openai.com/codex/models (now https://learn.chatgpt.com/docs/models) and
+  // https://openai.com/api/pricing/ — read as a summary, not verbatim, so check them before relying on them.
+  { model: 'GPT-6.1 Sol', agent: 'codex', provider: 'openai', api: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', about: 'Codex’s default for coding, at Sonnet’s price', rate: 0.5 },
+  { model: 'GPT-6.1 Terra', agent: 'codex', provider: 'openai', api: 'gpt-6.1-terra', label: 'GPT-6.1 Terra', about: 'Smaller coding jobs at a quarter of Opus’s price', rate: 0.25 },
+  { model: 'GPT-6 Luna', agent: 'codex', provider: 'openai', api: 'gpt-6-luna', label: 'GPT-6 Luna', about: 'Focused, high-volume work, at Haiku’s price', rate: 0.025 },
+  { model: 'GPT-6 Astra', agent: 'codex', provider: 'openai', api: 'gpt-6-astra', label: 'GPT-6 Astra', about: 'OpenAI’s most capable, at 2.5 times Opus’s price', rate: 2.5 },
 ]
+
+// The picker groups models by who makes them.
+export const MODEL_GROUPS: { label: string; provider: Provider }[] = [
+  { label: 'Claude', provider: 'anthropic' },
+  { label: 'OpenAI (Codex)', provider: 'openai' },
+]
+
+export const modelOf = (name?: string) => MODELS.find((m) => m.model === name)
+export const providerOf = (name?: string): Provider => modelOf(name)?.provider ?? 'anthropic'
+export const agentName = (agent?: string) => (agent === 'codex' ? 'Codex' : agent === 'claude-code' ? 'Claude Code' : agent ?? '')
 
 export const RULES: { id: string; label: string }[] = [
   { id: 'deploy', label: 'May deploy' },

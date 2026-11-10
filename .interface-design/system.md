@@ -107,3 +107,9 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - With the Deployer off, the release plot becomes "Push to main", worked by the Builder, done when "Merged to main and live for everyone". Undo brings back "Ship to users".
 - The top bar's "N of M tasks done" counts every plot on the farm, the release included, so it always matches what you see. (Replaces the Checkpoint 16 count of work tasks only.)
 - A change the Planner can't make gets one short line, "I can’t change that yet.", then, when something is near, a bold "Closest I can do: …" line, then up to three suggestion chips (cream, small, ruled), nearest first. A chip sends its request and opens the change card. In the talk bar every line sits on its own: yours first, the Planner's under it.
+
+## A mixed crew
+- Models are grouped by maker wherever you pick one: "Claude" first, then "OpenAI (Codex)". In the plan's select that's an optgroup; on the farmer page each group has a small bold meta heading over its own grid of model buttons.
+- The farmer page names the agent under the farmer's name, in meta ink: "GPT-6.1 Sol on Codex", "Claude Haiku 5.5 on Claude Code".
+- Settings lists the server's keys under Live mode, one row each ("Anthropic key (Claude)", "OpenAI key (Codex)") with a bold Yes in leaf or No in meta ink. Never a value.
+- A plan simulated for want of a key carries a gold tag with the reason, "OpenAI key not set, simulated", instead of the red "Live call failed".

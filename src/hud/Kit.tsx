@@ -102,10 +102,18 @@ export function Kit() {
         <div className="kp-row" style={{ alignItems: 'flex-start' }}>
           <div className="kp-col" style={{ width: 200 }}>
             <span className="field-label">Model</span>
-            <select className="field-box" defaultValue="sonnet">
-              <option value="opus">Claude Opus 5.5</option>
-              <option value="sonnet">Claude Sonnet 5.5</option>
-              <option value="haiku">Claude Haiku 5.5</option>
+            <select className="field-box" defaultValue="sol">
+              <optgroup label="Claude">
+                <option value="opus">Claude Opus 5.5</option>
+                <option value="sonnet">Claude Sonnet 5.5</option>
+                <option value="haiku">Claude Haiku 5.5</option>
+              </optgroup>
+              <optgroup label="OpenAI (Codex)">
+                <option value="sol">GPT-6.1 Sol</option>
+                <option value="terra">GPT-6.1 Terra</option>
+                <option value="luna">GPT-6 Luna</option>
+                <option value="astra">GPT-6 Astra</option>
+              </optgroup>
             </select>
           </div>
           <div className="kp-col" style={{ width: 100 }}>

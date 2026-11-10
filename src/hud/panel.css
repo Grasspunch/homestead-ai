@@ -128,6 +128,7 @@
 .page-head { display: flex; gap: 16px; align-items: center; padding: 2px 4px 0; }
 .page-head .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .page-head h2 { font-family: px7; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 0; color: var(--bark); }
+.page-head .runs-on { font-size: var(--t-meta); color: var(--bark-3); margin-top: 2px; }
 .portrait.big { width: 120px; height: 120px; }
 .portrait.big canvas { inset: -6px; width: 96px; height: 96px; }
 .page-crew { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -146,6 +147,8 @@
 .row-now { background: var(--leaf-wash); border-radius: 4px; margin: 0 -4px; padding-left: 6px !important; padding-right: 6px !important; }
 
 .models { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.model-group + .model-group { margin-top: 10px; }
+.model-group h4 { margin: 0 0 6px; font-size: var(--t-meta); font-weight: 700; color: var(--bark-3); }
 .model { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; padding: 7px 9px; border-radius: 5px; background: #fff6e4; border: 2px solid #e2cba6; }
 .model b { font-size: var(--t-body); }
 .model span { font-size: var(--t-meta); color: var(--bark-3); text-transform: uppercase; letter-spacing: .4px; }

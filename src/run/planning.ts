@@ -9,7 +9,9 @@ export async function planInto(p: Project, crewSize?: number | FarmerId[], chang
   store.notify()
   const goal = change ? `${p.goal}\n\nChange to the plan: ${change}` : p.goal
   try {
-    const r = await askPlan(goal, crewSize)
+    // The Planner's own model decides which provider plans: Claude, or Codex if you switched it.
+    const model = store.kit[p.id]?.planner?.model ?? store.state(p)?.farmers.planner?.model
+    const r = await askPlan(goal, crewSize, model)
     store.setPlan(p.id, r.data.name, r.data.farmers, r.data.tasks, r.data.estimate, r.data.singleAgentEstimate)
     p.liveNote = r.error
     p.plannedLive = r.live

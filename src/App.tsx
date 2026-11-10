@@ -710,7 +710,7 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
 }
 
 // How sure the farmer is of its suggestion, and what that rests on.
-const SURE = { high: 'Sure', medium: 'Fairly sure', low: 'Your call' } as const
+const SURE = { high: 'Sure', medium: 'Fairly sure', low: 'Unsure' } as const
 function Sureness({ ask }: { ask: Ask }) {
   if (!ask.confidence) return null
   return (
@@ -764,7 +764,7 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
       {miss && <p className="said">{miss}</p>}
       <form className="row grow-form in-words" onSubmit={send}>
         <span className="field">
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Or answer in your own words" aria-label="Answer in your own words" />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={ask.reason === 'disagree' ? 'Ask about either way, think it through, or suggest your own' : 'Or answer in your own words'} aria-label="Answer in your own words" />
         </span>
         <button className="btn tan" type="submit" disabled={!text.trim()}>
           <Ico name="chat" />

@@ -12,20 +12,37 @@ export type LiveResult<T> = T & { tokens: number; model?: string }
 const ENDPOINT = '/api/agent'
 const HEADERS: Record<string, string> = { 'Content-Type': 'application/json' }
 
-let liveAvailable: Promise<boolean> | null = null
+// Which providers' keys the server has, yes or no. Never the keys themselves.
+export interface Keys {
+  anthropic: boolean
+  openai: boolean
+}
+let keysAvailable: Promise<Keys> | null = null
 
-// Whether the server has an API key. Cached for the page's life; a failed probe means not live.
+// Cached for the page's life; a failed probe means no keys.
+export function probeKeys(): Promise<Keys> {
+  keysAvailable ??= fetch(ENDPOINT, { headers: HEADERS })
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((j: { live?: boolean; keys?: Partial<Keys> }) => ({ anthropic: !!(j.keys?.anthropic ?? j.live), openai: !!j.keys?.openai }))
+    .catch(() => ({ anthropic: false, openai: false }))
+  return keysAvailable
+}
+
+// Whether the server has an Anthropic key, which the default Claude Planner needs.
 export function probeLive(): Promise<boolean> {
-  liveAvailable ??= fetch(ENDPOINT, { headers: HEADERS })
-    .then((r) => (r.ok ? r.json() : { live: false }))
-    .then((j: { live?: boolean }) => !!j.live)
-    .catch(() => false)
-  return liveAvailable
+  return probeKeys().then((k) => k.anthropic)
 }
 
 // For tests.
 export function resetLiveProbe() {
-  liveAvailable = null
+  keysAvailable = null
+}
+
+// The server had no key for the model this call needed.
+export class KeyMissing extends Error {
+  constructor(public provider: 'anthropic' | 'openai') {
+    super(provider === 'openai' ? 'OpenAI key not set, simulated' : 'Anthropic key not set, simulated')
+  }
 }
 
 async function call<T>(task: AgentTask, input: Record<string, unknown>): Promise<LiveResult<T>> {
@@ -35,12 +52,13 @@ async function call<T>(task: AgentTask, input: Record<string, unknown>): Promise
   } catch {
     throw new Error('Could not reach the agent server.')
   }
-  let body: { data?: T; tokens?: number; model?: string; error?: string } | null = null
+  let body: { data?: T; tokens?: number; model?: string; error?: string; missing?: 'anthropic' | 'openai' } | null = null
   try {
     body = await res.json()
   } catch {
     body = null
   }
+  if (res.status === 503 && body?.missing) throw new KeyMissing(body.missing)
   if (!res.ok || !body || body.data === undefined) {
     const why = body?.error ?? (res.ok ? 'The agent sent back no answer.' : `The agent server answered ${res.status}.`)
     throw new Error(task === 'plan' ? `Couldn't make a plan: ${why}` : task === 'reshape' ? `Couldn't read the change: ${why}` : `Couldn't route the message: ${why}`)
@@ -48,15 +66,16 @@ async function call<T>(task: AgentTask, input: Record<string, unknown>): Promise
   return { ...body.data, tokens: body.tokens ?? 0, model: body.model }
 }
 
-export function planGoal(goal: string, crewSize?: number | string[]): Promise<LiveResult<PlanOut>> {
-  if (Array.isArray(crewSize)) return call<PlanOut>('plan', { goal: `${goal}\n\nUse exactly this crew: ${crewSize.join(', ')}.`, crewSize: crewSize.length })
-  return call<PlanOut>('plan', crewSize === undefined ? { goal } : { goal, crewSize })
+// `model` is the Planner's model, by its picker name: the server picks the provider and model id from it.
+export function planGoal(goal: string, crewSize?: number | string[], model?: string): Promise<LiveResult<PlanOut>> {
+  if (Array.isArray(crewSize)) return call<PlanOut>('plan', { goal: `${goal}\n\nUse exactly this crew: ${crewSize.join(', ')}.`, crewSize: crewSize.length, model })
+  return call<PlanOut>('plan', crewSize === undefined ? { goal, model } : { goal, crewSize, model })
 }
 
-export function routeMessage(message: string, farmers: RouteInput['farmers'], tasks: RouteInput['tasks']): Promise<LiveResult<RouteOut>> {
-  return call<RouteOut>('route', { message, farmers, tasks })
+export function routeMessage(message: string, farmers: RouteInput['farmers'], tasks: RouteInput['tasks'], model?: string): Promise<LiveResult<RouteOut>> {
+  return call<RouteOut>('route', { message, farmers, tasks, model })
 }
 
-export function reshapeLive(message: string, ctx: ReshapeCtx): Promise<LiveResult<ReshapeOut>> {
-  return call<ReshapeOut>('reshape', { message, ctx })
+export function reshapeLive(message: string, ctx: ReshapeCtx, model?: string): Promise<LiveResult<ReshapeOut>> {
+  return call<ReshapeOut>('reshape', { message, ctx, model })
 }
