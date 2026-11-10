@@ -131,6 +131,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const finish = (task: PlanTask, end: number, notes = task.doneWhen, evidence = ['tests/report.json']) => {
     at(end + 0.3, { type: 'task_ripe', task: task.id, summary: notes, evidence })
     at(end + 0.4, { type: 'verify', task: task.id, by: verifier, pass: true })
+    // Unless you review finished work yourself, the checker's pass is the acceptance.
+    if (!asks('review')) at(end + 0.6, { type: 'accept', task: task.id, by: verifier })
     free[task.farmer] = end + 0.5
     lastBuilt = Math.max(lastBuilt, end + 0.5)
   }
@@ -221,7 +223,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
       finish(task, end + 0.3)
     } else if (task === disputed) {
       at(end + 0.4, { type: 'check', task: task.id, by: 'designer', pass: false, notes: 'On a phone the sources cover the reply box', evidence: ['evidence/phone.png'], proof: screens('overlap') })
-      at(end + 0.6, { type: 'disagree', task: task.id, sides: [{ farmer: 'designer', position: 'Fold the sources into one tap-to-open chip' }, { farmer: 'builder', position: 'Keep them open and make the text smaller' }] })
+      at(end + 0.6, { type: 'disagree', task: task.id, sides: [
+        { farmer: 'designer', position: 'Fold the sources into one tap-to-open chip', why: 'On a 375 px screen the three sources take 180 px and push the reply box under the keyboard. A chip keeps the box visible, and the done-when is about phones. The cost is one extra tap for people who want the sources.' },
+        { farmer: 'builder', position: 'Keep them open and make the text smaller', why: 'Support answers are only trusted when the source is visible, and a chip hides it. Dropping the sources to 12 px frees about 70 px, which clears the keyboard on most phones. It is a two-line change with no new component to test.' },
+      ] })
       if (asks('disagree')) {
         const id = `ask-${++askN}`
         at(end + 0.7, {

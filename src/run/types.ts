@@ -68,7 +68,8 @@ export type RunEvent =
   | { t: number; type: 'task_built'; task: string }
   | { t: number; type: 'check'; task: string; by: FarmerId; pass: boolean; notes: string; evidence?: string[]; proof?: Proof }
   | { t: number; type: 'auto_fix'; task?: string; what: string }
-  | { t: number; type: 'disagree'; task: string; sides: { farmer: FarmerId; position: string }[] }
+  | { t: number; type: 'disagree'; task: string; sides: { farmer: FarmerId; position: string; why?: string }[] }
+  | { t: number; type: 'accept'; task: string; by: FarmerId }
   | {
       t: number
       type: 'ask'
@@ -102,7 +103,12 @@ export interface TaskState extends PlanTask {
   evidence: string[]
   summary?: string
   verified?: boolean
+  acceptedBy?: FarmerId | 'you'
+  sentBack?: string // your note, when you sent it back
 }
+
+// What you did with finished work while watching: accepted it, or sent it back with a note.
+export type Review = { kind: 'accept' } | { kind: 'back'; note: string; done: boolean }
 
 export type FarmerState = 'idle' | 'working' | 'stuck' | 'needs' | 'done'
 
@@ -146,7 +152,7 @@ export interface RunState {
   singleAgentEstimate?: Estimate
   asks: Ask[]
   autoFixes: { t: number; task?: string; what: string }[]
-  disagreements: { t: number; task: string; sides: { farmer: FarmerId; position: string }[] }[]
+  disagreements: { t: number; task: string; sides: { farmer: FarmerId; position: string; why?: string }[] }[]
   usage: { usd: number; tokens: number; byKind: Record<UsageKind, { usd: number; tokens: number }> }
   deploy: { stage: DeployStage; t: number; url?: string; reason?: string; metrics?: Metrics }[]
   monitor: { t: number; stage: '10%' | '100%'; metrics: Metrics }[]
@@ -157,12 +163,12 @@ export interface RunState {
 }
 
 // How often the crew stops for you: each kind of moment either asks you or is handled by the crew.
-export type Moment = 'cost' | 'disagree' | 'failed' | 'big' | 'ship' | 'reship'
+export type Moment = 'cost' | 'disagree' | 'failed' | 'big' | 'review' | 'ship' | 'reship'
 export type Autonomy = Record<Moment, 'ask' | 'auto'>
 export type AutonomyLevel = 'often' | 'matters' | 'undoable'
 
 export const AUTONOMY_PRESETS: Record<AutonomyLevel, Autonomy> = {
-  often: { cost: 'ask', disagree: 'ask', failed: 'ask', big: 'ask', ship: 'ask', reship: 'ask' },
-  matters: { cost: 'ask', disagree: 'ask', failed: 'auto', big: 'ask', ship: 'ask', reship: 'auto' },
-  undoable: { cost: 'auto', disagree: 'auto', failed: 'auto', big: 'ask', ship: 'ask', reship: 'auto' },
+  often: { cost: 'ask', disagree: 'ask', failed: 'ask', big: 'ask', review: 'ask', ship: 'ask', reship: 'ask' },
+  matters: { cost: 'ask', disagree: 'ask', failed: 'auto', big: 'ask', review: 'ask', ship: 'ask', reship: 'auto' },
+  undoable: { cost: 'auto', disagree: 'auto', failed: 'auto', big: 'ask', review: 'auto', ship: 'ask', reship: 'auto' },
 }

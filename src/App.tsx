@@ -6,7 +6,7 @@ import { FarmView } from './farm/FarmView'
 import { Home } from './hud/Home'
 import { Ico, LimitField, Portrait, Swatch, mins, usd } from './hud/bits'
 import { FarmerPage } from './hud/FarmerPage'
-import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel } from './hud/Side'
+import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, setMoment } from './hud/Side'
 import { getLiveMode, route, setLiveMode } from './run/agent'
 import { planInto } from './run/planning'
 import { pendingAsk } from './run/reduce'
@@ -304,6 +304,10 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           Stops for you
           <LevelPicker p={p} compact />
         </div>
+        <button className="toggle review-toggle" onClick={() => setMoment(p, 'review', p.autonomy.review === 'ask' ? 'auto' : 'ask')}>
+          <span className={`switch${p.autonomy.review === 'ask' ? ' on' : ''}`} />
+          <span>I accept finished work</span>
+        </button>
         <form
           className="field paper grow-form-field"
           onSubmit={(e) => {
@@ -372,12 +376,16 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
           {dis && (
             <div className="sides">
               {dis.sides.map((x) => (
-                <div key={x.farmer} className="side-card">
-                  <Swatch farmer={x.farmer} />
-                  <span>
-                    <b>{s.farmers[x.farmer]?.label}</b> {x.position}
-                  </span>
-                </div>
+                <details key={x.farmer} className="side-card">
+                  <summary>
+                    <Swatch farmer={x.farmer} />
+                    <span className="grow">
+                      <b>{s.farmers[x.farmer]?.label}</b> {x.position}
+                    </span>
+                    {x.why && <span className="sub why-open">Why</span>}
+                  </summary>
+                  {x.why && <p className="why">{x.why}</p>}
+                </details>
               ))}
             </div>
           )}

@@ -31,8 +31,14 @@
 
 /* ask: the two sides of a disagreement */
 .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.side-card { display: flex; gap: 8px; align-items: flex-start; background: #fff6e4; border: 2px solid #d9b98f; border-radius: 6px; padding: 8px 10px; font-size: 14.5px; line-height: 1.35; }
+.side-card { display: block; background: #fff6e4; border: 2px solid #d9b98f; border-radius: 6px; padding: 8px 10px; font-size: 14.5px; line-height: 1.35; }
+.side-card summary { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; list-style: none; }
+.side-card summary::-webkit-details-marker { display: none; }
 .side-card .sw { margin-top: 3px; }
+.side-card .why-open { flex: none; text-decoration: underline; }
+.side-card[open] .why-open { opacity: .5; }
+.side-card .why { margin: 8px 0 0 26px; font-size: 13.5px; color: var(--bark-2); }
+.sides { align-items: start; }
 
 /* panel bits */
 .farmer-head { display: flex; gap: 12px; align-items: center; }
@@ -111,6 +117,7 @@
   border-image: url(/ui/btn_cream.png) 6 fill / 10px stretch; image-rendering: pixelated; font-family: px4; color: #5b3a26; white-space: nowrap; letter-spacing: .4px; }
 .plot-label.ghost { border-image-source: url(/ui/btn_white.png); opacity: .9; }
 .plot-label.sel { filter: drop-shadow(0 0 0 #fff6e4) drop-shadow(0 2px 0 rgba(74, 52, 38, .35)); transform: translate(-50%, -2px); }
+.plot-label.done { opacity: .6; }
 .plot-bar { display: block; height: 4px; border-radius: 2px; background: rgba(106, 74, 52, .2); overflow: hidden; }
 .plot-bar i { display: block; height: 100%; }
 
@@ -215,9 +222,6 @@
 }
 
 /* validation on the farm: a stamp under each plot's name, and a card that pops when a check lands */
-.plot-proof { display: flex; align-items: center; justify-content: center; gap: 4px; font: 700 11.5px var(--ui); letter-spacing: 0; color: var(--leaf); }
-.plot-proof i { font-style: normal; }
-.plot-proof.bad { color: var(--berry); }
 .proof-pop { position: absolute; transform: translate(-50%, -100%); z-index: 4; width: 236px; display: flex; flex-direction: column; gap: 6px; text-align: left; font-size: 13px; padding: 2px 4px 4px; animation: pop-in 260ms steps(4) both; filter: drop-shadow(0 3px 0 rgba(46, 34, 26, .3)); }
 .proof-pop::after { content: ""; position: absolute; left: 50%; bottom: -18px; width: 12px; height: 12px; background: #f7e6c6; transform: translateX(-50%) rotate(45deg); box-shadow: 2px 2px 0 #b98a5e; }
 .proof-pop.bad { outline: 3px solid var(--berry); outline-offset: 2px; border-radius: 4px; }
@@ -273,7 +277,8 @@ button.crew-x:hover { opacity: 1; }
   .plan-grid { grid-template-columns: 1fr; max-height: 44vh; overflow: auto; }
   .crew-list, .task-list { overflow: visible; }
 }
-.dlg .plan-row { flex-wrap: nowrap; align-items: center; }
+.dlg .plan-row { flex-wrap: wrap; align-items: center; row-gap: 10px; }
+.dlg .plan-row .grow-form-field { flex: 1 1 50%; }
 .dlg .plan-row .stops { flex: none; }
 .dlg .plan-row .field { height: 46px; }
 @media (max-width: 900px) { .dlg .plan-row { flex-wrap: wrap; } }
@@ -298,8 +303,6 @@ button.crew-x:hover { opacity: 1; }
 /* check and cross */
 .mark { display: inline-block; flex: none; width: 18px; height: 17px; background: url(/ui/ui_check.png) center / contain no-repeat; image-rendering: pixelated; vertical-align: -3px; }
 .mark.no { background-image: url(/ui/ui_x.png); width: 15px; height: 18px; }
-.plot-proof .mark { width: 12px; height: 11px; vertical-align: -1px; }
-.plot-proof .mark.no { width: 10px; height: 12px; }
 .tests-list li .mark { align-self: center; }
 /* inputs and selects sit in the pack's text box */
 .pick, .limit-field, .add-file input, .done-when input:focus, .done-when input:hover {
@@ -328,3 +331,8 @@ button.crew-x:hover { opacity: 1; }
 .pick { appearance: none; -webkit-appearance: none; padding-right: 16px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h8v2H6v2H4v2H4V4H2V2H0z' fill='%236a4a34'/%3E%3C/svg%3E") right 2px center / 8px 6px no-repeat; }
 .page-head > .page-crew { max-width: 62%; flex-wrap: nowrap; }
 .page-crew button { padding: 0 3px; font-size: 12.5px; }
+/* Finished work waiting for you: accept or send back. */
+.review { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; }
+.review p { margin: 0; }
+.review form input { min-width: 0; }
+.dlg .plan-row .review-toggle { flex: none; white-space: nowrap; font-size: 14px; }

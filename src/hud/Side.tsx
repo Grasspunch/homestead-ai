@@ -1,4 +1,5 @@
 // The wood panel on the right: one page at a time (a task, a farmer, the inbox, spend, the harvest, control).
+import { useState } from 'react'
 import { CREW } from '../agent/agents'
 import { store, type Project } from '../run/store'
 import type { Autonomy, AutonomyLevel, FarmerId, Moment, RunState, TaskState } from '../run/types'
@@ -12,7 +13,7 @@ const STATUS: Record<TaskState['status'], string> = {
   checking: 'Being checked',
   wilted: 'Failed a check',
   ripe: 'Done and checked',
-  accepted: 'Accepted',
+  accepted: 'Accepted and in the chest',
 }
 
 const ago = (s: RunState, t: number) => {
@@ -50,7 +51,7 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
           {ask ? <b>Waiting for you. </b> : null}
           {t.gate && s.deploy.length && s.deploy[s.deploy.length - 1].stage === 'rollback' && t.status !== 'ripe' ? <b>Rolled back by itself. </b> : null}
           {STATUS[t.status]}
-          {t.status === 'growing' ? `, about ${Math.round(t.progress * 100)}% there.` : '.'} {f && t.status !== 'ripe' ? `${f.label} is on it.` : ''}
+          {t.status === 'growing' ? `, about ${Math.round(t.progress * 100)}% there.` : '.'} {f && t.status !== 'ripe' && t.status !== 'accepted' ? `${f.label} is on it.` : ''}{t.status === 'accepted' && t.acceptedBy && t.acceptedBy !== 'you' ? ` The ${s.farmers[t.acceptedBy]?.label ?? 'checker'} accepted it when its check passed.` : ''}
           {t.summary && t.status === 'ripe' ? ` ${t.summary}.` : ''}
         </div>
       )}
@@ -72,6 +73,8 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
         )}
         {t.gate && <span className="tag sky">Waits for you</span>}
       </div>
+
+      {!planning && t.status === 'ripe' && !t.gate && <Review t={t} s={s} />}
 
       <div>
         <h3>Done when</h3>
@@ -169,6 +172,46 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
   )
 }
 
+// Finished work waits for you: accept it into the chest, or send it back with a note.
+function Review({ t, s }: { t: TaskState; s: RunState }) {
+  const [note, setNote] = useState('')
+  const [writing, setWriting] = useState(false)
+  const check = t.checks[t.checks.length - 1]
+  return (
+    <div className="review paper">
+      <p>
+        {t.sentBack ? <>Changed as you asked: “{t.sentBack}”. </> : null}
+        {check ? <>Checked by the {s.farmers[check.by]?.label ?? check.by}: {check.notes}.</> : 'Done.'}
+      </p>
+      {writing ? (
+        <form
+          className="row"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!note.trim()) return
+            store.sendBack(t.id, note.trim())
+            setWriting(false)
+            setNote('')
+          }}
+        >
+          <input className="grow" autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What should change?" aria-label="What should change" />
+          <button className="btn xs" type="submit">Send back</button>
+        </form>
+      ) : (
+        <div className="row">
+          <button className="btn sm" onClick={() => store.accept(t.id)}>
+            <Ico name="check" size={20} />
+            Accept
+          </button>
+          <button className="btn tan sm" onClick={() => setWriting(true)}>
+            Send back with a note
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function FarmerPanel({ s, id, p }: { s: RunState; id: FarmerId; p: Project }) {
   const f = s.farmers[id]
   if (!f) return null
@@ -237,13 +280,14 @@ export function FarmerPanel({ s, id, p }: { s: RunState; id: FarmerId; p: Projec
 
 export function InboxPanel({ s }: { s: RunState }) {
   const open = s.asks.filter((a) => !a.answer)
+  const review = s.tasks.filter((t) => t.status === 'ripe' && !t.gate)
   const decided = s.asks.filter((a) => a.answer).reverse()
   const fixed = [...s.autoFixes].reverse()
   return (
     <Panel label="Inbox">
       <div>
         <h3>Inbox</h3>
-        <h2>{open.length ? `${open.length} need${open.length === 1 ? 's' : ''} you` : 'Nothing needs you'}</h2>
+        <h2>{open.length + review.length ? `${open.length + review.length} need${open.length + review.length === 1 ? 's' : ''} you` : 'Nothing needs you'}</h2>
       </div>
       {open.length > 0 && (
         <div className="list">
@@ -256,6 +300,22 @@ export function InboxPanel({ s }: { s: RunState }) {
               </span>
             </button>
           ))}
+        </div>
+      )}
+      {review.length > 0 && (
+        <div>
+          <h3>Ready for you to review</h3>
+          <div className="list">
+            {review.map((t) => (
+              <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
+                <Swatch farmer={t.farmer} />
+                <span className="grow">
+                  {t.name}
+                  <span className="sub">{t.sentBack ? `Changed: ${t.sentBack}` : t.doneWhen}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
       <div>
@@ -488,6 +548,7 @@ export const MOMENTS: { key: Moment | 'rollback'; label: string; auto: string }[
   { key: 'disagree', label: 'Two farmers disagree', auto: 'The Planner picks, using the done-when' },
   { key: 'failed', label: 'A check fails', auto: 'The farmer fixes it and checks again' },
   { key: 'big', label: 'A big change across many files', auto: 'Lands it as one commit, with every test run before and after' },
+  { key: 'review', label: 'A task is finished', auto: 'Accepted once its check passes' },
   { key: 'ship', label: 'Shipping to real users', auto: 'Ships to 10% first' },
   { key: 'reship', label: 'Shipping again after a rollback', auto: 'Ships to 10% again once fixed' },
   { key: 'rollback', label: 'A rollout goes bad', auto: 'Rolls back by itself, always' },
@@ -511,12 +572,14 @@ export function LevelPicker({ p, compact = false }: { p: Project; compact?: bool
   )
 }
 
+export function setMoment(p: Project, k: Moment, v: 'ask' | 'auto') {
+  const next: Autonomy = { ...p.autonomy, [k]: v }
+  const level = (Object.keys(AUTONOMY_PRESETS) as AutonomyLevel[]).find((l) => MOMENTS.every((m) => m.key === 'rollback' || AUTONOMY_PRESETS[l][m.key] === next[m.key]))
+  store.setAutonomy(p.id, level ?? 'custom', next)
+}
+
 export function ControlPanel({ p }: { p: Project }) {
-  const set = (k: Moment, v: 'ask' | 'auto') => {
-    const next: Autonomy = { ...p.autonomy, [k]: v }
-    const level = (Object.keys(AUTONOMY_PRESETS) as AutonomyLevel[]).find((l) => MOMENTS.every((m) => m.key === 'rollback' || AUTONOMY_PRESETS[l][m.key] === next[m.key]))
-    store.setAutonomy(p.id, level ?? 'custom', next)
-  }
+  const set = (k: Moment, v: 'ask' | 'auto') => setMoment(p, k, v)
   return (
     <Panel label="How often the crew stops for you">
       <div>

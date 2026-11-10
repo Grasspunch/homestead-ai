@@ -1,5 +1,5 @@
 // Folds a run log into the state shown on screen at time t.
-import type { ActivityLine, Ask, FarmerId, FarmerRun, RunEvent, RunState, TaskState } from './types'
+import type { ActivityLine, Ask, FarmerId, FarmerRun, Review, RunEvent, RunState, TaskState } from './types'
 
 export function emptyState(): RunState {
   return {
@@ -29,7 +29,7 @@ export function parseLog(text: string): RunEvent[] {
 }
 
 // viewerAnswers: answers the person watching gave on replay, by ask id.
-export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<string, string> = {}): RunState {
+export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<string, string> = {}, reviews: Record<string, Review> = {}): RunState {
   const s = emptyState()
   s.t = t
   const task = (id?: string) => (id ? s.tasks.find((x) => x.id === id) : undefined)
@@ -177,6 +177,14 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
         log({ task: e.task, text: e.summary ?? 'Ready to review', kind: 'ripe' }, e.t)
         break
       }
+      case 'accept': {
+        const k = task(e.task)
+        if (k && k.status === 'ripe') {
+          k.status = 'accepted'
+          k.acceptedBy = e.by
+        }
+        break
+      }
       case 'verify': {
         const k = task(e.task)
         if (k) k.verified = e.pass
@@ -213,6 +221,27 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
     if (!f || f.state === 'needs' || f.state === 'done') continue
     const k = task(f.task)
     if (k && k.status === 'wilted') f.state = 'stuck'
+  }
+
+  // Your reviews: accepted work leaves its plot for the chest; sent-back work regrows until it's changed.
+  for (const [id, r] of Object.entries(reviews)) {
+    const k = task(id)
+    if (!k || k.status !== 'ripe') continue
+    if (r.kind === 'accept') {
+      k.status = 'accepted'
+      k.acceptedBy = 'you'
+      continue
+    }
+    k.sentBack = r.note
+    if (r.done) continue
+    k.status = 'growing'
+    k.progress = 0.7
+    const f = farmer(k.farmer)
+    if (f && f.state !== 'needs') {
+      f.state = 'working'
+      f.task = id
+      f.lastTool = `Changing it: ${r.note}`
+    }
   }
   return s
 }

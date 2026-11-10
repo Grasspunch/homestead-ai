@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react'
 import { duration, pendingAsk, reduce } from './reduce'
 import { simulateRun } from './simulate'
 import { simulatePlan } from './simPlan'
-import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
+import type { Review, Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
 import { applyEdit, emptyEdit, type KitEdit } from './kit'
 
@@ -51,6 +51,8 @@ class Store {
   playing = false
   speed = 1 // run-ms per wall-ms, set from the run's length
   viewerAnswers: Record<string, string> = {}
+  // Finished work you accepted or sent back while watching, by task id.
+  reviews: Record<string, Review> = {}
   crewSize: Record<string, number> = {} // per own project: how many farmers the plan uses
   chat: Record<string, ChatLine[]> = {}
   settingsOpen = false
@@ -107,7 +109,7 @@ class Store {
 
   state(p = this.project()): RunState | null {
     if (!p) return null
-    return reduce(p.events, p.approved ? this.clock : Number.MAX_SAFE_INTEGER, this.viewerAnswers)
+    return reduce(p.events, p.approved ? this.clock : Number.MAX_SAFE_INTEGER, this.viewerAnswers, this.reviews)
   }
 
   // The sample farm: a simulated crew run of a plan for SAMPLE_GOAL.
@@ -133,6 +135,7 @@ class Store {
     this.pause()
     this.clock = 0
     this.viewerAnswers = {}
+    this.reviews = {}
     const p = this.project(project)
     if (p?.approved) {
       this.setSpeed(p.events)
@@ -199,6 +202,22 @@ class Store {
     if (ans && ans.t > this.clock) this.clock = ans.t
     if (this.drawer?.kind === 'ask' && this.drawer.id === askId) this.drawer = null
     this.notify()
+  }
+
+  accept(task: string) {
+    this.reviews = { ...this.reviews, [task]: { kind: 'accept' } }
+    this.notify()
+  }
+
+  // Sent back with a note: the farmer regrows it, then it's ready for you again.
+  sendBack(task: string, note: string) {
+    this.reviews = { ...this.reviews, [task]: { kind: 'back', note, done: false } }
+    this.notify()
+    setTimeout(() => {
+      const r = this.reviews[task]
+      if (r?.kind === 'back' && r.note === note) this.reviews = { ...this.reviews, [task]: { ...r, done: true } }
+      this.notify()
+    }, 4000)
   }
 
   // ---- your own project: a live plan you can change and approve ----
@@ -286,6 +305,7 @@ class Store {
     p.approved = true
     this.clock = 0
     this.viewerAnswers = {}
+    this.reviews = {}
     this.setSpeed(p.events)
     this.play()
   }

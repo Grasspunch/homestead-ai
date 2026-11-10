@@ -8,7 +8,7 @@ import { draw, hasFrame } from '../map/atlas'
 import { atlasLoaded } from '../hud/bits'
 import { TINT } from '../run/crew'
 import { store } from '../run/store'
-import { ProofPop, proofStamp } from '../hud/Proof'
+import { ProofPop } from '../hud/Proof'
 import type { FarmerId, RunState, TaskState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
 
@@ -59,10 +59,11 @@ export function farmLayout(tasks: { id: string; gate: boolean }[], known: string
 const DOOR = { x: 4, y: 6.6 }
 const MAILBOX = { x: 6.1, y: 3.8 }
 const CHEST = { x: 7.1, y: 4.85 }
-const COINS = { x: 7.4, y: 6.6 }
-// The henhouse is your inbox (an egg per item); the cow is the connected repo (milk while it's read).
-const henOf = (l: { w: number }) => ({ x: l.w - 3.2, y: 7.2 })
-const cowOf = (l: { w: number }) => ({ x: l.w - 3.6, y: 2.8 })
+// Chickens stand about the yard. Click one and it gives you a heart.
+const CHICKENS = [
+  { x: 9.6, y: 12.5, flip: false },
+  { x: 10.7, y: 12.8, flip: true },
+]
 const CHORES: { x: number; y: number; anim: string; dir: Dir }[] = [
   { x: 4.6, y: 10.1, anim: 'chop', dir: 'right' },
   { x: 8.6, y: 10.6, anim: 'water', dir: 'down' },
@@ -107,6 +108,7 @@ export function FarmView(p: FarmViewProps) {
   const walkers = useRef(new Map<FarmerId, Walker>())
   const born = useRef(new Map<string, number>())
   const hover = useRef<string | null>(null)
+  const hearts = useRef(new Map<number, number>())
 
   const known = useRef<string[]>([])
   const layout = useMemo(() => {
@@ -119,7 +121,7 @@ export function FarmView(p: FarmViewProps) {
 
   useEffect(() => {
     atlasLoaded().then(() => setReady(true))
-    const imgs = ['bubble', 'emoji', 'dot_1', 'selectorst_a1', 'mailbox', 'mailbox_letter', 'coin', 'crates', 'henhouse', 'egg', 'tray', 'cow_brown', 'calf', 'milk']
+    const imgs = ['bubble', 'emoji', 'dot_1', 'selectorst_a1', 'mailbox', 'mailbox_letter', 'crates']
     for (const k of imgs) loadImg(k)
   }, [])
 
@@ -185,7 +187,7 @@ export function FarmView(p: FarmViewProps) {
       k.oy = Math.round(fr.cy - k.cy * PX * k.s)
       if (labels.current) labels.current.style.transform = `translate(${k.ox}px, ${k.oy}px)`
       const c = canvas.current
-      if (c) paint(c, props.current, layout, k, walkers.current, born.current, hover.current, now, dt)
+      if (c) paint(c, props.current, layout, k, walkers.current, born.current, hover.current, now, dt, hearts.current)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -202,12 +204,8 @@ export function FarmView(p: FarmViewProps) {
     for (const [id, w] of walkers.current) if (Math.abs(t.x - w.x) < 0.6 && t.y > w.y - 1.6 && t.y < w.y + 0.2) return `f:${id}`
     for (const pl of layout.plots) if (t.x > pl.x - 2.2 && t.x < pl.x + pl.w + 1 && t.y > pl.y - 1.2 && t.y < pl.y + pl.h + 1.9) return `t:${pl.id}`
     if (near(t, { x: MAILBOX.x + 0.5, y: MAILBOX.y - 0.6 }, 0.9)) return 'mail'
-    const hen = henOf(layout)
-    if (t.x > hen.x - 0.6 && t.x < hen.x + 2.8 && t.y > hen.y - 0.2 && t.y < hen.y + 4.4) return 'mail'
-    const cow = cowOf(layout)
-    if (t.x > cow.x - 1.4 && t.x < cow.x + 2.2 && t.y > cow.y - 1 && t.y < cow.y + 1.6) return 'f:builder'
     if (near(t, { x: CHEST.x + 0.5, y: CHEST.y + 0.3 }, 0.8)) return 'chest'
-    if (near(t, COINS, 1)) return 'coins'
+    for (let i = 0; i < CHICKENS.length; i++) if (near(t, { x: CHICKENS[i].x, y: CHICKENS[i].y - 0.4 }, 0.6)) return `c:${i}`
     return null
   }
 
@@ -245,7 +243,7 @@ export function FarmView(p: FarmViewProps) {
     else if (h.startsWith('t:')) p.onTask(h.slice(2))
     else if (h === 'mail') p.onMail()
     else if (h === 'chest') p.onChest()
-    else if (h === 'coins') p.onCoins()
+    else if (h.startsWith('c:')) hearts.current.set(Number(h.slice(2)), performance.now())
   }
 
   const T = PX * cam.s
@@ -271,13 +269,6 @@ export function FarmView(p: FarmViewProps) {
             />
           )
         })}
-      <button className="plot-label yard-label" style={{ left: (henOf(layout).x + 0.9) * T, top: (henOf(layout).y + 4.5) * T, fontSize: cam.s >= 3 ? 13 : 11 }} onClick={(e) => { e.stopPropagation(); p.onMail() }} onPointerUp={(e) => e.stopPropagation()}>
-        Inbox
-        {p.state.asks.some((a) => !a.answer) && <span className="plot-proof bad">{p.state.asks.filter((a) => !a.answer).length} needs you</span>}
-      </button>
-      <button className="plot-label yard-label" style={{ left: (cowOf(layout).x + 0.6) * T, top: (cowOf(layout).y + 1.5) * T, fontSize: cam.s >= 3 ? 13 : 11 }} onClick={(e) => { e.stopPropagation(); p.onFarmer('builder') }} onPointerUp={(e) => e.stopPropagation()}>
-        GitHub repo
-      </button>
       {layout.plots.map((pl) => {
         const t = p.state.tasks.find((x) => x.id === pl.id)
         if (!t) return null
@@ -285,7 +276,7 @@ export function FarmView(p: FarmViewProps) {
         return (
           <button
             key={pl.id}
-            className={`plot-label${p.planning ? ' ghost' : ''}${sel ? ' sel' : ''}`}
+            className={`plot-label${p.planning ? ' ghost' : ''}${sel ? ' sel' : ''}${t.status === 'accepted' ? ' done' : ''}`}
             style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y + pl.h + 1) * T + 2, fontSize: cam.s >= 3 ? 13 : 11 }}
             onClick={(e) => {
               e.stopPropagation()
@@ -299,7 +290,6 @@ export function FarmView(p: FarmViewProps) {
                 <i style={{ width: `${Math.round(t.progress * 100)}%`, background: t.status === 'wilted' || (t.gate && p.state.deploy[p.state.deploy.length - 1]?.stage === 'rollback' && t.status !== 'ripe') ? 'var(--berry)' : 'var(--leaf)' }} />
               </span>
             )}
-            {!p.planning && proofStamp(t)}
           </button>
         )
       })}
@@ -400,6 +390,16 @@ function emote(g: CanvasRenderingContext2D, fx: number, fy: number, what: Emote,
   g.drawImage(IMG.emoji, c * 32, r * 32, 32, 32, bx + 1.5, by + 1, 13, 13)
 }
 
+// A heart rises from a chicken you clicked and fades.
+function heart(g: CanvasRenderingContext2D, x: number, y: number, age: number) {
+  if (!ok('emoji')) return
+  const k = age / 1400
+  g.save()
+  g.globalAlpha = 1 - k * k
+  g.drawImage(IMG.emoji, 2 * 32, 9 * 32, 32, 32, x * PX - 6, y * PX - 26 - k * 14, 12, 12)
+  g.restore()
+}
+
 function selector(g: CanvasRenderingContext2D, pl: Plot, now: number) {
   if (!ok('selectorst_a1')) return
   const pad = 3 + (Math.floor(now / 400) % 2)
@@ -465,7 +465,7 @@ function poseOf(id: FarmerId, s: RunState, layout: Layout, planning: boolean, op
   return { x: c.x, y: c.y, anim: c.anim, dir: c.dir }
 }
 
-function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam, walkers: Map<FarmerId, Walker>, born: Map<string, number>, hover: string | null, now: number, dt: number) {
+function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam, walkers: Map<FarmerId, Walker>, born: Map<string, number>, hover: string | null, now: number, dt: number, hearts: Map<number, number>) {
   const dpr = window.devicePixelRatio || 1
   const W = c.clientWidth
   const H = c.clientHeight
@@ -516,64 +516,27 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
   spr(g, 'house_2', 2, 2)
   spr(g, 'well', 2, 8)
   spr(g, 'workstation', 5, 9.4)
-  // Chickens peck about the yard and the henhouse, each on its own slow loop.
-  const hen = henOf(layout)
-  const inbox = s.asks.length + s.autoFixes.length
-  const waiting = s.asks.some((a) => !a.answer)
-  if (ok('henhouse')) g.drawImage(IMG.henhouse, hen.x * PX, hen.y * PX)
-  if (ok('tray')) g.drawImage(IMG.tray, (hen.x - 0.3) * PX, (hen.y + 3.4) * PX)
-  if (ok('egg'))
-    for (let i = 0; i < Math.min(5, inbox); i++) {
-      const last = i === Math.min(5, inbox) - 1 && waiting
-      const hop = last ? Math.max(0, Math.sin(now / 180)) * 2 : 0
-      g.drawImage(IMG.egg, 0, 0, 16, 16, (hen.x - 0.15 + i * 0.36) * PX, (hen.y + 3.05) * PX - hop, 10, 10)
-    }
-  const peck = (n: number, x: number, y: number, r: number) => {
-    const a = now / 4200 + n * 2.1
-    const px = x + Math.cos(a) * r
-    const py = y + Math.sin(a * 1.3) * r * 0.4
-    const pecking = Math.floor(now / 400 + n) % 5 === 0
-    spr(g, `chicken_${pecking ? 1 : 0}`, px, py, { flip: Math.sin(a) > 0 })
-  }
-  peck(0, 9.6, 12.5, 0.8)
-  peck(1, hen.x + 0.4, hen.y + 4.6, 0.9)
-  peck(2, hen.x + 1.6, hen.y + 5.1, 0.7)
-  // The cow is the repo the crew reads and opens pull requests on. Milk shows while someone is in it.
-  const cow = cowOf(layout)
-  const using = Object.values(s.farmers).some((f) => f && f.state === 'working' && /read|pull request|search|code/i.test(f.lastTool ?? ''))
-  if (ok('cow_brown')) {
-    const f = Math.floor(now / 600) % 2
-    g.drawImage(IMG.cow_brown, 0, 0, 32, 32, cow.x * PX, (cow.y - 0.6) * PX - f, 32, 32)
-  }
-  if (ok('calf')) g.drawImage(IMG.calf, 0, 0, 32, 32, (cow.x - 1.3) * PX, (cow.y + 0.2) * PX, 24, 24)
-  if (using && ok('bubble') && ok('milk')) {
-    const bob = Math.round(Math.sin(now / 260))
-    g.drawImage(IMG.bubble, 0, 0, 31, 32, (cow.x + 1.4) * PX, (cow.y - 1.7) * PX + bob, 16, 16.5)
-    g.drawImage(IMG.milk, 0, 0, 16, 16, (cow.x + 1.4) * PX + 3, (cow.y - 1.7) * PX + 2 + bob, 10, 10)
-  }
+  // Chickens stand still and peck now and then; a clicked one floats a heart.
+  CHICKENS.forEach((c, i) => {
+    const pecking = Math.floor(now / 500 + i * 3) % 7 === 0
+    spr(g, `chicken_${pecking ? 1 : 0}`, c.x, c.y, { flip: c.flip })
+    const at = hearts.get(i)
+    if (at !== undefined && now - at < 1400) heart(g, c.x, c.y, now - at)
+  })
 
-  // Mailbox: a letter when something needs you.
-  const mail = p.openAsk ? 'mailbox_letter' : 'mailbox'
-  if (ok(mail)) g.drawImage(IMG[mail], MAILBOX.x * PX, (MAILBOX.y - (p.openAsk ? 2.05 : 1.8)) * PX)
+  // Mailbox: a letter when something needs you, a question or finished work to review.
+  const letter = !!p.openAsk || s.tasks.some((t) => t.status === 'ripe' && !t.gate)
+  const mail = letter ? 'mailbox_letter' : 'mailbox'
+  if (ok(mail)) g.drawImage(IMG[mail], MAILBOX.x * PX, (MAILBOX.y - (letter ? 2.05 : 1.8)) * PX)
   // The shipping chest, open once something is ready to review.
   const anyRipe = s.tasks.some((t) => t.status === 'ripe' || t.status === 'accepted')
   spr(g, anyRipe ? 'chest_open' : 'chest', CHEST.x, CHEST.y)
   // Crates stack up by the chest as tasks come in.
   if (ok('crates')) {
-    const n = Math.min(3, s.tasks.filter((t) => t.status === 'ripe' || t.status === 'accepted').length)
+    const n = Math.min(3, s.tasks.filter((t) => t.status === 'accepted').length)
     const spots = [[CHEST.x + 0.95, CHEST.y - 0.55], [CHEST.x + 1.9, CHEST.y - 0.55], [CHEST.x + 1.45, CHEST.y - 1.45]]
     for (let i = 0; i < n; i++) g.drawImage(IMG.crates, 20, 3, 24, 26, spots[i][0] * PX, spots[i][1] * PX, 24, 26)
   }
-  // The coin pile grows with the spend: a coin per $5, up to 14.
-  if (ok('coin')) {
-    const n = Math.min(14, Math.round(s.usage.usd / 5))
-    for (let i = 0; i < n; i++) {
-      const col = i % 4
-      const row = Math.floor(i / 4)
-      g.drawImage(IMG.coin, 0, 0, 22, 22, (COINS.x - 1 + col * 0.42 + row * 0.2) * PX, (COINS.y - 0.4 - row * 0.32) * PX, 9, 9)
-    }
-  }
-
   // Plots.
   const lastDeploy = s.deploy[s.deploy.length - 1]
   for (const pl of layout.plots) {
@@ -598,13 +561,16 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
         (i) => back && i === 0,
       )
       if (!back && ok('crates')) g.drawImage(IMG.crates, 20, 3, 24, 26, (pl.x + pl.w + 1.1) * PX, (pl.y - 0.9) * PX, 16, 17)
+    } else if (t.status === 'accepted') {
+      // Accepted: harvested into the chest, the soil left bare.
+      bed(g, pl, true)
     } else {
       bed(g, pl, t.status !== 'wilted')
       crops(g, pl, (i) => (st < 0 ? -1 : t.status === 'growing' && st < 2 && (i * 7) % 3 === 0 ? Math.max(0, st - 1) : st), () => t.status === 'wilted')
     }
     // One emote per plot when no farmer speaks for it.
     const rolledBack = pl.gate && lastDeploy?.stage === 'rollback' && t.status !== 'ripe'
-    const plotEmote: Emote | null = t.status === 'wilted' || rolledBack ? 'x' : t.status === 'ripe' || t.status === 'accepted' ? 'check' : t.status === 'checking' ? 'read' : null
+    const plotEmote: Emote | null = t.status === 'wilted' || rolledBack ? 'x' : t.status === 'ripe' ? 'check' : t.status === 'checking' ? 'read' : null
     if (plotEmote) emote(g, pl.x + pl.w / 2, pl.y + 1.3, plotEmote, now)
   }
   // A big change: every plot whose code it reaches glows with it, in time with its own plot.

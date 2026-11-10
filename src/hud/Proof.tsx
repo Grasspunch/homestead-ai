@@ -165,27 +165,6 @@ type Check = TaskState['checks'][number]
 
 const WHO: Record<string, string> = { planner: 'Planner', builder: 'Builder', designer: 'Designer', tester: 'Tester', deployer: 'Deployer' }
 
-// What a check rests on, in a few characters, under the plot's name.
-export function proofStamp(t: TaskState) {
-  const c = t.checks[t.checks.length - 1]
-  if (!c) return null
-  const pr = c.proof
-  const tests = pr?.tests
-  const failed = tests?.filter((x) => !x.pass).length ?? 0
-  const word = !pr
-    ? c.pass ? 'checked' : 'failed'
-    : pr.kind === 'screens'
-      ? c.pass ? `${pr.shots?.length ?? 2} screens ok` : 'screen broken'
-      : pr.kind === 'rollout'
-        ? c.pass ? 'live, errors ok' : 'errors high'
-        : failed ? `${failed} of ${tests!.length} failing` : `${tests!.length} ${pr.kind === 'integration' ? 'e2e' : 'tests'} pass`
-  return (
-    <span className={`plot-proof${c.pass ? '' : ' bad'}`}>
-      <Mark pass={c.pass} />
-      {word}
-    </span>
-  )
-}
 
 // A check that just happened, popped over its plot: the test seeds, the screenshots or the live line.
 export function ProofPop({ check, state, style, onOpen }: { check: Check; state: RunState; style: CSSProperties; onOpen: () => void }) {
