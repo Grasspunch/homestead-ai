@@ -12,7 +12,7 @@ import { getLiveMode, route, setLiveMode } from './run/agent'
 import { planInto } from './run/planning'
 import { pendingAsk } from './run/reduce'
 import { store, useStore, type Project } from './run/store'
-import type { Ask, FarmerId, RunState } from './run/types'
+import type { Ask, FarmerId, RunState, TaskState } from './run/types'
 import { FARMER_ORDER } from './run/types'
 import { MODELS, applyEdit } from './run/kit'
 
@@ -54,6 +54,9 @@ function Farm() {
   if (!p || !s) return null
   const pending = p.approved ? pendingAsk(p.events, st.clock, st.viewerAnswers) : null
   const ask = pending ? s.asks.find((a) => a.id === pending) ?? null : null
+  // Finished work waiting for you. While any waits, the ship ask can't be answered.
+  const toReview = p.approved ? s.tasks.filter((t) => t.status === 'ripe' && !t.gate) : []
+  const review = toReview[0]
   const d = st.drawer
   const sel = d?.kind === 'task' ? { kind: 'task' as const, id: d.id } : d?.kind === 'farmer' ? { kind: 'farmer' as const, id: d.id } : null
   const side = !!d && d.kind !== 'chat' && d.kind !== 'farmer' && d.kind !== 'ask' && d.kind !== 'summary' ? true : d?.kind === 'summary'
@@ -78,7 +81,17 @@ function Farm() {
       {d?.kind === 'usage' && <UsagePanel s={s} />}
       {d?.kind === 'summary' && <HarvestPanel s={s} p={p} />}
       {d?.kind === 'control' && <ControlPanel p={p} />}
-      {!p.approved ? <PlanDialogue p={p} s={s} side={side} /> : ask ? <AskDialogue key={ask.id} s={s} ask={ask} side={side} /> : st.trustOffer === p.id ? <TrustDialogue s={s} side={side} /> : <PlannerDialogue p={p} s={s} side={side} />}
+      {!p.approved ? (
+        <PlanDialogue p={p} s={s} side={side} />
+      ) : ask && !(review && isShipAsk(ask)) ? (
+        <AskDialogue key={ask.id} s={s} ask={ask} side={side} />
+      ) : st.trustOffer === p.id ? (
+        <TrustDialogue s={s} side={side} />
+      ) : review ? (
+        <ReviewDialogue key={review.id} s={s} t={review} side={side} waiting={toReview.length} />
+      ) : (
+        <PlannerDialogue p={p} s={s} side={side} />
+      )}
     </>
   )
 }
@@ -324,6 +337,65 @@ const REASON: Record<Ask['reason'], { label: string; urgency: 'red' | 'honey' | 
   disagree: { label: 'Disagreement', urgency: 'calm', icon: 'chat' },
 }
 
+const isShipAsk = (a: Ask) => a.reason === 'irreversible' && /merge|ship/i.test(a.suggested)
+// Commits in the pull request: one per task you (or the checker) accepted.
+export const accepted = (s: RunState) => s.tasks.filter((t) => t.status === 'accepted' && !t.gate).length
+
+// Finished work, from the farmer who made it: accept it, or send it back with what should change.
+function ReviewDialogue({ s, t, side, waiting }: { s: RunState; t: TaskState; side: boolean; waiting: number }) {
+  const [note, setNote] = useState('')
+  const [writing, setWriting] = useState(false)
+  const check = t.checks[t.checks.length - 1]
+  return (
+    <Dialogue farmer={t.farmer} side={side}>
+      <div className="who">
+        <button className="plot-chip" onClick={() => store.setDrawer({ kind: 'task', id: t.id })} title="Open this task">
+          <Sign crop={cropOf(s.tasks, t.id)} />
+          {t.name}
+        </button>
+        <span className="urgency calm">
+          <Ico name="check" tone="light" />
+          Ready for you
+        </span>
+        {waiting > 1 && <span className="aside">{waiting - 1} more after this</span>}
+      </div>
+      <p>
+        {t.sentBack ? <>Changed as you asked: “{t.sentBack}”. </> : null}
+        {check ? <>Checked by the {s.farmers[check.by]?.label ?? check.by}: {check.notes}.</> : 'Done.'}
+      </p>
+      {writing ? (
+        <form
+          className="row"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!note.trim()) return
+            store.sendBack(t.id, note.trim())
+            setWriting(false)
+            setNote('')
+          }}
+        >
+          <span className="field">
+            <input autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What should change?" aria-label="What should change" />
+          </span>
+          <button className="btn" type="submit">
+            Send back
+          </button>
+        </form>
+      ) : (
+        <div className="row">
+          <button className="btn" onClick={() => store.accept(t.id)} autoFocus>
+            <Ico name="check" />
+            Accept
+          </button>
+          <button className="btn tan" onClick={() => setWriting(true)}>
+            Send back
+          </button>
+        </div>
+      )}
+    </Dialogue>
+  )
+}
+
 function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
   const [holding, setHolding] = useState(false)
   const r = REASON[ask.reason]
@@ -354,7 +426,7 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
         <p>Holding. Nothing ships until you say so.</p>
       ) : (
         <>
-          <p>{ask.question}</p>
+          <p>{isShipAsk(ask) ? `Everything is accepted. The pull request has ${accepted(s)} commit${accepted(s) === 1 ? '' : 's'}, one per accepted task.` : ask.question}</p>
           {dis && (
             <div className="sides">
               {dis.sides.map((x) => (
