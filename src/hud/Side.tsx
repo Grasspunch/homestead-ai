@@ -4,7 +4,7 @@ import { CREW } from '../agent/agents'
 import { store, type Project } from '../run/store'
 import type { Autonomy, AutonomyLevel, FarmerId, Moment, RunState, TaskState } from '../run/types'
 import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
-import { Ico, Mark, Portrait, Swatch, mins, tokens, usd } from './bits'
+import { Ico, Mark, Portrait, Swatch, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 
 const STATUS: Record<TaskState['status'], string> = {
@@ -68,7 +68,6 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
               <i className="coin-s" />
               {usd(t.usd)} so far
             </span>
-            <span className="chip mono">{tokens(t.tokens)} tokens</span>
           </>
         )}
         {t.gate && <span className="tag sky">Waits for you</span>}
@@ -151,7 +150,7 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
                   <span className="grow">{c.notes}</span>
                   <span className="sub">{s.farmers[c.by]?.label ?? c.by}, {ago(s, c.t)}</span>
                 </summary>
-                {c.proof && <ProofView proof={c.proof} chat={chat} />}
+                {c.proof && <ProofView proof={c.proof} chat={chat} note={c.notes} />}
               </details>
             ))}
           </div>
@@ -362,9 +361,51 @@ export function InboxPanel({ s }: { s: RunState }) {
 
 interface Fix {
   key: string
+  farmer: FarmerId
   title: string
   why: string
   saves: number
+}
+
+// What a farmer has given back for its spend, in a few words.
+export function returnOf(s: RunState, id: FarmerId): string {
+  const done = s.tasks.filter((t) => t.farmer === id && (t.status === 'ripe' || t.status === 'accepted')).length
+  const caught = s.tasks.reduce((n, t) => n + t.checks.filter((c) => c.by === id && !c.pass).length, 0)
+  const parts: string[] = []
+  if (done) parts.push(`${done} task${done === 1 ? '' : 's'} done`)
+  if (caught) parts.push(`caught ${caught} failure${caught === 1 ? '' : 's'}`)
+  if (id === 'planner' && s.replans.length) parts.push(`${s.replans.length} re-plan${s.replans.length === 1 ? '' : 's'} that kept the cost down`)
+  if (id === 'deployer' && s.deploy.some((d) => d.stage === 'rollback')) parts.push('rolled back a bad release by itself')
+  const out = parts.join(', ')
+  return out ? out.charAt(0).toUpperCase() + out.slice(1) : 'Nothing back yet'
+}
+
+export function fixFor(s: RunState, id: FarmerId): Fix | undefined {
+  return fixes(s).find((f) => f.farmer === id)
+}
+
+export function ApplyFix({ fix }: { fix: Fix }) {
+  return (
+    <div className="fix">
+      <span className="grow">
+        {fix.title}
+        <span className="sub">{fix.why} Saves about {usd(fix.saves)} a run.</span>
+      </span>
+      {store.applied.has(fix.key) ? (
+        <span className="ok px-s">Applied</span>
+      ) : (
+        <button
+          className="btn xs"
+          onClick={() => {
+            store.applied.add(fix.key)
+            store.say('Applied. Your next run uses it.')
+          }}
+        >
+          Apply
+        </button>
+      )}
+    </div>
+  )
 }
 
 function fixes(s: RunState): Fix[] {
@@ -372,13 +413,13 @@ function fixes(s: RunState): Fix[] {
   const total = Math.max(0.01, s.usage.usd)
   const retry = s.usage.byKind.retry.usd
   const read = s.usage.byKind.read.usd
-  if (retry / total > 0.04) out.push({ key: 'retry', title: 'Cap fix rounds at 2 per task', why: `Fixes after failed checks cost ${usd(retry)} this run.`, saves: retry * 0.4 })
-  if (read / total > 0.2) out.push({ key: 'read', title: 'Narrow the Builder to the folders it touched', why: `Reading files was ${Math.round((read / total) * 100)}% of the spend.`, saves: read * 0.35 })
+  if (retry / total > 0.04) out.push({ key: 'retry', farmer: 'builder', title: 'Cap fix rounds at 2 per task', why: `Fixes after failed checks cost ${usd(retry)} this run.`, saves: retry * 0.4 })
+  if (read / total > 0.2) out.push({ key: 'read', farmer: 'builder', title: 'Narrow the Builder to the folders it touched', why: `Reading files was ${Math.round((read / total) * 100)}% of the spend.`, saves: read * 0.35 })
   const designer = s.farmers.designer
-  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', title: 'Check screenshots with Codex Sol 6.1', why: 'The Designer’s screenshot checks don’t need the bigger model.', saves: designer.usd * 0.3 })
+  if (designer && designer.model.includes('Opus')) out.push({ key: 'shots', farmer: 'designer', title: 'Check screenshots with Codex Sol 6.1', why: 'The Designer’s screenshot checks don’t need the bigger model.', saves: designer.usd * 0.3 })
   for (const r of s.replans) {
     const t = s.tasks.find((x) => r.added.includes(x.id))
-    if (t) out.push({ key: `split-${t.id}`, title: `Plan "${t.name.split(': ')[1] ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.', saves: 0.25 })
+    if (t) out.push({ key: `split-${t.id}`, farmer: 'planner', title: `Plan "${t.name.split(': ')[1] ?? t.name}" as two tasks from the start`, why: 'It was split mid-run after going over its limit.', saves: 0.25 })
   }
   return out
 }
@@ -409,51 +450,29 @@ export function UsagePanel({ s }: { s: RunState }) {
           </p>
         )}
       </div>
-      {list.length > 0 && (
-        <div>
-          <h3>Ways to spend less</h3>
-          <div className="fixes">
-            {list.map((f) => (
-              <div className="fix" key={f.key}>
-                <span className="grow">
-                  {f.title}
-                  <span className="sub">{f.why} Saves about {usd(f.saves)} a run.</span>
-                </span>
-                {store.applied.has(f.key) ? (
-                  <span className="ok px-s">Applied</span>
-                ) : (
-                  <button
-                    className="btn xs"
-                    onClick={() => {
-                      store.applied.add(f.key)
-                      store.say('Applied. Your next run uses it.')
-                    }}
-                  >
-                    Apply
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
       <div>
-        <h3>By farmer</h3>
-        <div className="list">
+        <h3>Each farmer, for what it costs</h3>
+        <div className="crew-spend">
           {ids.map((id) => {
             const f = s.farmers[id]!
-            const over = f.usd > f.limits.usd * 0.85
+            const spike = f.usd > f.limits.usd * 0.85
+            const fix = list.find((x) => x.farmer === id)
             return (
-              <button key={id} onClick={() => store.setDrawer({ kind: 'farmer', id })} className="spend-row">
-                <Swatch farmer={id} />
-                <span className="grow">
-                  {f.label} <span className="sub-inline">{f.model}</span>
-                  <span className="bar thin">
-                    <i style={{ width: `${(f.usd / max) * 100}%`, background: over ? 'var(--honey)' : '#c9a27a' }} />
-                  </span>
+              <div key={id} className={`crew-spend-row${spike ? ' spike' : ''}`}>
+                <button className="crew-spend-head" onClick={() => store.setDrawer({ kind: 'farmer', id })}>
+                  <Swatch farmer={id} />
+                  <b>{f.label}</b>
+                  <span className="sub-inline">{f.model}</span>
+                  <span className="grow" />
+                  <span className="money">{usd(f.usd)}</span>
+                  <span className="of">of {usd(f.limits.usd)}</span>
+                </button>
+                <span className="bar thin">
+                  <i style={{ width: `${(f.usd / max) * 100}%`, background: spike ? 'var(--honey)' : '#c9a27a' }} />
                 </span>
-                <span className="mono">{usd(f.usd)}</span>
-              </button>
+                <span className="returned">{spike ? <b className="warn">Near its limit. </b> : null}{returnOf(s, id)}.</span>
+                {fix && <ApplyFix fix={fix} />}
+              </div>
             )
           })}
         </div>
@@ -471,20 +490,31 @@ export function UsagePanel({ s }: { s: RunState }) {
           <span className="chip"><span className="sw" style={{ background: 'var(--honey)' }} />Fixing {usd(kinds.retry.usd)}</span>
         </div>
       </div>
-      <p className="fine mono">{tokens(s.usage.tokens)} tokens, {s.actions} actions</p>
+      <p className="fine">{s.actions} actions so far.</p>
     </Panel>
   )
 }
 
+// The chest is the pull request: a commit per accepted task, the checks that ran on it, then the merge and rollout.
 export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
-  const ripe = s.tasks.filter((t) => t.status === 'ripe' || t.status === 'accepted')
+  const built = s.tasks.filter((t) => !t.gate)
+  const inPr = built.filter((t) => t.status === 'accepted')
+  const waiting = built.filter((t) => t.status === 'ripe')
   const decided = s.asks.filter((a) => a.answer)
   const est = s.estimate
+  const merged = s.deploy.length > 0
+  const live = s.deploy[s.deploy.length - 1]?.stage
+  const state = !merged ? 'Open' : live === '100%' ? 'Live for everyone' : live === 'rollback' ? 'Rolled back' : 'Merged, live for 10%'
+  const files = (t: TaskState) => 3 + (t.id.length % 5)
   return (
-    <Panel label="Harvest">
+    <Panel label="Pull request">
       <div>
-        <h3>Harvest</h3>
-        <h2>{s.done ? 'Everything is in' : `${ripe.length} of ${s.tasks.length} tasks in`}</h2>
+        <h3>Pull request</h3>
+        <h2>{p.name}</h2>
+        <div className="meta pr-meta">
+          <span className={`tag ${merged ? (live === 'rollback' ? 'red' : 'green') : 'grey'}`}>{state}</span>
+          <span className="mono">homestead/{p.id}</span>
+        </div>
       </div>
       {s.done && est && (
         <div className="sum">
@@ -493,50 +523,65 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
         </div>
       )}
       <div>
-        <h3>Each task, with its proof</h3>
+        <h3>Commits, one per accepted task</h3>
         <div className="list">
-          {s.tasks.map((t) => {
-            const last = [...t.checks].reverse().find((c) => c.pass)
-            const proof = last?.proof
-            const what = !proof ? '' : proof.kind === 'screens' ? 'Screenshots' : proof.kind === 'rollout' ? 'Live metrics' : `${proof.tests?.filter((x) => x.pass).length} tests`
-            const done = t.status === 'ripe' || t.status === 'accepted'
+          {inPr.map((t) => {
+            const check = [...t.checks].reverse().find((c) => c.pass)
             return (
               <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
-                {done ? <Mark pass /> : <span className="sub">·</span>}
+                <Mark pass />
+                <span className="grow">
+                  {t.name}
+                  <span className="sub">
+                    By the {s.farmers[t.farmer]?.label ?? t.farmer}
+                    {check ? `, checked by the ${s.farmers[check.by]?.label ?? check.by}` : ''}
+                  </span>
+                </span>
+                <span className="mono">{files(t)} files</span>
+              </button>
+            )
+          })}
+          {!inPr.length && <div className="sub">Nothing accepted yet.</div>}
+        </div>
+      </div>
+      {waiting.length > 0 && (
+        <div>
+          <h3>Waiting for you to accept</h3>
+          <div className="list">
+            {waiting.map((t) => (
+              <button key={t.id} onClick={() => store.setDrawer({ kind: 'task', id: t.id })}>
+                <Swatch farmer={t.farmer} />
                 <span className="grow">
                   {t.name}
                   <span className="sub">{t.doneWhen}</span>
                 </span>
-                <span className="sub">{what}</span>
               </button>
-            )
-          })}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
       {s.deploy.length > 0 && (
         <div>
-          <h3>Rollout</h3>
+          <h3>After the merge</h3>
           <Rollout state={s} compact />
         </div>
       )}
-      <div>
-        <h3>Stays with you</h3>
-        <div className="list">
-          {decided.map((a) => (
-            <div key={a.id}>
-              <Swatch farmer={a.farmer} />
-              <span className="grow">
-                {a.answer!.choice}
-                <span className="sub">{a.question}</span>
-              </span>
-            </div>
-          ))}
-          <div>
-            <Ico name="check" size={16} tone="green" />
-            <span className="grow">{s.autoFixes.length} things fixed without you</span>
+      {decided.length > 0 && (
+        <div>
+          <h3>Your decisions on it</h3>
+          <div className="list">
+            {decided.map((a) => (
+              <div key={a.id}>
+                <Swatch farmer={a.farmer} />
+                <span className="grow">
+                  {a.answer!.choice}
+                  <span className="sub">{a.question}</span>
+                </span>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      )}
       {p.kind === 'sample' && s.done && (
         <button className="btn sm" onClick={() => store.open(p.id)}>
           <Ico name="back" size={20} />

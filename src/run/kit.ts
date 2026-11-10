@@ -27,7 +27,7 @@ export const SKILLS: Record<FarmerId, KitItem[]> = {
   ],
   designer: [
     { id: 'style', name: 'House style', kind: 'skill', about: 'Your colours, type and voice, from docs/brand.md', tokens: 2400 },
-    { id: 'shots', name: 'Screenshot pages', kind: 'tool', about: 'Takes phone and desktop screenshots of a page', tokens: 400 },
+    { id: 'shots', name: 'Screenshot pages', kind: 'tool', about: 'Takes screenshots of a page', tokens: 400 },
     { id: 'figma', name: 'Figma', kind: 'connector', about: 'Reads frames from your design file', tokens: 3000 },
     { id: 'a11y', name: 'Accessibility check', kind: 'skill', about: 'Contrast, labels and keyboard use', tokens: 900 },
   ],

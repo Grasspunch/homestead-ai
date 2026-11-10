@@ -61,7 +61,7 @@ function integration(plan: PlanTask[]): Proof {
   }
 }
 
-const screens = (state: 'ok' | 'overlap'): Proof => ({ kind: 'screens', shots: [{ device: 'phone', state }, { device: 'desktop', state: 'ok' }] })
+const screens = (state: 'ok' | 'overlap'): Proof => ({ kind: 'screens', shots: [{ device: 'desktop', state }] })
 
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
 
@@ -70,7 +70,7 @@ function steps(task: PlanTask, farmer: FarmerId): string[] {
   const n = lower(task.name)
   switch (farmer) {
     case 'designer':
-      return ['Sketched the screen states', 'Wrote the copy', `Built the screens for ${n}`, 'Took screenshots on phone and desktop']
+      return ['Sketched the screen states', 'Wrote the copy', `Built the screens for ${n}`, 'Took screenshots of the built screens']
     case 'tester':
       return ['Started the app with test data', 'Ran every done-when check', 'Ran the full test suite']
     case 'deployer':
@@ -222,28 +222,28 @@ export function simulateRun(input: SimInput): RunEvent[] {
       at(end + 0.3, { type: 'check', task: task.id, by: checker, pass: true, notes: task.doneWhen, evidence: ['tests/report.json: 10 passed'], proof: unit(task) })
       finish(task, end + 0.3)
     } else if (task === disputed) {
-      at(end + 0.4, { type: 'check', task: task.id, by: 'designer', pass: false, notes: 'On a phone the sources cover the reply box', evidence: ['evidence/phone.png'], proof: screens('overlap') })
+      at(end + 0.4, { type: 'check', task: task.id, by: 'designer', pass: false, notes: 'The sources cover the reply box', evidence: ['evidence/widget.png'], proof: screens('overlap') })
       at(end + 0.6, { type: 'disagree', task: task.id, sides: [
-        { farmer: 'designer', position: 'Fold the sources into one tap-to-open chip', why: 'On a 375 px screen the three sources take 180 px and push the reply box under the keyboard. A chip keeps the box visible, and the done-when is about phones. The cost is one extra tap for people who want the sources.' },
-        { farmer: 'builder', position: 'Keep them open and make the text smaller', why: 'Support answers are only trusted when the source is visible, and a chip hides it. Dropping the sources to 12 px frees about 70 px, which clears the keyboard on most phones. It is a two-line change with no new component to test.' },
+        { farmer: 'designer', position: 'Fold the sources into one tap-to-open chip', why: 'In the 380 px chat panel the three sources take 180 px and cover the reply box. A chip keeps the box clear, and the done-when asks for the sources to be shown without getting in the way. The cost is one extra click for people who want them.' },
+        { farmer: 'builder', position: 'Keep them open and make the text smaller', why: 'Support answers are only trusted when the source is visible, and a chip hides it. Dropping the sources to 12 px frees about 70 px, which clears the reply box. It is a two-line change with no new component to test.' },
       ] })
       if (asks('disagree')) {
         const id = `ask-${++askN}`
         at(end + 0.7, {
           type: 'ask', id, farmer: 'designer', task: task.id, reason: 'disagree',
-          question: 'The Builder and I disagree on how this looks on phones.',
-          impact: 'Phone users get either a tidy screen with a tap to see sources, or everything at once in smaller text.',
+          question: 'The Builder and I disagree on how the sources fit in the chat panel.',
+          impact: 'People get either a tidy panel with one click to see sources, or every source at once in smaller text.',
           suggested: 'Fold into a chip', alternatives: ['Smaller text'],
         })
         at(end + 2, { type: 'answer', id, choice: 'Fold into a chip', by: 'human' })
       } else {
-        at(end + 0.8, { type: 'auto_fix', task: task.id, what: `The Designer and Builder disagreed on phones. The ${label(lead)} picked the Designer's chip, since the done-when is about phones.` })
+        at(end + 0.8, { type: 'auto_fix', task: task.id, what: `The Designer and Builder disagreed on where the sources go. The ${label(lead)} picked the Designer's chip, since the done-when asks for the sources without getting in the way.` })
       }
-      at(end + 2.5, { type: 'tool', farmer: 'builder', task: task.id, tool: 'edit', summary: 'Folded the sources into a chip on small screens' })
+      at(end + 2.5, { type: 'tool', farmer: 'builder', task: task.id, tool: 'edit', summary: 'Folded the sources into a chip' })
       usage(end + 2.51, 'builder', task.id, usdPer * 0.2, 'write')
       end += 4
-      at(end, { type: 'check', task: task.id, by: 'designer', pass: true, notes: task.doneWhen, evidence: ['evidence/phone.png', 'evidence/desktop.png'], proof: screens('ok') })
-      finish(task, end, task.doneWhen, ['evidence/phone.png', 'evidence/desktop.png'])
+      at(end, { type: 'check', task: task.id, by: 'designer', pass: true, notes: task.doneWhen, evidence: ['evidence/widget.png'], proof: screens('ok') })
+      finish(task, end, task.doneWhen, ['evidence/widget.png'])
     } else {
       const proof = task.id === 'e2e-check' ? integration(plan) : task.farmer === 'designer' ? screens('ok') : unit(task)
       at(end + 0.4, { type: 'check', task: task.id, by: task.farmer === 'designer' ? 'designer' : checker, pass: true, notes: task.doneWhen, evidence: ['tests/report.json'], proof })
@@ -261,14 +261,17 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const id = `ask-${++askN}`
       at(start + 0.3, {
         type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible',
-        question: isShip ? 'Everything passed. Ready to put it in front of real users.' : `${task.name} reaches real people. Go ahead?`,
-        impact: isShip ? `It goes to 10% of users first. If errors pass ${ERROR_LIMIT * 100}%, I roll back by myself.` : 'This one is hard to undo.',
-        suggested: isShip ? 'Ship to 10% first' : 'Go ahead',
+        question: isShip ? `Everything passed. The pull request has ${plan.filter((x) => !x.gate).length} commits, one per task.` : `${task.name} reaches real people. Go ahead?`,
+        impact: isShip ? `Merging puts it in front of 10% of users first. If errors pass ${ERROR_LIMIT * 100}%, I roll back by myself.` : 'This one is hard to undo.',
+        suggested: isShip ? 'Merge and ship to 10%' : 'Go ahead',
         alternatives: isShip ? ['Not yet', 'Ship to everyone'] : ['Not yet'],
       })
-      at(start + 1.5, { type: 'answer', id, choice: isShip ? 'Ship to 10% first' : 'Go ahead', by: 'human' })
+      at(start + 1.5, { type: 'answer', id, choice: isShip ? 'Merge and ship to 10%' : 'Go ahead', by: 'human' })
     }
     let t = start + 1.7
+    if (isShip) {
+      at(t - 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: `Merged the pull request (${plan.filter((x) => !x.gate).length} commits)` })
+    }
     for (const s of steps(task, f)) {
       at(t, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: s })
       usage(t + 0.01, f, task.id, usdPer * 0.15, 'write')

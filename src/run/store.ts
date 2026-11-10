@@ -53,6 +53,10 @@ class Store {
   viewerAnswers: Record<string, string> = {}
   // Finished work you accepted or sent back while watching, by task id.
   reviews: Record<string, Review> = {}
+  // Trust that grows: after five accepts with nothing sent back, the Planner offers once to let the checker accept.
+  trustOffer: string | null = null
+  trustOffered = new Set<string>()
+  autoAccept = new Set<string>()
   crewSize: Record<string, number> = {} // per own project: how many farmers the plan uses
   chat: Record<string, ChatLine[]> = {}
   settingsOpen = false
@@ -109,7 +113,14 @@ class Store {
 
   state(p = this.project()): RunState | null {
     if (!p) return null
-    return reduce(p.events, p.approved ? this.clock : Number.MAX_SAFE_INTEGER, this.viewerAnswers, this.reviews)
+    const s = reduce(p.events, p.approved ? this.clock : Number.MAX_SAFE_INTEGER, this.viewerAnswers, this.reviews)
+    if (this.autoAccept.has(p.id))
+      for (const t of s.tasks)
+        if (t.status === 'ripe' && !t.gate && !this.reviews[t.id]) {
+          t.status = 'accepted'
+          t.acceptedBy = s.farmers.tester ? 'tester' : 'planner'
+        }
+    return s
   }
 
   // The sample farm: a simulated crew run of a plan for SAMPLE_GOAL.
@@ -206,6 +217,23 @@ class Store {
 
   accept(task: string) {
     this.reviews = { ...this.reviews, [task]: { kind: 'accept' } }
+    const p = this.project()
+    const all = Object.values(this.reviews)
+    if (p && !this.trustOffered.has(p.id) && all.filter((r) => r.kind === 'accept').length >= 5 && !all.some((r) => r.kind === 'back')) {
+      this.trustOffered.add(p.id)
+      this.trustOffer = p.id
+    }
+    this.notify()
+  }
+
+  answerTrust(yes: boolean) {
+    const p = this.project()
+    if (p && yes) {
+      this.autoAccept.add(p.id)
+      p.autonomy = { ...p.autonomy, review: 'auto' }
+      p.level = 'custom'
+    }
+    this.trustOffer = null
     this.notify()
   }
 

@@ -5,6 +5,7 @@ import { MODELS, RULES, SKILLS, applyEdit, contextTokens, defaultRules, emptyEdi
 import type { FarmerId, RunState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
 import { Ico, LimitField, Portrait, Swatch, Ticks, tokens, usd } from './bits'
+import { ApplyFix, fixFor, returnOf } from './Side'
 
 // Which skill a tool line is using, so the page can light it up while it runs.
 function inUse(line: string | undefined, items: KitItem[]): string | undefined {
@@ -152,7 +153,12 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
               {p.approved && (
                 <Ticks used={base.usd} total={f.limits.usd} />
               )}
-              {p.approved && <p className="fine">{usd(base.usd)} spent so far, {tokens(base.tokens)} tokens.</p>}
+              {p.approved && (
+                <p className="fine">
+                  {usd(base.usd)} spent so far. {returnOf(s, id)}.
+                </p>
+              )}
+              {p.approved && fixFor(s, id) && <ApplyFix fix={fixFor(s, id)!} />}
             </section>
           </div>
 

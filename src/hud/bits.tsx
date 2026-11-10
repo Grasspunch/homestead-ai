@@ -17,15 +17,18 @@ const ICONS = {
 } as const
 export type IconName = keyof typeof ICONS
 
-export function Ico({ name, size = 24, tone = 'dark' }: { name: IconName; size?: number; tone?: 'dark' | 'light' | 'green' }) {
+// Pixel icons only scale by whole numbers (16 or 32 px); anything else smears the pixels.
+// 'bold' is the pack's filled, outlined set, for the top bar.
+export function Ico({ name, size: asked = 16, tone = 'dark' }: { name: IconName; size?: number; tone?: 'dark' | 'light' | 'green' | 'bold' }) {
+  const size = asked >= 28 ? 32 : 16
   const [c, r] = ICONS[name]
-  const col = tone === 'dark' ? c + 12 : tone === 'light' ? c + 4 : c
-  const row = tone === 'green' ? r + 10 : r
+  const col = tone === 'dark' || tone === 'bold' ? c + 12 : tone === 'light' ? c + 4 : c
+  const row = tone === 'green' || tone === 'bold' ? r + 10 : r
   return (
     <i
       className="ico"
       aria-hidden
-      style={{ width: size, height: size, backgroundSize: `${(256 * size) / 16}px ${(320 * size) / 16}px`, backgroundPosition: `-${col * size}px -${row * size}px` }}
+      style={{ width: size, height: size, ['--ico' as string]: `${size}px`, backgroundSize: `${(256 * size) / 16}px ${(320 * size) / 16}px`, backgroundPosition: `-${col * size}px -${row * size}px` }}
     />
   )
 }

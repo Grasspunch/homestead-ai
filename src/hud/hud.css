@@ -1,7 +1,9 @@
 /* Homestead HUD: the concept v3 look. Sprout Lands nine-slice wood and paper over the farm,
    the pixel font for names and buttons, Atkinson Hyperlegible Next for anything you read. */
-@font-face { font-family: px7; src: url(/ui/px7.ttf); font-display: block; }
-@font-face { font-family: px4; src: url(/ui/px4.ttf); font-display: block; }
+/* The pixel fonts' metrics are rebalanced so their capitals sit in the middle of the line box,
+   like the reading font's do: anything centred in a flex row is then centred to the eye. */
+@font-face { font-family: px7; src: url(/ui/px7.ttf); font-display: block; ascent-override: 89%; descent-override: 11%; line-gap-override: 0%; }
+@font-face { font-family: px4; src: url(/ui/px4.ttf); font-display: block; ascent-override: 89%; descent-override: 11%; line-gap-override: 0%; }
 
 :root {
   --bark: #4a3426;      /* ink */
@@ -42,7 +44,8 @@ input, textarea { font: inherit; color: inherit; }
 
 /* ---- nine-slices ---- */
 .paper { border: 12px solid transparent; border-image: url(/ui/textbox.png) 5 fill / 15px stretch; image-rendering: pixelated; }
-.wood { border: 18px solid transparent; border-image: url(/ui/panel.png) 6 fill / 18px stretch; image-rendering: pixelated; }
+/* Panels are the same light paper as the dialogues: one background for every surface. */
+.wood { border: 15px solid transparent; border-image: url(/ui/textbox.png) 5 fill / 15px stretch; image-rendering: pixelated; }
 .px { font-family: px7; font-weight: 400; letter-spacing: .5px; }
 .px-s { font-family: px4; font-weight: 400; letter-spacing: .5px; }
 
@@ -60,7 +63,7 @@ input, textarea { font: inherit; color: inherit; }
 .btn.xs { height: 34px; font-size: 15px; border-width: 8px; gap: 6px; }
 .btn small { font-family: var(--ui); font-size: 13px; color: var(--bark-2); letter-spacing: 0; }
 
-.ico { display: inline-block; flex: none; image-rendering: pixelated; background-image: url(/ui/icons.png); }
+.ico { display: inline-block; vertical-align: middle; flex: none; image-rendering: pixelated; background-image: url(/ui/icons.png); }
 
 /* ---- top bar ---- */
 .top { position: absolute; left: 16px; right: 16px; top: 14px; display: flex; gap: 10px; align-items: center; pointer-events: none; z-index: 5; }
@@ -115,7 +118,7 @@ input, textarea { font: inherit; color: inherit; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; color: var(--bark-2); align-items: center; }
 .chip { display: inline-flex; align-items: center; gap: 6px; }
 button.chip:hover { color: var(--bark); text-decoration: underline; }
-.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; vertical-align: middle; flex: none; }
 .mono { font-family: var(--mono); font-size: 12.5px; }
 .list { display: flex; flex-direction: column; }
 .list > * { display: flex; gap: 8px; align-items: flex-start; padding: 7px 2px; border-top: 1px solid rgba(106, 74, 52, .14); font-size: 14.5px; text-align: left; }
@@ -175,3 +178,23 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 }
 @media (max-width: 520px) { .top .title { display: none; } .top .spacer { flex: 1; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; } }
+/* inbox: the envelope alone, the count pinned to its corner */
+.inbox-btn { position: relative; }
+.mail-ico { width: 26px; height: 16px; background: url(/ui/mail_icon.png) 0 0 / 26px 16px; image-rendering: pixelated; display: block; }
+.inbox-btn .badge { position: absolute; top: -18px; right: -18px; }
+
+/* Alignment: every row that mixes an icon and text centres them on one line. */
+.tag, .badge { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.tag { height: 22px; padding: 0 8px; }
+.pill { line-height: 1; }
+/* Rows that may wrap: everything lines up on the first line's centre (a 20px line). */
+.list > * { line-height: 20px; }
+.list .sub { line-height: 18px; }
+.list > * > .sw { margin-top: 4px; }
+.list > * > .ico { margin-top: calc((20px - var(--ico, 16px)) / 2); }
+.list > * > .mark { margin-top: 1.5px; }
+.list > * > .sub, .list > * > .mono { margin-top: 1px; }
+/* top bar icon buttons: as tall as the pills, the icon at 2x */
+.top .top-ico { height: 56px; min-width: 56px; justify-content: center; padding: 0; border-width: 12px; }
+.top .top-ico .mail-ico { width: 39px; height: 24px; background-size: 39px 24px; }
+.inbox-btn .badge { top: -20px; right: -20px; }

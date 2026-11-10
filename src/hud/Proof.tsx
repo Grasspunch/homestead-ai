@@ -31,72 +31,31 @@ export function Tests({ tests, kind }: { tests: TestResult[]; kind: 'unit' | 'in
 }
 
 // A screenshot of the screen the crew built, drawn here as a small mock of the product.
-export function Screens({ shots, chat }: { shots: Shot[]; chat: boolean }) {
+// Real screenshots of the built screen, cropped to what the check is about. A failed check rings the broken part.
+const RING: Record<'chat' | 'app', { x: number; y: number; w: number; h: number }> = {
+  chat: { x: 0.068, y: 0.599, w: 0.864, h: 0.3125 },
+  app: { x: 0.029, y: 0.845, w: 0.943, h: 0.117 },
+}
+
+export function Screens({ shots, chat, note, thumb = false }: { shots: Shot[]; chat: boolean; note?: string; thumb?: boolean }) {
+  const shot = shots[shots.length - 1]
+  if (!shot) return null
+  const kind = chat ? 'chat' : 'app'
+  const bad = shot.state === 'overlap'
+  const r = RING[kind]
   return (
-    <div className="shots">
-      {shots.map((s) => (
-        <figure key={s.device} className={`shot ${s.device}`}>
-          <div className="frame">{chat ? <ChatScreen shot={s} /> : <AppScreen shot={s} />}</div>
-          <figcaption>
-            {s.device === 'phone' ? 'Phone, 375 px' : 'Desktop, 1280 px'}
-            {s.state === 'overlap' && <span className="bad">, covers the reply box</span>}
-          </figcaption>
-        </figure>
-      ))}
-    </div>
+    <figure className={`shot ${kind}${thumb ? ' thumb' : ''}`}>
+      <span className="shot-img">
+        <img src={`/proof/${kind}-${shot.state}.png`} alt={bad ? `Screenshot: ${note ?? 'the broken part is ringed'}` : 'Screenshot of the built screen'} />
+        {bad && <i className="ring" style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` }} />}
+      </span>
+      {!thumb && bad && note && <figcaption className="bad">{note}</figcaption>}
+    </figure>
   )
 }
 
-function ChatScreen({ shot }: { shot: Shot }) {
-  const overlap = shot.state === 'overlap'
-  const body = (
-    <div className="chat">
-      <div className="chat-top">Help</div>
-      <div className="msg you">How do I get a refund?</div>
-      <div className="msg bot">
-        You can ask for a refund within 30 days from Orders, then Refund. It reaches your card in 3 to 5 days.
-        {!overlap && <span className="src">2 sources</span>}
-      </div>
-      {overlap && (
-        <div className="src-list">
-          <div>Refunds and returns</div>
-          <div>Payment methods</div>
-        </div>
-      )}
-      <div className={`chat-in${overlap ? ' covered' : ''}`}>Ask a question</div>
-    </div>
-  )
-  if (shot.device === 'phone') return body
-  return (
-    <div className="desk">
-      <div className="desk-page">
-        <i />
-        <i />
-        <i />
-      </div>
-      <div className="desk-widget">{body}</div>
-    </div>
-  )
-}
-
-function AppScreen({ shot }: { shot: Shot }) {
-  const overlap = shot.state === 'overlap'
-  return (
-    <div className={`app ${shot.device}`}>
-      <div className="chat-top">Overview</div>
-      <div className="app-rows">
-        <i />
-        <i />
-        <i />
-      </div>
-      <div className={`app-btn${overlap ? ' covered' : ''}`}>Continue</div>
-      {overlap && <div className="app-foot" />}
-    </div>
-  )
-}
-
-export function ProofView({ proof, chat }: { proof: Proof; chat: boolean }) {
-  if (proof.kind === 'screens' && proof.shots) return <Screens shots={proof.shots} chat={chat} />
+export function ProofView({ proof, chat, note }: { proof: Proof; chat: boolean; note?: string }) {
+  if (proof.kind === 'screens' && proof.shots) return <Screens shots={proof.shots} chat={chat} note={note} />
   if (proof.tests) return <Tests tests={proof.tests} kind={proof.kind === 'integration' ? 'integration' : 'unit'} />
   return null
 }
@@ -189,8 +148,9 @@ export function ProofPop({ check, state, style, onOpen }: { check: Check; state:
         <span className={check.pass ? 'ok' : 'bad'}>{check.pass ? 'passed' : 'failed'}</span>
       </span>
       {pr?.kind === 'screens' && pr.shots ? (
-        <span className="pp-shots">
-          <Screens shots={pr.shots} chat={chat} />
+        <span className="pp-shot-row">
+          <Screens shots={pr.shots} chat={chat} thumb />
+          <span className="pp-line">{check.notes}</span>
         </span>
       ) : pr?.kind === 'rollout' ? (
         <span className="pp-roll">

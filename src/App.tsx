@@ -77,20 +77,20 @@ function Farm() {
       {d?.kind === 'usage' && <UsagePanel s={s} />}
       {d?.kind === 'summary' && <HarvestPanel s={s} p={p} />}
       {d?.kind === 'control' && <ControlPanel p={p} />}
-      {!p.approved ? <PlanDialogue p={p} s={s} side={side} /> : ask ? <AskDialogue key={ask.id} s={s} ask={ask} side={side} /> : <PlannerDialogue p={p} s={s} side={side} />}
+      {!p.approved ? <PlanDialogue p={p} s={s} side={side} /> : ask ? <AskDialogue key={ask.id} s={s} ask={ask} side={side} /> : st.trustOffer === p.id ? <TrustDialogue s={s} side={side} /> : <PlannerDialogue p={p} s={s} side={side} />}
     </>
   )
 }
 
 function Top({ p, s }: { p: Project; s: RunState }) {
   const st = useStore()
-  const open = s.asks.filter((a) => !a.answer).length
+  const open = s.asks.filter((a) => !a.answer).length + s.tasks.filter((t) => t.status === 'ripe' && !t.gate).length
   const done = s.tasks.filter((t) => t.status === 'ripe' || t.status === 'accepted').length
   const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? 'Done and live' : `${done} of ${s.tasks.length} tasks done`
   return (
     <header className="top">
-      <button className="btn white sm" onClick={() => store.home()} aria-label="Your farms">
-        <Ico name="home" size={20} />
+      <button className="btn white top-ico" onClick={() => store.home()} aria-label="Your farms">
+        <Ico name="home" size={32} />
       </button>
       <div className="title paper">
         <b>{p.name}</b>
@@ -99,28 +99,28 @@ function Top({ p, s }: { p: Project; s: RunState }) {
       <div className="spacer" />
       {p.approved && (
         <>
-          <button className="pill paper" onClick={() => store.setDrawer({ kind: 'inbox' })} aria-label={`Inbox, ${open} need you`}>
-            <i className={`mail${open ? ' on' : ''}`} />
-            {open > 0 ? <span className="badge">{open}</span> : <span className="pill-word">Inbox</span>}
+          <button className="btn white top-ico inbox-btn" onClick={() => store.setDrawer({ kind: 'inbox' })} aria-label={open ? `Inbox, ${open} need you` : 'Inbox'}>
+            <i className="mail-ico" />
+            {open > 0 && <span className="badge">{open}</span>}
           </button>
           <button className="pill paper" onClick={() => store.setDrawer({ kind: 'usage' })} aria-label="Spend">
             <i className="coin" />
             <b>{usd(s.usage.usd)}</b>
           </button>
-          <button className="btn white sm" onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
-            <Ico name={st.playing ? 'pause' : 'play'} size={20} />
+          <button className="btn white top-ico" onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
+            <Ico name={st.playing ? 'pause' : 'play'} size={32} />
           </button>
         </>
       )}
       <button
-        className="btn white sm"
+        className="btn white top-ico"
         aria-label="Settings"
         onClick={() => {
           store.settingsOpen = !store.settingsOpen
           store.notify()
         }}
       >
-        <Ico name="gear" size={20} />
+        <Ico name="gear" size={32} />
       </button>
     </header>
   )
@@ -274,6 +274,29 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           <Ico name="play" />
           Approve
           {est && <small>{usd(est.usd)}</small>}
+        </button>
+      </div>
+    </Dialogue>
+  )
+}
+
+// Offered once, after five accepts with nothing sent back.
+function TrustDialogue({ s, side }: { s: RunState; side: boolean }) {
+  const checker = s.farmers.tester ? 'Tester' : 'Planner'
+  return (
+    <Dialogue farmer="planner" side={side}>
+      <div className="who">
+        <b>Planner</b>
+      </div>
+      <p>You’ve accepted five tasks in a row without sending any back. Want the {checker} to accept finished work once its check passes?</p>
+      <p className="impact">You’d still see every task in the pull request, and you can turn it back on in Stops for you.</p>
+      <div className="row">
+        <button className="btn" onClick={() => store.answerTrust(true)} autoFocus>
+          <Ico name="check" />
+          Let the {checker} accept
+        </button>
+        <button className="btn tan" onClick={() => store.answerTrust(false)}>
+          Keep asking me
         </button>
       </div>
     </Dialogue>
