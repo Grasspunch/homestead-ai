@@ -259,6 +259,7 @@
 /* ---- the plan: one sentence, the crew, three settings ---- */
 .plan-lead { margin: 0; font-size: var(--t-lead); line-height: 1.4; }
 .plan-lead b { font-variant-numeric: tabular-nums; }
+.plan-lead .gain { color: var(--leaf); }
 .crew { display: grid; grid-template-columns: 132px minmax(0, 1fr) 176px 84px 28px; column-gap: 14px; }
 .crew-head, .crew-row { display: contents; }
 .crew-head span { font-size: var(--t-meta); font-weight: 700; color: var(--bark-3); padding-bottom: 6px; }
@@ -306,3 +307,18 @@ button.crew-x:hover { opacity: 1; }
 .shot.thumb .ring { border-width: 2px; box-shadow: none; border-radius: 3px; }
 .pp-shot-row { display: flex; align-items: center; gap: 10px; }
 .pp-shot-row .pp-line { flex: 1; }
+
+/* ---- crew against one agent: the gap leads, the table backs it ---- */
+.vs { display: flex; flex-direction: column; gap: 8px; }
+.vs h3 { display: flex; align-items: center; gap: 8px; }
+.vs-gap { margin: 0; display: flex; align-items: baseline; gap: 8px; font-size: var(--t-lead); color: var(--bark-2); }
+.vs-gap .big { color: var(--leaf); font-size: 40px; }
+.vs-gap b { color: var(--bark); }
+.vs-gap .tag { margin-left: auto; align-self: center; }
+.vs-grid { display: grid; grid-template-columns: auto 1fr 1fr; column-gap: 14px; font-size: var(--t-body); }
+.vs-grid > * { padding: 6px 0; border-top: 1px solid rgba(106, 74, 52, .16); display: flex; align-items: center; }
+.vs-grid > [role=columnheader] { border-top: 0; font-size: var(--t-meta); font-weight: 700; color: var(--bark-3); padding-top: 0; }
+.vs-grid > span:not([role]) { color: var(--bark-3); }
+.vs-grid > b { color: var(--bark); }
+.vs-caught { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--t-meta); color: var(--bark-2); }
+.vs-caught li { display: flex; gap: 8px; align-items: center; }

@@ -423,6 +423,65 @@ function fixes(s: RunState): Fix[] {
   return out
 }
 
+// What the crew bought you, against one agent doing it all: time, money, and what got caught on the way.
+export function caught(s: RunState): { where: string; what: string }[] {
+  const out: { where: string; what: string }[] = []
+  for (const t of s.tasks) for (const c of t.checks) if (!c.pass) out.push({ where: t.name, what: c.notes })
+  for (const d of s.deploy) if (d.stage === 'rollback') out.push({ where: 'Rollout', what: d.reason ?? 'Errors passed 2% at 10%, so it rolled back on its own' })
+  return out
+}
+
+export function CrewVsAlone({ s }: { s: RunState }) {
+  const crew = s.estimate
+  const one = s.singleAgentEstimate
+  const n = FARMER_ORDER.filter((id) => s.farmers[id]).length
+  if (!crew || !one || n < 2) return null
+  const sooner = one.minutes - crew.minutes
+  const less = one.usd - crew.usd
+  const found = caught(s)
+  return (
+    <div className="vs">
+      <h3>This crew against one agent alone</h3>
+      <p className="vs-gap">
+        <span className="big">{mins(sooner)}</span> sooner{less > 0.5 ? <>, <b>{usd(less)}</b> less</> : less < -0.5 ? <>, <b>{usd(-less)}</b> more</> : null}
+        <span className="tag grey">Estimate</span>
+      </p>
+      <div className="vs-grid" role="table">
+        <span role="columnheader" />
+        <span role="columnheader">This crew</span>
+        <span role="columnheader">One agent</span>
+        <span>Time</span>
+        <b>{mins(crew.minutes)}</b>
+        <span>{mins(one.minutes)}</span>
+        <span>Cost</span>
+        <b>{usd(crew.usd)}</b>
+        <span>{usd(one.usd)}</span>
+        <span>Checked by</span>
+        <b>The {s.farmers.tester ? 'Tester' : 'Planner'}, every task</b>
+        <span>Only itself</span>
+        <span>Caught before users</span>
+        <b>{found.length ? `${found.length} problem${found.length > 1 ? 's' : ''}` : 'Nothing yet'}</b>
+        <span>{found.length ? 'Would have shipped' : 'Unchecked'}</span>
+      </div>
+      {found.length > 0 && (
+        <ul className="vs-caught">
+          {found.slice(0, 3).map((f, i) => (
+            <li key={i}>
+              <Mark pass={false} />
+              <span>
+                <b>{f.where}</b> {f.what}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="fine">
+        The crew works in parallel, builds on Codex Sol at three quarters of Opus’s price, and each farmer reads only its own files. One agent runs every task on Opus in one growing context, and nobody else checks it.
+      </p>
+    </div>
+  )
+}
+
 export function UsagePanel({ s }: { s: RunState }) {
   const est = s.estimate
   const ids = FARMER_ORDER.filter((id) => s.farmers[id])
@@ -432,6 +491,7 @@ export function UsagePanel({ s }: { s: RunState }) {
   const list = fixes(s)
   return (
     <Panel label="Spend">
+      <CrewVsAlone s={s} />
       <div>
         <h3>Spend</h3>
         <div className="stat">
@@ -442,11 +502,6 @@ export function UsagePanel({ s }: { s: RunState }) {
           <div className="bar" style={{ marginTop: 8 }}>
             <i style={{ width: `${Math.min(100, (s.usage.usd / est.usd) * 100)}%`, background: s.usage.usd > est.usd ? 'var(--honey)' : 'var(--leaf)' }} />
           </div>
-        )}
-        {s.singleAgentEstimate && est && (
-          <p className="fine">
-            One agent alone: about {usd(s.singleAgentEstimate.usd)} and {mins(s.singleAgentEstimate.minutes)}. This crew: {mins(est.minutes)}.
-          </p>
         )}
       </div>
       <div>
@@ -518,7 +573,9 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
       {s.done && est && (
         <div className="sum">
           {usd(s.done.usd)} and {mins(s.done.minutes)}, against about {usd(est.usd)} and {mins(est.minutes)} planned.
-          {s.singleAgentEstimate ? ` One agent alone would have taken about ${mins(s.singleAgentEstimate.minutes)}.` : ''}
+          {s.singleAgentEstimate && s.singleAgentEstimate.minutes > est.minutes
+            ? ` About ${mins(s.singleAgentEstimate.minutes - est.minutes)} sooner than one agent alone, and ${caught(s).length || 'no'} problem${caught(s).length === 1 ? '' : 's'} caught before users saw ${caught(s).length === 1 ? 'it' : 'them'}.`
+            : ''}
         </div>
       )}
       <div>

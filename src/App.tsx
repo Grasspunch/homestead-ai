@@ -190,8 +190,15 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
       <p className="plan-lead">
         {ids.length > 1 ? (
           <>
-            I’d use this crew of {ids.length}: <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>.
-            {one && est && <> One agent alone takes {mins(one.minutes)} for {usd(one.usd)}, with nobody checking its work.</>}
+            This crew of {ids.length} takes about <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>
+            {one && est && one.minutes > est.minutes ? (
+              <>
+                : <b className="gain">{mins(one.minutes - est.minutes)} sooner</b> than one agent alone
+                {one.usd - est.usd > 0.5 ? <>, and {usd(one.usd - est.usd)} less</> : null}{s.farmers.tester ? ", with the Tester checking every task" : ""}.
+              </>
+            ) : (
+              '.'
+            )}
           </>
         ) : (
           <>

@@ -14,6 +14,16 @@ interface Draft {
 }
 
 const USD_SCALE = 15
+// Drafts list minutes for a small slice of work; real agent tasks run 20 to 60 minutes.
+const MIN_SCALE = 3
+// One agent alone, against a crew. These are the assumptions behind the comparison, kept in one place:
+// it runs every task on Opus and rereads one growing context, which slows every step (caching keeps the
+// rereads cheap, not fast). Nobody independent checks its work, so some problems surface late and get redone.
+export const SOLO = { contextTime: 1.35, contextCost: 1.1, rework: 1.2 }
+// Each handoff between farmers costs a little: a summary written and read.
+const HANDOFF = 0.25
+// Cost relative to Claude Opus 5.5, as in the model picker.
+const RATE = { opus: 1, sol: 0.75 }
 const SHIP = { id: 'ship', name: 'Ship to users', farmer: 'deployer' as FarmerId, doneWhen: 'Live for 10% with errors under 2%, then for everyone', gate: true, mins: 8, usd: 0.3 }
 
 function draft(goal: string): Draft {
@@ -130,11 +140,11 @@ export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): Plan
   const fallback = (f: FarmerId): FarmerId => (crew.includes(f) ? f : 'builder')
 
   // Drafts price each task in Sonnet-hour units; a real crew on Opus and Sol spends about this much.
-  const tasks = d.tasks.map((t) => ({ ...t, usd: t.usd * USD_SCALE, farmer: fallback(t.farmer), gate: !!t.gate }))
+  const tasks = d.tasks.map((t) => ({ ...t, mins: t.mins * MIN_SCALE, usd: t.usd * USD_SCALE, farmer: fallback(t.farmer), gate: !!t.gate }))
   // A Tester on the crew gets its own task: the end-to-end check before shipping.
   if (crew.includes('tester')) {
     const i = tasks.findIndex((t) => t.gate)
-    tasks.splice(i < 0 ? tasks.length : i, 0, { id: 'e2e-check', name: 'Check it end to end', farmer: 'tester', doneWhen: 'Every done-when passes in one end-to-end run', gate: false, mins: 7, usd: 0.4 * USD_SCALE, after: tasks.filter((t) => !t.gate).map((t) => t.id) })
+    tasks.splice(i < 0 ? tasks.length : i, 0, { id: 'e2e-check', name: 'Check it end to end', farmer: 'tester', doneWhen: 'Every done-when passes in one end-to-end run', gate: false, mins: 7 * MIN_SCALE, usd: 0.4 * USD_SCALE, after: tasks.filter((t) => !t.gate).map((t) => t.id) })
   }
 
   // Crew time: the longest chain, since farmers work in parallel. One agent: everything in a row.
@@ -147,15 +157,16 @@ export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): Plan
     busy[t.farmer] = finish[t.id]
   }
   const sum = (k: 'mins' | 'usd') => tasks.reduce((s, t) => s + t[k], 0)
-  const handoffs = solo ? 0 : 0.15 * USD_SCALE * (crew.length - 1)
-  const estimate: Estimate = solo
-    ? { usd: +sum('usd').toFixed(2), minutes: Math.round(sum('mins')) }
-    : { usd: +(sum('usd') + handoffs).toFixed(2), minutes: Math.round(Math.max(...Object.values(finish)) + 4) }
-  const singleAgentEstimate: Estimate = { usd: +(sum('usd') * 0.92).toFixed(2), minutes: Math.round(sum('mins') * 1.05) }
+  // Task prices are in Opus terms. A crew runs routine work on Sol, which costs less.
+  const onOpus = (f: FarmerId) => solo || f === 'planner' || f === 'designer'
+  const crewUsd = tasks.reduce((s, t) => s + t.usd * (onOpus(t.farmer) ? RATE.opus : RATE.sol), 0) + HANDOFF * USD_SCALE * (crew.length - 1)
+  const alone: Estimate = { usd: +(sum('usd') * SOLO.contextCost * SOLO.rework).toFixed(2), minutes: Math.round(sum('mins') * SOLO.contextTime * SOLO.rework) }
+  const estimate: Estimate = solo ? alone : { usd: +crewUsd.toFixed(2), minutes: Math.round(Math.max(...Object.values(finish)) + 4) }
+  const singleAgentEstimate: Estimate = alone
 
   const farmers = crew.map((id) => {
     const mine = tasks.filter((t) => t.farmer === id)
-    return setup(id, d, Math.max(5, mine.reduce((s, t) => s + t.usd, 0) || 5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo)
+    return setup(id, d, Math.max(5, mine.reduce((s, t) => s + t.usd * (onOpus(t.farmer) ? RATE.opus : RATE.sol), 0) || 5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo)
   })
   return {
     name: d.name,

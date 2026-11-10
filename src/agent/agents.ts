@@ -167,7 +167,7 @@ Tasks: 3 to 8, in run order, kebab-case ids. Each has one farmer from the crew, 
 
 Estimates, for real agent runs: reason from the number of tasks, how long each takes an agent (often 5 to 20 minutes), what each costs in tokens (often $0.50 to $4 per task), and which tasks can run at the same time.
 - estimate: this crew. Minutes follow the longest chain of tasks that must wait on each other, since farmers work in parallel. Dollars add up, plus a little for handoffs and checks.
-- singleAgentEstimate: one general agent doing all tasks alone, one after another. Usually a bit cheaper, since there are no handoffs, but slower, since nothing runs in parallel.
+- singleAgentEstimate: one general agent doing all tasks alone, one after another, on Claude Opus 5.5. Slower, since nothing runs in parallel and it rereads one growing context. It also has nobody independent checking its work, so some problems surface late and get redone. Builders and testers on Codex Sol 6.1 cost about three quarters of Opus, which usually pays for the crew's handoffs.
 The farmers' limits should add up to roughly the crew estimate, with some headroom.`,
     PLAN_SCHEMA,
   )
