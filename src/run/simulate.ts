@@ -76,9 +76,9 @@ function steps(task: PlanTask, farmer: FarmerId): string[] {
     case 'deployer':
       return ['Built the release', 'Ran the smoke tests']
     case 'planner':
-      return [`Read what ${n} needs`, 'Wrote the notes']
+      return ['Read what the task needs', 'Wrote the notes']
     default:
-      return [`Read the code ${n} touches`, `Wrote the first pass of ${n}`, 'Added tests', 'Ran the tests']
+      return ['Read the code it touches', 'Wrote the first pass', 'Added tests', 'Ran the tests']
   }
 }
 

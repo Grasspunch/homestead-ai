@@ -46,13 +46,13 @@ export function farmLayout(tasks: { id: string; gate: boolean }[], known: string
   const plots = order.map((t, i) => ({
     id: t.id,
     x: 12 + (i % cols) * 7,
-    y: 3 + Math.floor(i / cols) * 5,
+    y: 3 + Math.floor(i / cols) * 6,
     w: 3,
     h: 2,
     crop: cropOf(tasks, t.id),
     gate: t.gate,
   }))
-  return { w: 12 + cols * 7 + 1, h: Math.max(14, 3 + rows * 5 + 1), plots }
+  return { w: 12 + cols * 7 + 1, h: Math.max(14, 3 + rows * 6 + 1), plots }
 }
 
 // Each task's crop, the same on its plot, its sign and anywhere the task is named.

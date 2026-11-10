@@ -9,17 +9,24 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - Pixel sizes: button 20px (sm 17, xs 15), dialogue name 21px, panel title 24px, tag 13px. Never set reading text in the pixel font.
 
 ## Colour
-- Ink ramp: `--bark` (ink), `--bark-2` (secondary), `--bark-3` (meta), `--bark-4` (muted).
+- Ink ramp: `--bark` (ink), `--bark-2` (secondary), `--bark-3` (descriptions, placeholders, meta). No lighter grey for text.
 - `--leaf` is go and focus. `--berry` is failure only, never emphasis. `--sky` is only for things that reach people outside (shipping, the rollout). `--honey` is cost.
 
 ## Controls
 - Actions are pack buttons: cream for the main one, tan for the rest, white in the top bar. One main action per dialogue.
-- Every value you can change is the same field, a sunk well: `--field-h` 36px, 2px `--field-line` border, `--field-ink` fill, a 2px inner shadow on top, square corners, 15px text. Focus turns the line `--leaf`. Selects add a pixel arrow; limits put the unit in `--bark-3` and the number in 700 tabular figures. Never use a button shape for an editable value.
+- Every value you can change is the same soft well (`kit.css`): a pixel nine-slice one shade darker than the paper (`--field-ink`), a soft outline, a lip on top, square pixel corners, 15px text. Height `--field-h` 36px; the talk bar and goal are 44px. Hover darkens the outline, focus turns it `--leaf`. Selects add a pixel arrow; limits put the unit in `--bark-3` and the number in 700 tabular figures. Never use a button shape for an editable value.
 - Labels sit above a field (`.field-label`, 13px 700), help text below (`.field-help`, 13px). Never a placeholder as the label.
 - On or off is the pack's wooden switch. Pass and fail are the pack's check and cross. A spend meter is the pack's tick meter.
 - A choice among a few levels is a row of pack buttons, cream for the chosen one.
 
+## Surfaces
+- Paper is the one surface: the pack's text box with straight edges and no tail.
+- A bubble is paper with a tail, used only when someone speaks. The tail points at the speaker (`.bubble[data-tail=left|right|up|down]`, moved along its side with `--tail-at`). Panels, the inbox and cards have no speaker, so no tail.
+- Inside paper, a grouped block is a flat tint (`rgba(106,74,52,.07)`), never a white card with a rounded border.
+- The live kit at `/kit` is drawn by the app's own CSS; the `/design` library frames it.
+
 ## Layout
+- No helper sentences that restate what the screen already shows.
 - Rows are flat and ruled with a 1px `rgba(106,74,52,.16)` line, with 8px above and below a field. Columns line up across rows (CSS grid with `display: contents` rows), and everything in a row is vertically centred.
 - Spacing steps: 4, 8, 14, 18, 24.
 - One raised object at a time: the dialogue or card that needs you. Everything else is flat.

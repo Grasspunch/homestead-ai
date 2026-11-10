@@ -154,7 +154,7 @@ export function Home() {
         <div className="portrait">
           <Portrait farmer="planner" />
         </div>
-        <div className="body paper">
+        <div className="body paper bubble" data-tail="left">
           <div className="who">
             <b>Planner</b>
             {needs > 0 && (
@@ -172,7 +172,7 @@ export function Home() {
               start(goal)
             }}
           >
-            <span className="field paper">
+            <span className="field">
               <input ref={input} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Build a support assistant that answers from our help docs" aria-label="What should the crew build?" />
             </span>
             <button className="btn" type="submit" disabled={!goal.trim()}>

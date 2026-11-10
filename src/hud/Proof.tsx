@@ -133,7 +133,8 @@ export function ProofPop({ check, state, style, onOpen }: { check: Check; state:
   const failed = tests.filter((x) => !x.pass)
   return (
     <button
-      className={`proof-pop paper${check.pass ? '' : ' bad'}`}
+      className={`proof-pop paper bubble${check.pass ? '' : ' bad'}`}
+      data-tail="down"
       style={style}
       onClick={(e) => {
         e.stopPropagation()

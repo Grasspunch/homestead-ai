@@ -88,7 +88,6 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
                 if (x) x.doneWhen = e.target.value
               })}
             />
-            <span className="field-help">The check that has to pass before this counts as finished.</span>
           </label>
         ) : (
           <>
@@ -197,7 +196,7 @@ function Review({ t, s }: { t: TaskState; s: RunState }) {
             setNote('')
           }}
         >
-          <input className="grow" autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What should change?" aria-label="What should change" />
+          <span className="field grow"><input autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What should change?" aria-label="What should change" /></span>
           <button className="btn xs" type="submit">Send back</button>
         </form>
       ) : (

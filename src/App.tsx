@@ -1,4 +1,5 @@
 import './fonts'
+import './hud/kit.css'
 import './hud/hud.css'
 import './hud/panel.css'
 import { useEffect, useRef, useState } from 'react'
@@ -132,7 +133,7 @@ function Dialogue({ farmer, side, children }: { farmer: FarmerId; side: boolean;
       <div className="portrait">
         <Portrait farmer={farmer} />
       </div>
-      <div className="body paper">{children}</div>
+      <div className="body paper bubble" data-tail="left">{children}</div>
     </section>
   )
 }
@@ -185,7 +186,6 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
       <div className="who">
         <b>Planner</b>
         <span className="tag grey">Plan</span>
-        <span className="aside">Nothing runs until you approve</span>
       </div>
       <p className="plan-lead">
         {ids.length > 1 ? (
@@ -249,14 +249,15 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           )
         })}
       </div>
-      <div className="plan-note">
-        {missing.map((id) => (
-          <button key={id} className="link" onClick={() => setCrew([...ids, id])}>
-            Add the {id.charAt(0).toUpperCase() + id.slice(1)}
-          </button>
-        ))}
-        <span className="grow">Click a plot to change its task or when it’s done.</span>
-      </div>
+      {missing.length > 0 && (
+        <div className="plan-note">
+          {missing.map((id) => (
+            <button key={id} className="link" onClick={() => setCrew([...ids, id])}>
+              Add the {id.charAt(0).toUpperCase() + id.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="plan-foot">
         <div className="plan-setting">
           <span>Stops for you</span>
@@ -410,13 +411,11 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
     setBusy(false)
     store.chatTo(p.id, { from: 'planner', text: r.data.reply, to: r.data.to })
   }
-  const last = s.activity[s.activity.length - 1]
   return (
     <Dialogue farmer="planner" side={side}>
       <div className="who">
         <b>Planner</b>
         {s.done ? <span className="tag green">Done</span> : <span className="tag grey">Talk to the crew</span>}
-        {!s.done && last && <span className="aside">{last.text}</span>}
       </div>
       {s.done ? (
         <p>
@@ -452,7 +451,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
               send()
             }}
           >
-            <span className="field paper">
+            <span className="field">
               <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder="Tell the crew something, for example: make the widget friendlier" aria-label="Message the crew" />
             </span>
             <button className="btn" type="submit" disabled={busy}>
