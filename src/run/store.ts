@@ -966,7 +966,7 @@ class Store {
     }
     ;(p.rollbacks ?? []).forEach((t0, i) => {
       const id = `ask-rb-${i + 1}`
-      events = rollBack(events, t0, id, answers[id])
+      events = rollBack(events, t0, id, answers[id], !!run.budgetStop)
     })
     // What already happened stays as it happened: every event up to now comes from the run you watched, so a
     // change mid-run never reprices money spent, never moves an ask you can see, and never rewrites a raise you
@@ -1017,6 +1017,18 @@ class Store {
       }
       const last = events.filter((e) => e.type !== 'done').reduce((m, e) => Math.max(m, e.t), 0)
       events = events.map((e) => (e.type === 'done' && e.t <= last ? { ...e, t: last + 30_000 } : e))
+    }
+    // Stopped at the budget, finally: after that moment nobody asks, spends or ships. All that's left is your own
+    // Roll back, and the watch on a release still live, which rolls back by itself if it goes bad.
+    if (run.budgetStop) {
+      const bs = run.budgetStop
+      const end = bs.t * 60_000
+      const gone = new Set(events.filter((e) => e.type === 'ask' && e.t > end && e.id !== bs.id).map((e) => (e.type === 'ask' ? e.id : '')))
+      const drop = (e: RunEvent) =>
+        (e.type === 'ask' && gone.has(e.id)) ||
+        (e.type === 'answer' && (gone.has(e.id) || !events.some((x) => x.type === 'ask' && x.id === e.id))) ||
+        (e.t > end && ((e.type === 'deploy' && e.stage !== 'rollback') || e.type === 'usage' || e.type === 'task_start' || e.type === 'tool'))
+      events = events.filter((e) => !drop(e))
     }
     // Done's total is what Spend adds up: every step at the rate it was paid.
     const usd = +events.reduce((n, e) => n + (e.type === 'usage' ? e.usd : 0), 0).toFixed(2)

@@ -20,7 +20,7 @@ export function liveStage(events: RunEvent[], t: number) {
   return stage === '10%' || stage === '100%' ? stage : null
 }
 
-export function rollBack(events: RunEvent[], t0: number, askId: string, choice?: string): RunEvent[] {
+export function rollBack(events: RunEvent[], t0: number, askId: string, choice?: string, stopped = false): RunEvent[] {
   if (!liveStage(events, t0)) return events
   const plan = events.find((e) => e.type === 'plan')
   // The release task: the gated one that ships (another gated task, such as an email, isn't a release).
@@ -57,7 +57,7 @@ export function rollBack(events: RunEvent[], t0: number, askId: string, choice?:
 
   const at = (dm: number) => Math.round(t0 + dm * MIN)
   // The run was stopped at its budget: it comes down, and nothing ships again.
-  if (events.some((e) => e.type === 'stop' && e.t <= t0 && /^You stopped the run at its budget/.test(e.reason)))
+  if (stopped || events.some((e) => e.type === 'stop' && e.t <= t0 && /^You stopped the run at its budget/.test(e.reason)))
     return withDone([...events, { t: at(0), type: 'deploy', stage: 'rollback', reason: BY_YOU }])
   // Healthy: it comes down, and the Deployer asks whether to ship again.
   const before = events.filter((e) => e.t <= t0 || !rollout(e))

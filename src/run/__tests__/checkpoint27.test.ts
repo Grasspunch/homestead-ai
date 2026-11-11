@@ -147,7 +147,8 @@ describe('checkpoint 27', () => {
       expect(store.state(p)!.usage.usd).toBeCloseTo(spent, 1)
     })
 
-  it('stopped while the 10% release is live: still live, and you can roll it back', () => {
+  // Merge to 10%, lower the budget below what's spent: a budget ask opens while 10% is live.
+  function tenLiveAsk() {
     const p = farm(SAMPLE_GOAL, false)
     finish(p, 'Raise the budget')
     const ten = p.events.find((e) => e.type === 'deploy' && e.stage === '10%')!
@@ -156,12 +157,18 @@ describe('checkpoint 27', () => {
     const a = next(p)!
     expect(a.budgetFor).toBeTruthy()
     p.clock = Math.max(p.clock, a.t)
+    return { p, a }
+  }
+
+  it('stopped while the 10% release is live: still live and watched, and you can roll it back', () => {
+    const { p, a } = tenLiveAsk()
     store.answer(a.id, 'Stop the run here')
-    const end = done(p)
-    p.clock = end
-    expect(liveStage(p.events, end)).toBe('10%')
-    expect(doneLead(store.state(p)!)).toContain('stays live for 10% of users')
-    store.clock = end
+    const at = p.clock! + 2000
+    expect(liveStage(p.events, at)).toBe('10%')
+    // Still watched after the stop: readings keep coming, or it rolls back by itself.
+    expect(p.events.some((e) => (e.type === 'monitor' || (e.type === 'deploy' && e.stage === 'rollback')) && e.t > at)).toBe(true)
+    store.clock = at
+    p.clock = at
     store.rollBackNow()
     const t = Math.max(...p.events.map((e) => e.t))
     p.clock = t
@@ -170,5 +177,24 @@ describe('checkpoint 27', () => {
     expect(liveStage(p.events, t)).toBeNull()
     expect(s.asks.every((x) => x.answer)).toBe(true)
     expect(doneLead(s)).toContain('rolled back, so nothing is live')
+  })
+
+  it('rolled back with the budget ask open, then Stop: nothing asks to ship again, nothing ships', () => {
+    const { p, a } = tenLiveAsk()
+    store.clock = p.clock!
+    store.rollBackNow()
+    const open = next(p)!
+    expect(open.budgetFor).toBeTruthy()
+    p.clock = Math.max(p.clock!, open.t)
+    store.answer(open.id, 'Stop the run here')
+    const end = done(p)
+    p.clock = end
+    const s = store.state(p)!
+    expect(budgetStopOf(s)).toBeTruthy()
+    expect(s.asks.every((x) => x.answer)).toBe(true)
+    expect(s.asks.some((x) => /ship to 10% again/i.test(x.question))).toBe(false)
+    expect(s.deploy.at(-1)?.stage).toBe('rollback')
+    expect(liveStage(p.events, end)).toBeNull()
+    expect(a.id).toBeTruthy()
   })
 })

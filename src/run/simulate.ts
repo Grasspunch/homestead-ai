@@ -883,6 +883,19 @@ export function simulateRun(input: SimInput): RunEvent[] {
       if (c !== stop) budget = Number(/\$(\d+(\.\d+)?)/.exec(c)?.[1] ?? to)
       return c === stop ? 'stop' : 'raise'
     }
+    // A release still live when you stop the run at its budget keeps being watched, and rolls back by itself
+    // if it goes bad, until the moment it would have gone further.
+    const watch = (() => {
+      const bs = input.budgetStop
+      if (!bs) return () => false
+      const end = bs.t * MIN
+      const live = [...ev].reverse().find((e) => e.type === 'deploy' && e.t <= end)
+      const stage = live && live.type === 'deploy' && live.stage !== 'rollback' ? live.stage : null
+      if (!stage) return () => false
+      const promo = ev.find((e) => e.type === 'deploy' && e.t > end && e.stage !== 'rollback')?.t ?? Number.POSITIVE_INFINITY
+      const rolled = ev.find((e) => e.type === 'deploy' && e.t > end && e.t < promo && e.stage === 'rollback')?.t ?? promo
+      return (x: RunEvent) => x.t > end && x.t <= rolled && x.t < promo && ((x.type === 'monitor' && x.stage === stage) || (x.type === 'deploy' && x.stage === 'rollback'))
+    })()
     // Farmers you stopped: nothing of theirs after the minute you stopped them.
     const cuts: { f: FarmerSetup; tm: number; spentNow: number; task?: string; mine: Set<string> }[] = []
     for (const [id, tm] of Object.entries(input.halts ?? {}) as [FarmerId, number][]) {
@@ -894,7 +907,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const accepted = new Set(ev.filter((x) => x.type === 'accept' && x.t <= cut).map((x) => (x.type === 'accept' ? x.task : '')))
       const mine = new Set(ev.filter((x) => x.type === 'task_start' && x.farmer === f.id && !accepted.has(x.task)).map((x) => (x.type === 'task_start' ? x.task : '')))
       const keep = ev.filter((x) => {
-        if (x.t <= cut || x.type === 'goal' || x.type === 'plan' || x.type === 'farmer' || x.type === 'stop') return true
+        if (x.t <= cut || x.type === 'goal' || x.type === 'plan' || x.type === 'farmer' || x.type === 'stop' || watch(x)) return true
         // The whole run stopped at its budget: nothing of anyone's after that minute, releases and answers included.
         if (input.budgetStop && x.t > input.budgetStop.t * MIN) return false
         if ('farmer' in x && x.farmer === f.id && x.type !== 'ask') return false
@@ -983,7 +996,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (bs) {
       const end = bs.t * MIN
       const late = new Set(ev.filter((e) => e.type === 'ask' && e.id !== bs.id && e.t > end).map((e) => (e.type === 'ask' ? e.id : '')))
-      const keep = ev.filter((e) => !((e.type === 'ask' || e.type === 'answer') && late.has(e.id)) && !(e.type === 'deploy' && e.t > end))
+      const keep = ev.filter((e) => !((e.type === 'ask' || e.type === 'answer') && late.has(e.id)) && !(e.type === 'deploy' && e.t > end && !watch(e)))
       ev.length = 0
       ev.push(...keep)
     }
