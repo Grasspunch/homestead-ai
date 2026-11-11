@@ -5,6 +5,7 @@
 import type { FarmerId, RunState, TaskState } from './types'
 import { FARMER_ORDER } from './types'
 import { BY_YOU as ROLLED_BY_YOU } from './rollback'
+import { prOf } from './files'
 
 // What the exports need from a farm. A Project fits it as it is.
 export interface ExportFarm {
@@ -134,6 +135,8 @@ export function prMarkdown(p: ExportFarm, s: RunState): string {
     '## Commits',
     commitList,
     ...(left ? ['Left out:', left] : []),
+    '## Files changed',
+    filesTable(p, s),
     '## Checks',
     checkTable,
     ...(release ? ['## Release', release] : []),
@@ -143,6 +146,17 @@ export function prMarkdown(p: ExportFarm, s: RunState): string {
     spendLines(s),
     spendTable(s),
     '',
+  ].join('\n\n')
+}
+
+// Every file the pull request changes, with its lines, as the pull request window counts them.
+function filesTable(p: ExportFarm, s: RunState) {
+  const pr = prOf(s, p.goal)
+  if (!pr.files.length) return '_No files changed._'
+  const who = (ids: FarmerId[]) => ids.map((f) => label(s, f)).join(', ')
+  return [
+    `${pr.files.length} file${pr.files.length === 1 ? '' : 's'} changed, +${pr.add} −${pr.del} lines.`,
+    table(['File', 'Lines', 'By', 'What changed'], pr.files.map((f) => [`\`${f.path}\``, `+${f.add} −${f.del}`, who(f.farmers), f.parts.map((x) => x.summary).join('; ')])),
   ].join('\n\n')
 }
 

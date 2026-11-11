@@ -12,6 +12,7 @@ import { FARMER_ORDER } from '../run/types'
 import { Ico, Mark, Portrait, Swatch, mins, usd } from './bits'
 import { Rollout } from './Proof'
 import { caughtLine } from './Side'
+import { ExportButtons } from './Export'
 
 type Tab = 'conversation' | 'commits' | 'checks' | 'files'
 
@@ -90,6 +91,7 @@ export function PrView({ s, p }: { s: RunState; p: Project }) {
             )}
           </span>
           {state.rolledBack && <span className="tag red">Rolled back</span>}
+          <ExportButtons p={p} s={s} />
         </div>
       </header>
 
