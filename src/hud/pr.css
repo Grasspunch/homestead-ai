@@ -13,6 +13,7 @@
 .prv-pill { font-family: px4; font-size: 13px; letter-spacing: .5px; height: 26px; padding: 0 12px; border-radius: 13px; display: inline-flex; align-items: center; color: #fff6e4; background: var(--bark-4); }
 .prv-pill.open { background: var(--leaf); }
 .prv-pill.merged { background: var(--sky); }
+.prv-pill.closed { background: var(--berry); }
 
 .prv-tabs { display: flex; align-items: flex-end; gap: 2px; margin: 12px 8px 0; border-bottom: 1px solid rgba(106, 74, 52, .22); }
 .prv-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: var(--t-body); color: var(--bark-2); border-bottom: 2px solid transparent; margin-bottom: -1px; }

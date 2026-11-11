@@ -29,7 +29,7 @@ import { SEND_BACK } from './run/simulate'
 import { BY_YOU } from './run/rollback'
 import { fixLineOf, lessonLine } from './run/learn'
 import { scaleLine } from './run/scale'
-import { doneLead, plannerEstimate } from './run/done'
+import { budgetStopOf, doneLead, plannerEstimate } from './run/done'
 import { spentOf } from './run/team'
 import type { Ask, FarmerId, RunState } from './run/types'
 import { FARMER_ORDER } from './run/types'
@@ -986,7 +986,7 @@ const historyOf = (pid: string) => (store.chat[pid] ?? []).slice(-12).map((l) =>
 // What the plan said when you approved it, so the actual total reads against it, not as a constant.
 function plannedLine(p: Project, s: RunState) {
   const g = plannerCost(p)
-  if (g === undefined || !s.done) return ''
+  if (g === undefined || !s.done || budgetStopOf(s)) return ''
   const gap = s.done.usd - g
   if (Math.abs(gap) < 0.5) return `, the ${usd(g)} the Planner estimated`
   return `, ${usd(Math.abs(gap))} ${gap > 0 ? 'over' : 'under'} the Planner’s ${usd(g)} estimate`
@@ -1230,10 +1230,10 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
             {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}{plannedLine(p, s)}. {caughtLine(s)}, and you made {answered} call{answered === 1 ? '' : 's'}.
           </p>
           {skippedLine(s) && <p className="impact">{skippedLine(s)}</p>}
-          {outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
+          {!budgetStopOf(s) && outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
           {p.run?.lesson && <p className="impact learned-line">{lessonLine(p.run.lesson, p.events, true)}</p>}
           {fixed && <p className="impact learned-line">{fixed}</p>}
-          {scaleLine(s) && (
+          {!budgetStopOf(s) && scaleLine(s) && (
             <p className="impact scale-line">
               <SimTag>Projection</SimTag> {scaleLine(s)}
             </p>

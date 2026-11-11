@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { store, type Project } from '../run/store'
 import { branchOf, prOf, type Commit, type Pr, type PrFile, type Row } from '../run/files'
 import { SEND_BACK } from '../run/simulate'
+import { budgetStopOf } from '../run/done'
 import { isOwnWay } from '../run/discuss'
 import { BY_YOU } from '../run/rollback'
 import type { Ask, FarmerId, RunState, TaskState } from '../run/types'
@@ -42,6 +43,7 @@ function stateOf(s: RunState, pr: Pr) {
   const inPr = work.filter((t) => t.status === 'accepted')
   const last = s.deploy[s.deploy.length - 1]
   if (last) return { key: 'merged' as const, label: 'Merged', rolledBack: last.stage === 'rollback' }
+  if (budgetStopOf(s)) return { key: 'closed' as const, label: 'Closed', rolledBack: false }
   if (!pr.files.length) return { key: 'draft' as const, label: 'Draft', rolledBack: false }
   if (inPr.length < work.length) return { key: 'draft' as const, label: 'Draft', rolledBack: false }
   return { key: 'open' as const, label: 'Open', rolledBack: false }
@@ -77,7 +79,11 @@ export function PrView({ s, p }: { s: RunState; p: Project }) {
         <div className="prv-state">
           <span className={`prv-pill ${state.key}`}>{state.label}</span>
           <span className="prv-what">
-            {state.key === 'merged' ? (
+            {state.key === 'closed' ? (
+              <>
+                <b>You</b> stopped the run at its {budgetStopOf(s)} budget. Nothing was merged.
+              </>
+            ) : state.key === 'merged' ? (
               <>
                 <b>The {label(s, merger) || 'Deployer'}</b> merged {plural(commits, 'commit')} into <code>main</code> from <code>{branch}</code>
               </>
@@ -153,7 +159,7 @@ function Avatar({ farmer, size = 32 }: { farmer: FarmerId; size?: number }) {
   )
 }
 
-function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: Project; pr: Pr; state: 'draft' | 'open' | 'merged'; failing: number; openFile: (path: string) => void }) {
+function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: Project; pr: Pr; state: 'draft' | 'open' | 'merged' | 'closed'; failing: number; openFile: (path: string) => void }) {
   const work = s.tasks.filter((t) => !t.gate)
   const proofs = s.tasks.flatMap((t) => t.checks.filter((c) => c.pass).map((c) => c.proof))
   const tests = proofs.reduce((n, x) => n + (x?.tests?.filter((t) => t.pass).length ?? 0), 0)
@@ -581,7 +587,7 @@ function ReviewLoop({ s, p, pr, openFile }: { s: RunState; p: Project; pr: Pr; o
 }
 
 // GitHub's merge box: what still stands between this and main, and the button once nothing does.
-function MergeBox({ s, p, state, failing, ask, live }: { s: RunState; p: Project; state: 'draft' | 'open' | 'merged'; failing: number; ask?: Ask; live: boolean }) {
+function MergeBox({ s, p, state, failing, ask, live }: { s: RunState; p: Project; state: 'draft' | 'open' | 'merged' | 'closed'; failing: number; ask?: Ask; live: boolean }) {
   const [writing, setWriting] = useState(false)
   const [task, setTask] = useState('')
   const [note, setNote] = useState('')
@@ -594,6 +600,23 @@ function MergeBox({ s, p, state, failing, ask, live }: { s: RunState; p: Project
   const backTask = lastSent && p.sendBacks?.[lastSent.id]
   const mergedBy = s.asks.find((a) => isShipAsk(a) && a.answer && /^merge/i.test(a.answer.choice))
 
+  // Stopped at its budget: closed, with nothing to merge or ship.
+  if (state === 'closed')
+    return (
+      <section className="prv-merge">
+        <div className="prv-merge-row">
+          <span className="prv-merge-ico" aria-hidden>
+            <Ico name="cross" tone="light" />
+          </span>
+          <span className="grow">
+            <b>Closed at the budget</b>
+            <span className="sub">
+              You stopped the run at its {budgetStopOf(s)} budget, with {usd(s.done?.usd ?? s.usage.usd)} spent. {done.length} of {s.tasks.filter((t) => !t.gate).length} tasks were committed; nothing was merged or shipped.
+            </span>
+          </span>
+        </div>
+      </section>
+    )
   if (state === 'merged')
     return (
       <section className="prv-merge merged">

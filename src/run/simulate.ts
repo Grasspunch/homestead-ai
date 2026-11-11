@@ -619,8 +619,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
   for (const task of plan.filter((t) => t.gate)) {
     const f = task.farmer
     const start = lastBuilt + 0.5
-    // The run stopped at its budget before the release: nothing goes out.
-    if (input.budgetStop && start > input.budgetStop.t) {
+    // The run stopped at its budget before the release, or with work left out by it: nothing goes out.
+    if (input.budgetStop && (start + 0.3 >= input.budgetStop.t || stopped.size > 0)) {
       stopped.add(task.id)
       at(input.budgetStop.t + 0.05, { type: 'stop', task: task.id, reason: 'You stopped the run at its budget. This task stays out of the pull request.' })
       continue
@@ -874,7 +874,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         type: 'ask', id, farmer: lead, task: task || undefined, reason: 'cost', budgetFor: f.id, limitTo: to,
         confidence: known >= 0.6 ? 'high' : known >= 0.35 ? 'medium' : 'low',
         basis: `${fmt(spentNow)} of the ${fmt(whole)} is already spent; the rest is from the steps left.`,
-        question: `This run is about to pass its ${fmt(now)} budget, with ${fmt(spentNow)} spent, so I paused the crew.`,
+        question: spentNow > now + 0.005 ? `This run has passed its ${fmt(now)} budget, with ${fmt(spentNow)} spent, so I paused the crew.` : `This run is about to pass its ${fmt(now)} budget, with ${fmt(spentNow)} spent, so I paused the crew.`,
         impact: `Finishing the run needs about ${fmt(Math.max(0, whole - spentNow))} more, ${fmt(whole)} in all. Stopping it here keeps what's already committed and leaves the rest, the release included, out.`,
         suggested, alternatives: [stop],
       })
@@ -959,6 +959,14 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const f = farmers.find((x) => x.id === bs.f)
       const spentThen = Object.values(past?.spent ?? {}).reduce((n, x) => n + (x ?? 0), 0) + ev.reduce((n, e) => n + (e.type === 'usage' && e.t > pastT && e.t <= bs.t * MIN ? e.usd : 0), 0)
       if (f) budgetAsk(f, bs.t, spentThen, undefined, bs.id)
+    }
+    // Stopped at the budget: that ask is the last thing anyone asks. Nothing is merged or shipped after it.
+    if (bs) {
+      const end = bs.t * MIN
+      const late = new Set(ev.filter((e) => e.type === 'ask' && e.id !== bs.id && e.t > end).map((e) => (e.type === 'ask' ? e.id : '')))
+      const keep = ev.filter((e) => !((e.type === 'ask' || e.type === 'answer') && late.has(e.id)) && !(e.type === 'deploy' && e.t > end))
+      ev.length = 0
+      ev.push(...keep)
     }
     ev.sort((a, b) => a.t - b.t)
   }

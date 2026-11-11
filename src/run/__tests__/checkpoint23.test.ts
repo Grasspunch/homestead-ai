@@ -59,7 +59,7 @@ describe('checkpoint 23', () => {
     store.answer(first.id, first.type === 'ask' ? first.suggested : '')
     store.setProjectBudget(p.id, 5)
     const a = p.events.find((e) => e.type === 'ask' && e.budgetFor && !(p.answers ?? {})[e.id])
-    expect(a && a.type === 'ask' && a.question).toMatch(/^This run is about to pass its \$5 budget/)
+    expect(a && a.type === 'ask' && a.question).toMatch(/^This run has passed its \$5 budget, with \$\d+ spent/)
     playOut(p)
     const s = store.state(p)!
     expect(s.done).toBeTruthy()

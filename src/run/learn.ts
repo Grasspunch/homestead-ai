@@ -26,7 +26,7 @@ export function taskCost(events: RunEvent[], task: string): number {
 
 // From a finished run: the task that ran over and was split or raised mid-run. A task you stopped teaches nothing.
 export function lessonFrom(events: RunEvent[], run: number): Lesson | null {
-  const ask = events.find((e) => e.type === 'ask' && e.reason === 'cost' && !e.limitFor && e.task)
+  const ask = events.find((e) => e.type === 'ask' && e.reason === 'cost' && !e.limitFor && !e.budgetFor && e.task)
   const auto = events.find((e) => e.type === 'auto_fix' && / was heading to /.test(e.what) && e.task)
   const task = ask?.type === 'ask' ? ask.task : auto?.type === 'auto_fix' ? auto.task : undefined
   if (!task) return null

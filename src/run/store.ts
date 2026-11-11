@@ -972,7 +972,9 @@ class Store {
       // Something the new run says should have happened before now, and didn't: a farmer passing a lower limit
       // sooner, say. It happens now instead, in the same order.
       let n = 0
-      const late = events.filter((e) => e.t <= now && (e.type === 'ask' || e.type === 'answer' || e.type === 'stop' || e.type === 'auto_fix') && !has(e)).map((e) => ({ ...e, t: now + 1000 + 50 * n++ }))
+      // After you stopped the run at its budget, nothing more is asked: only its stops come late.
+      const stoppedRun = !!(built.input as SimInput).budgetStop
+      const late = events.filter((e) => e.t <= now && (e.type === 'stop' || (!stoppedRun && (e.type === 'ask' || e.type === 'answer' || e.type === 'auto_fix'))) && !has(e)).map((e) => ({ ...e, t: now + 1000 + 50 * n++ }))
       const after = events.filter((e) => e.t > now && !head(e) && !(e.type === 'ask' && shown.has(e.id)))
       // The new run always ends: its Done comes after everything else, even when the new run finished before now.
       const end = events.find((e) => e.type === 'done')
