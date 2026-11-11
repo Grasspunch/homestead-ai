@@ -1,7 +1,7 @@
 // A farmer's own page: what it is doing right now, and everything it carries, all changeable.
 // Task, model, skills and connectors, the files it may read, its rules and its limits.
 import { store, useStore, type Project } from '../run/store'
-import { MODELS, MODEL_GROUPS, RULES, agentName, SKILLS, applyEdit, contextName, contextTokens, defaultRules, emptyEdit, type KitItem } from '../run/kit'
+import { MODELS, MODEL_GROUPS, RULES, agentName, SKILLS, applyEdit, brandIn, contextName, contextTokens, defaultRules, emptyEdit, lockedPath, lockedSkill, type KitItem } from '../run/kit'
 import { scenario } from '../run/simPlan'
 import type { FarmerId, RunState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
@@ -39,12 +39,28 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
   const mine = s.tasks.filter((t) => t.farmer === id)
   const baseRate = MODELS.find((m) => m.model === base.model)?.rate ?? 1
   const rate = MODELS.find((m) => m.model === f.model)?.rate ?? 1
-  const kitTokens = items.filter((i) => !edit.off.includes(i.id)).reduce((n, i) => n + i.tokens, 0) + f.context.reduce((n, c) => n + contextTokens(c), 0)
   const set = (fn: Parameters<typeof store.editKit>[2]) => store.editKit(p.id, id, fn)
   // Everything in its context, the paths you switched off included, each once.
-  const seen = [...new Set([...base.context, ...edit.contextOff, ...edit.contextAdd])]
+  const plan = base.planContext ?? base.context
+  const seen = [...new Set([...plan, ...edit.contextOff, ...edit.contextAdd])]
+  const turn = (c: string, on: boolean) => set((e) => {
+    if (on) {
+      e.contextOff = e.contextOff.filter((x) => x !== c)
+      if (!plan.includes(c) && !e.contextAdd.includes(c)) e.contextAdd = [...e.contextAdd, c]
+    } else if (e.contextAdd.includes(c)) e.contextAdd = e.contextAdd.filter((x) => x !== c)
+    else e.contextOff = [...e.contextOff, c]
+  })
+  // The task that failed its check without a file or skill you turned off, once it has.
+  const failedWithout = (need: { path?: string; skill?: string }) => {
+    const a = p.events.find((e) => e.type === 'ask' && e.t <= st.clock && e.need?.farmer === id && (need.path ? e.need.path === need.path : e.need.skill === need.skill))
+    return a && a.type === 'ask' ? s.tasks.find((t) => t.id === a.task)?.name : undefined
+  }
   // The brand guide the Designer can't see, offered here, with the check it broke when it broke one.
   const brand = id === 'designer' ? scenario(p.goal).script.brand : undefined
+  // House style is the brand guide at work: on when it can see the guide, and switching it switches the guide.
+  const style = brandIn(f.context) ?? brand ?? brandIn(seen)
+  const skillOn = (i: KitItem) => (i.id === 'style' ? !!brandIn(f.context) : (lockedSkill(id, i.id, f.context)?.on ?? !edit.off.includes(i.id)))
+  const kitTokens = items.filter(skillOn).reduce((n, i) => n + i.tokens, 0) + f.context.reduce((n, c) => n + contextTokens(c), 0)
   const brandFail = brand ? p.events.find((e) => e.type === 'check' && !e.pass && e.t <= st.clock && e.proof?.shots?.some((x) => x.state === 'offbrand')) : undefined
   const missing = brand && !seen.includes(brand) ? { path: brand, failed: brandFail && brandFail.type === 'check' ? s.tasks.find((t) => t.id === brandFail.task)?.name : undefined } : undefined
   const changed = !!(edit.model || edit.off.length || edit.contextOff.length || edit.contextAdd.length || Object.keys(edit.rules).length || edit.limits)
@@ -195,25 +211,34 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
               <div className="kit">
                 {seen.map((c, i) => {
                   const on = !edit.contextOff.includes(c)
-                  const added = edit.contextAdd.includes(c)
                   const reading = working && on && i === 0
                   const name = contextName(c)
-                  return (
-                    <button
-                      key={c}
-                      className={`kit-item${on ? ' on' : ''}${reading ? ' using' : ''}`}
-                      aria-pressed={on}
-                      onClick={() => set((e) => {
-                        if (added) e.contextAdd = e.contextAdd.filter((x) => x !== c)
-                        else e.contextOff = on ? [...e.contextOff, c] : e.contextOff.filter((x) => x !== c)
-                      })}
-                    >
+                  const lock = lockedPath(id, c, plan)
+                  const failed = on ? undefined : failedWithout({ path: c })
+                  const body = (
+                    <>
                       <span className="kind k-file">F</span>
-                      <span className={`grow${name ? '' : ' mono'}`}>
-                        {name ?? c}
-                        {(name || reading) && <span className="sub">{reading ? 'Reading it now' : <span className="mono">{c}</span>}</span>}
+                      <span className={`grow${name || lock ? '' : ' mono'}`}>
+                        {name ?? (lock ? <span className="mono">{c}</span> : c)}
+                        {(name || reading || lock || failed) && (
+                          <span className="sub">
+                            {reading ? 'Reading it now' : name ? <span className="mono">{c}</span> : lock}
+                            {name && lock && !reading && ` · ${lock}`}
+                            {failed && <span className="miss-why"> · {failed} failed its check without it</span>}
+                          </span>
+                        )}
                       </span>
                       <span className="mono cost">{tokens(contextTokens(c))}</span>
+                    </>
+                  )
+                  return lock ? (
+                    <div key={c} className={`kit-item on locked${reading ? ' using' : ''}`}>
+                      {body}
+                      <span className="always">Always on</span>
+                    </div>
+                  ) : (
+                    <button key={c} className={`kit-item${on ? ' on' : ''}${reading ? ' using' : ''}${failed ? ' missing' : ''}`} aria-pressed={on} onClick={() => turn(c, !on)}>
+                      {body}
                       <span className={`switch${on ? ' on' : ''}`} aria-hidden />
                     </button>
                   )
@@ -255,20 +280,37 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
               <h3>Skills, tools and connectors</h3>
               <div className="kit">
                 {items.map((i) => {
-                  const on = !edit.off.includes(i.id)
-                  return (
-                    <button
-                      key={i.id}
-                      className={`kit-item${on ? ' on' : ''}${now === i.id ? ' using' : ''}`}
-                      aria-pressed={on}
-                      onClick={() => set((e) => (e.off = on ? [...e.off, i.id] : e.off.filter((x) => x !== i.id)))}
-                    >
+                  const isStyle = i.id === 'style'
+                  const on = skillOn(i)
+                  const lock = isStyle ? (style ? undefined : { why: 'No brand guide in its context', on: false }) : lockedSkill(id, i.id, f.context)
+                  const failed = on || isStyle ? undefined : failedWithout({ skill: i.id })
+                  const about = isStyle && style ? (on ? `Your colours, type and voice, from ${style}` : `Off: it can’t see ${style}`) : i.about
+                  const body = (
+                    <>
                       <span className={`kind k-${i.kind}`}>{KIND[i.kind]}</span>
                       <span className="grow">
                         {i.name}
-                        <span className="sub">{now === i.id ? 'Using it now' : i.about}</span>
+                        <span className="sub">
+                          {now === i.id ? 'Using it now' : lock ? lock.why : about}
+                          {failed && <span className="miss-why"> · {failed} failed its check without it</span>}
+                        </span>
                       </span>
                       <span className="mono cost">{tokens(i.tokens)}</span>
+                    </>
+                  )
+                  return lock ? (
+                    <div key={i.id} className={`kit-item locked${lock.on ? ' on' : ''}${now === i.id ? ' using' : ''}`}>
+                      {body}
+                      <span className="always">{lock.on ? 'Always on' : 'Off'}</span>
+                    </div>
+                  ) : (
+                    <button
+                      key={i.id}
+                      className={`kit-item${on ? ' on' : ''}${now === i.id ? ' using' : ''}${failed ? ' missing' : ''}`}
+                      aria-pressed={on}
+                      onClick={() => (isStyle ? turn(style!, !on) : set((e) => (e.off = on ? [...e.off, i.id] : e.off.filter((x) => x !== i.id))))}
+                    >
+                      {body}
                       <span className={`switch${on ? ' on' : ''}`} aria-hidden />
                     </button>
                   )

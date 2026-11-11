@@ -18,8 +18,20 @@ export interface Script {
   refactor: { what: string; line: string }
   // A brand guide the plan leaves out of the Designer's context, so its screens come out off-brand until you add it.
   brand?: string
+  // Files the plan gives a farmer that a task fails without: turn one off and that task's check fails, the
+  // farmer asks for it back, and redoes the work once it has it, the same as the sample's brand guide.
+  needs?: ContextNeed[]
   dispute: { topic: string; failNote: string; impact: string; designer: Side; builder: Side }
   rollout: { peak: number; bug: string; cause: string; fix: string; check: string; file: string; tests: string[] }
+}
+
+export interface ContextNeed {
+  farmer: FarmerId
+  path: string
+  task: string // the task whose check fails without it
+  fail: string // the check's note
+  basis: string // the farmer's own line on why, in its words
+  redo: string // the tool line once it has it again
 }
 
 interface Draft {
@@ -42,6 +54,12 @@ interface Draft {
 const SUPPORT: Script = {
   screen: 'chat',
   brand: 'docs/brand.md',
+  needs: [
+    { farmer: 'builder', path: 'docs/help/', task: 'docs-index', fail: 'No help docs to index: docs/help/ isn’t in the Builder’s context', basis: 'docs/help/ isn’t in my context, so there was nothing to index.', redo: 'Read docs/help/ and indexed every page' },
+    { farmer: 'builder', path: 'eval/questions.jsonl', task: 'answer-api', fail: '7 of 10 eval questions get a cited answer, under the 90% it needs: eval/questions.jsonl isn’t in the Builder’s context', basis: 'I can’t see eval/questions.jsonl, so I couldn’t tune the answers against it.', redo: 'Read eval/questions.jsonl and tuned the answers' },
+    { farmer: 'tester', path: 'eval/questions.jsonl', task: 'answer-api', fail: 'Can’t check the 90% goal: eval/questions.jsonl isn’t in the Tester’s context', basis: 'eval/questions.jsonl isn’t in my context, so I have nothing to score the answers against.', redo: 'Scored the answers against eval/questions.jsonl' },
+    { farmer: 'designer', path: 'docs/help/', task: 'chat-widget', fail: '2 source links in the widget go to help pages that don’t exist: docs/help/ isn’t in the Designer’s context', basis: 'I can’t see docs/help/, so I guessed the page names.', redo: 'Read docs/help/ and fixed the source links' },
+  ],
   refactor: { what: 'move how answers are routed into one module', line: 'Moved answer routing into one module' },
   dispute: {
     topic: 'how the sources fit in the chat panel',
@@ -55,6 +73,7 @@ const SUPPORT: Script = {
 
 const CHECKOUT: Script = {
   screen: 'app',
+  needs: [{ farmer: 'designer', path: 'docs/brand.md', task: 'checkout-ui', fail: 'Off-brand: the colours don’t follow docs/brand.md, which isn’t in the Designer’s context', basis: 'docs/brand.md isn’t in my context, so I guessed the colours.', redo: 'Read docs/brand.md and redid the colours' }, { farmer: 'builder', path: 'docs/pricing.md', task: 'pricing-model', fail: '3 prices don’t match the pricing doc: docs/pricing.md isn’t in the Builder’s context', basis: 'docs/pricing.md isn’t in my context, so I guessed the prices.', redo: 'Read docs/pricing.md and fixed the prices' }],
   refactor: { what: 'move every price calculation into one pricing module', line: 'Moved price calculation into one module' },
   dispute: {
     topic: 'where the cookie notice goes on the checkout screen',
@@ -68,6 +87,7 @@ const CHECKOUT: Script = {
 
 const DASHBOARD: Script = {
   screen: 'dash',
+  needs: [{ farmer: 'builder', path: 'db/schema.sql', task: 'metrics-query', fail: '2 metrics read the wrong table: db/schema.sql isn’t in the Builder’s context', basis: 'db/schema.sql isn’t in my context, so I guessed the table names.', redo: 'Read db/schema.sql and fixed the queries' }],
   refactor: { what: 'compute every metric in one shared query layer', line: 'Moved the metric queries into one shared layer' },
   dispute: {
     topic: 'where the week-over-week changes go',
@@ -81,6 +101,7 @@ const DASHBOARD: Script = {
 
 const GENERIC: Script = {
   screen: 'app',
+  needs: [{ farmer: 'designer', path: 'docs/brand.md', task: 'screens', fail: 'Off-brand: the colours don’t follow docs/brand.md, which isn’t in the Designer’s context', basis: 'docs/brand.md isn’t in my context, so I guessed the colours.', redo: 'Read docs/brand.md and redid the colours' }, { farmer: 'builder', path: 'package.json', task: 'core', fail: 'The build fails: package.json isn’t in the Builder’s context, so it used the wrong start script', basis: 'package.json isn’t in my context, so I guessed how the app starts.', redo: 'Read package.json and fixed the start script' }],
   refactor: { what: 'move the shared data code into one module', line: 'Moved the shared data code into one module' },
   dispute: {
     topic: 'where the notice goes on the main screen',
@@ -92,7 +113,8 @@ const GENERIC: Script = {
   rollout: { peak: 0.029, bug: 'the timeout under load', cause: 'requests time out under load after 10 s', fix: 'Added a timeout fallback and paged the slow query', check: 'Every request answers in under 1 s under load', file: 'tests/load.test.ts', tests: ['a busy minute answers in under 1 s', 'a timeout falls back cleanly', 'paging returns every row once', 'a restart keeps the data', 'an empty list shows a clear message'] },
 }
 
-const SMALL: Script = { ...GENERIC, quiet: true, direct: true }
+// A small change gives the Builder src/ alone, so nothing the generic feature needs applies.
+const SMALL: Script = { ...GENERIC, quiet: true, direct: true, needs: undefined }
 
 // A small change: one line of copy, a label, a colour, a typo, a config value. It needs the Builder to make it and
 // run the existing tests, and you to look at the pull request. Not a Tester, a Designer, a Planner or a staged rollout. Short goals only, that say what to change

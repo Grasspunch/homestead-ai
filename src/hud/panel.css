@@ -249,6 +249,13 @@
 .model:hover, .kit-item:hover { border-color: transparent; filter: brightness(1.04); }
 .model.on, .kit-item.using { border-image-source: url(/ui/btn_cream.png); box-shadow: none; background: none; filter: drop-shadow(0 0 0 var(--leaf)) drop-shadow(0 0 1px var(--leaf)) drop-shadow(0 0 1px var(--leaf)); animation: none; }
 .kind { border-radius: 0; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .25), inset 0 0 0 2px rgba(0, 0, 0, .15); }
+/* a toggle that can't change the run: no button frame, a flat tint, and its state in words where the switch was */
+/* a file or skill a check failed without stays at full strength, so its berry line reads */
+.kit-item.missing:not(.on) { filter: none; }
+.kit-item.locked { border-image: none; border: 8px solid transparent; background: var(--tint) padding-box; cursor: default; }
+.kit-item.locked:hover { filter: none; }
+.kit-item.locked:not(.on):hover { filter: grayscale(.7) opacity(.6); }
+.kit-item .always { flex: none; min-width: 42px; text-align: center; white-space: nowrap; font: var(--t-meta) var(--ui); color: var(--bark-3); }
 /* segmented choices are pack buttons */
 .levels, .seg, .page-crew { background: none; padding: 0; gap: 4px; }
 .levels button, .seg button, .page-crew button { border-radius: 0; border: 8px solid transparent; border-image: url(/ui/btn_tan.png) 6 fill / 10px stretch; image-rendering: pixelated; background: none; padding: 2px 6px; color: var(--bark-2); box-shadow: none; }

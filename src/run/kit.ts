@@ -126,15 +126,48 @@ export function defaultRules(f: FarmerSetup): Record<string, boolean> {
   return { deploy: f.id === 'deployer', network: f.id === 'deployer', outside: false, install: f.id === 'builder' }
 }
 
-// The farmer as you've set it up: the plan's setup with your changes on top.
+// The farmer as you've set it up: the plan's setup with your changes on top. Always from what the plan gave it,
+// so a path you turn off and on again mid-run comes back. Skills you turned off ride along, so the run sees them.
 export function applyEdit(f: FarmerSetup, e?: KitEdit): FarmerSetup {
   if (!e) return f
+  const { planContext, skillsOff: _off, ...rest } = f
+  const from = planContext ?? f.context
+  const context = [...new Set([...from.filter((c) => !e.contextOff.includes(c)), ...e.contextAdd])]
+  const same = context.length === from.length && context.every((c, i) => c === from[i])
   return {
-    ...f,
+    ...rest,
     model: e.model ?? f.model,
     agent: e.agent ?? f.agent,
-    // A rebuilt run's farmers already carry your additions, so each path is listed once.
-    context: [...new Set([...f.context.filter((c) => !e.contextOff.includes(c)), ...e.contextAdd])],
+    context,
     limits: e.limits ?? f.limits,
+    ...(same ? {} : { planContext: from }),
+    ...(e.off.length ? { skillsOff: [...e.off] } : {}),
   }
+}
+
+// The brand guide in a farmer's context, or the one the project has.
+export const brandIn = (paths: string[]) => paths.find((c) => contextName(c) === 'Brand guide')
+
+// Toggles that can't change the run stay on, with why. The first path the plan gives the Builder, Designer or
+// Tester is where it works; the Planner's files made a plan that is already made.
+const SKILL_LOCKS: Partial<Record<FarmerId, Record<string, string>>> = {
+  planner: { split: 'The plan is already split', estimate: 'The plan is already priced', route: 'Your messages reach the crew through it', github: 'Read only. The run doesn’t use it' },
+  builder: { edit: 'It writes the code with it', shell: 'It runs the build and the tests with it', github: 'The pull request goes through it' },
+  designer: { figma: 'No design file is linked to this project' },
+  tester: { run: 'Every check runs through it', donewhen: 'Every check is against a done-when' },
+  deployer: { deploy: 'Only the Deployer ships, through this', metrics: 'The 10% rollout is measured with it', rollback: 'Rolling back past 2% is one of its rules' },
+}
+const HOME: Partial<Record<FarmerId, string>> = { builder: 'It writes its code here', designer: 'It builds its screens here', tester: 'Its tests live here' }
+
+export function lockedPath(farmer: FarmerId, path: string, plan: string[]): string | undefined {
+  if (!plan.includes(path)) return undefined // one you added
+  if (farmer === 'planner') return 'It made the plan from these'
+  if (farmer === 'deployer') return path === 'deploy/' ? 'It ships from here' : 'The release reads its settings from here'
+  return plan[0] === path ? HOME[farmer] : undefined
+}
+
+export function lockedSkill(farmer: FarmerId, skill: string, context: string[]): { why: string; on: boolean } | undefined {
+  if (farmer === 'tester' && skill === 'evals' && !context.some((c) => contextName(c) === 'Eval questions')) return { why: 'No eval questions in its context', on: false }
+  const why = SKILL_LOCKS[farmer]?.[skill]
+  return why ? { why, on: true } : undefined
 }
