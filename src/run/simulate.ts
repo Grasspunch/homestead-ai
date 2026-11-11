@@ -286,7 +286,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
     const f = task.farmer
     const deps = task.id === 'e2e-check' ? lastBuilt : 0
     const start = Math.max(free[f] ?? 0.3, deps)
-    const len = perTask * (0.85 + r() * 0.4)
+    // A Designer that can't see the brand guide works fast and loose: its first pass comes back early, off-brand.
+    const loose = task === designerTask && !!sc.brand && !(farmers.find((x) => x.id === 'designer')?.context.includes(sc.brand) && (input.brandAt ?? 0) <= start * MIN)
+    const full = perTask * (0.85 + r() * 0.4)
+    const len = full * (loose ? 0.55 : 1)
     if (halted(f, start)) {
       // Its farmer was stopped before this task began: it stays out of the pull request.
       stopped.add(task.id)
@@ -440,7 +443,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       continue
     }
     let end = start + len + extra
-    at(end, { type: 'task_built', task: task.id })
+    at(end, { type: 'task_built', task: task.id, ...(loose ? { worked: Math.round((full + extra) * MIN) } : {}) })
 
     // The Designer can't see the brand guide, so its screens come out off-brand. The crew can't fix that alone:
     // you add the guide to its context, and it redoes the colours.

@@ -73,7 +73,7 @@ export type RunEvent =
   | { t: number; type: 'tool'; farmer: FarmerId; task?: string; tool: string; summary: string }
   | { t: number; type: 'usage'; farmer: FarmerId; task?: string; tokensIn: number; tokensOut: number; usd: number; kind?: UsageKind }
   | { t: number; type: 'progress'; task: string; value: number }
-  | { t: number; type: 'task_built'; task: string }
+  | { t: number; type: 'task_built'; task: string; worked?: number } // worked: ms one careful agent would take, when it differs
   | { t: number; type: 'check'; task: string; by: FarmerId; pass: boolean; notes: string; evidence?: string[]; proof?: Proof; yours?: boolean }
   | { t: number; type: 'auto_fix'; task?: string; what: string }
   | { t: number; type: 'disagree'; task: string; sides: { farmer: FarmerId; position: string; why?: string }[] }
