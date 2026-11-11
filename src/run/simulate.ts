@@ -121,9 +121,8 @@ export interface SimInput {
   // When you added the scenario's brand guide to the Designer's context during this run (ms). Before then it couldn't see it.
   brandAt?: number
   // When you gave a farmer back a file or skill a task failed without, by "farmer:path" or "farmer:skill" (ms).
-  addedAt?: Record<string, number>
-  // When you took a file or skill away mid-run: checks before then had it.
-  removedAt?: Record<string, number>
+  // Each time you turned a file or skill on or off mid-run, in order: a check sees what was on at its own moment.
+  toggles?: Record<string, { t: number; on: boolean }[]>
   // Tasks an earlier run of this farm split mid-run, which this run plans in two from the start.
   presplit?: string[]
 }
@@ -224,10 +223,13 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const without = (n: Need, min: number) => {
     const x = setupOf(n.farmer)
     if (!x) return false
-    const back = (input.addedAt?.[needKey(n)] ?? 0) > min * MIN
-    if ((input.removedAt?.[needKey(n)] ?? 0) > min * MIN) return false
-    if (n.path) return (x.planContext ?? x.context).includes(n.path) && (!x.context.includes(n.path) || back)
-    return !!x.skillsOff?.includes(n.skill!) || back
+    const now = n.path ? x.context.includes(n.path) : !x.skillsOff?.includes(n.skill!)
+    // Its state at this moment: the last change at or before it, or, before any change, the opposite of the first.
+    const tg = input.toggles?.[needKey(n)] ?? []
+    const last = [...tg].reverse().find((c) => c.t <= min * MIN)
+    const on = last ? last.on : tg.length ? !tg[0].on : now
+    if (n.path) return (x.planContext ?? x.context).includes(n.path) && !on
+    return !on
   }
   const perTask = Math.max(sc.quiet ? 1.5 : 5, (basis.minutes * 0.6) / Math.max(1, plan.length))
   // Each step costs its farmer's model rate. The plan's estimate fixes the unit; a model you changed since moves its share.

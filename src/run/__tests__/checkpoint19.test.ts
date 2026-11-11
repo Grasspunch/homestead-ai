@@ -148,3 +148,61 @@ describe('checkpoint 20: a check you stopped never holds the release', () => {
     expect(s.tasks.flatMap((t) => t.checks).some((c) => c.yours)).toBe(true)
   })
 })
+
+describe('checkpoint 21: a file turned off, on and off again never leaves a task stuck', () => {
+  for (const gap of [0, 30_000, 120_000, 300_000, 600_000])
+    it(`Builder's eval questions off at the cost ask, Turn on, off again ${gap / 1000}s later: every task resolves and the run reaches Done`, () => {
+      const p = farm(SAMPLE_GOAL)
+      const path = 'eval/questions.jsonl'
+      const cost = p.events.find((e) => e.type === 'ask' && e.reason === 'cost')!
+      p.clock = cost.t
+      store.editKit(p.id, 'builder', (e) => void (e.contextOff = [...(e.contextOff ?? []), path]))
+      let flipped = false
+      for (let i = 0; i < 40; i++) {
+        const a = nextAsk(p)
+        if (!a) break
+        p.clock = Math.max(p.clock!, a.t)
+        store.answer(a.id, a.suggested)
+        if (!flipped && a.need?.path === path) {
+          flipped = true
+          p.clock = a.t + gap
+          store.editKit(p.id, 'builder', (e) => void (e.contextOff = [...(e.contextOff ?? []), path]))
+        }
+      }
+      expect(flipped).toBe(true)
+      const end = doneT(p)
+      expect(end).toBeDefined()
+      p.clock = end!
+      const s = store.state(p)!
+      for (const t of s.tasks) expect(t.status === 'accepted' || !!t.gate || (t as { stopped?: boolean }).stopped === true, `${t.name}: ${t.status}`).toBe(true)
+      expect(end!).toBeGreaterThanOrEqual(lastT(p))
+    })
+})
+
+describe('checkpoint 21: one count of caught problems everywhere', () => {
+  it('a check you caused by turning a skill off is left out of Done, the pull request, the report and the projection alike', async () => {
+    const { caughtLine } = await import('../../hud/Side')
+    const { prMarkdown, runReport } = await import('../export')
+    const { caughtCounts, scaleLine, PACE } = await import('../scale')
+    const p = store.newProject(SAMPLE_GOAL)
+    const plan = simulatePlan(SAMPLE_GOAL)
+    store.setPlan(p.id, plan.name, plan.farmers, plan.tasks, plan.estimate, plan.singleAgentEstimate)
+    store.editKit(p.id, 'tester', (e) => void (e.off = [...e.off, 'browser']))
+    store.approve(p.id)
+    store.pause()
+    for (let i = 0; i < 30; i++) {
+      const a = nextAsk(p)
+      if (!a) break
+      p.clock = Math.max(p.clock!, a.t)
+      store.answer(a.id, a.suggested)
+    }
+    p.clock = doneT(p)!
+    const s = store.state(p)!
+    expect(s.tasks.flatMap((t) => t.checks).some((c) => c.yours && !c.pass)).toBe(true)
+    const n = caughtCounts(s).checks
+    expect(caughtLine(s)).toMatch(new RegExp(`^${n} problems? caught before merge`))
+    expect(prMarkdown(p, s)).toContain(`- ${n} problem${n === 1 ? '' : 's'} caught by a check before merge`)
+    expect(runReport(p, s)).toContain(`- ${n} problem${n === 1 ? '' : 's'} caught before merge`)
+    expect(scaleLine(s)).toContain(`${n * PACE.perWeek * PACE.weeks} problems caught before merge`)
+  })
+})

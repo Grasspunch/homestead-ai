@@ -6,6 +6,7 @@ import type { FarmerId, RunEvent, RunState, TaskState } from './types'
 import { FARMER_ORDER } from './types'
 import { BY_YOU as ROLLED_BY_YOU } from './rollback'
 import { prOf } from './files'
+import { caught as allCaught } from './scale'
 import { doneLead } from './done'
 import { lessonLine, type Lesson } from './learn'
 
@@ -80,11 +81,10 @@ function commitsOf(p: ExportFarm, s: RunState) {
   return out
 }
 
-// Problems a check caught before the merge, and bad releases stopped at 10%.
+// Problems a check caught before the merge, and bad releases stopped at 10%: the same list Done reads.
 function caught(s: RunState) {
-  const checks = s.tasks.flatMap((t) => t.checks.filter((c) => !c.pass).map((c) => ({ where: t.name, what: c.notes })))
-  const canary = s.deploy.filter((d, i) => d.stage === 'rollback' && d.reason !== ROLLED_BY_YOU && s.deploy[i - 1]?.stage === '10%')
-  return { checks, canary }
+  const all = allCaught(s)
+  return { checks: all.filter((x) => x.kind === 'check'), canary: all.filter((x) => x.kind === 'canary') }
 }
 
 function decisions(p: ExportFarm, s: RunState) {
@@ -192,7 +192,7 @@ export function runReport(p: ExportFarm, s: RunState): string {
   ]
   // Every moment worth a line: not each tool step.
   const moments = s.activity.filter((a) => a.kind !== 'tool').map((a) => `- ${at(a.t)}${a.farmer ? `, ${label(s, a.farmer)}` : ''}: ${a.text}`)
-  const caughtList = [...c.checks.map((x) => `- ${x.where}: ${x.what}`), ...c.canary.map((d) => `- Rollout: ${d.reason ?? 'errors passed the limit at 10%, so it rolled back by itself'}`)]
+  const caughtList = [...c.checks.map((x) => `- ${x.where}: ${x.what}`), ...c.canary.map((d) => `- Rollout: ${d.what}`)]
   // Every plot, the release included, so the rows add up to the count above.
   const byTask = s.tasks.map((t) => [t.name, label(s, t.farmer), t.status === 'accepted' ? (t.gate ? 'Done' : 'Committed') : t.stopped ? 'Stopped' : 'Not done', cents(t.usd)])
   return [

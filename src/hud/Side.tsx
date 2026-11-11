@@ -7,6 +7,7 @@ import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
 import { Ico, Mark, Portrait, Quiet, Swatch, cents, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 import { BY_YOU } from '../run/rollback'
+import { caught } from '../run/scale'
 import { agentName } from '../run/kit'
 
 const STATUS: Record<TaskState['status'], string> = {
@@ -341,7 +342,7 @@ interface Fix {
 // What a farmer has given back for its spend, in a few words.
 export function returnOf(s: RunState, id: FarmerId): string {
   const done = s.tasks.filter((t) => t.farmer === id && (t.status === 'ripe' || t.status === 'accepted')).length
-  const caught = s.tasks.reduce((n, t) => n + t.checks.filter((c) => c.by === id && !c.pass).length, 0)
+  const caught = s.tasks.reduce((n, t) => n + t.checks.filter((c) => c.by === id && !c.pass && !c.yours).length, 0)
   const parts: string[] = []
   if (done) parts.push(`${done} task${done === 1 ? '' : 's'} done`)
   if (caught) parts.push(`caught ${caught} failure${caught === 1 ? '' : 's'}`)
@@ -397,17 +398,7 @@ function fixes(s: RunState): Fix[] {
   return out
 }
 
-// What got caught: problems a different farmer's check found before the merge, and a bad release the 10% stage
-// stopped (10% of users did see that one). A rollback you made yourself isn't counted.
-export function caught(s: RunState): { where: string; what: string; kind: 'check' | 'canary' }[] {
-  const out: { where: string; what: string; kind: 'check' | 'canary' }[] = []
-  // A check that failed because you took a file or skill away is yours, not a problem the checker caught.
-  for (const t of s.tasks) for (const c of t.checks) if (!c.pass && !c.yours) out.push({ where: t.name, what: c.notes, kind: 'check' })
-  s.deploy.forEach((d, i) => {
-    if (d.stage === 'rollback' && d.reason !== BY_YOU && s.deploy[i - 1]?.stage === '10%') out.push({ where: 'Rollout', what: d.reason ?? 'Errors passed 2% at 10%, so it rolled back on its own', kind: 'canary' })
-  })
-  return out
-}
+export { caught }
 
 // "2 caught before merge, 1 stopped at 10%", said the same way everywhere.
 export function caughtLine(s: RunState) {

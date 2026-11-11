@@ -57,7 +57,7 @@ export interface Project {
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   talks?: Record<string, (TalkLine | { from: 'you'; text: string })[]> // talking a disagreement through, by ask id
-  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; brandAt?: number; addedAt?: Record<string, number>; removedAt?: Record<string, number> } // seq: which run of this farm, from 1
+  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; brandAt?: number; toggles?: Record<string, { t: number; on: boolean }[]> } // seq: which run of this farm, from 1
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
@@ -867,8 +867,7 @@ class Store {
     const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed, this.kitAt[p.id] ?? {}, run.lesson)
     if (!built) return
     if (run.brandAt !== undefined) (built.input as SimInput).brandAt = run.brandAt
-    if (run.addedAt) (built.input as SimInput).addedAt = run.addedAt
-    if (run.removedAt) (built.input as SimInput).removedAt = run.removedAt
+    if (run.toggles) (built.input as SimInput).toggles = run.toggles
     // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
     const t0 = p.clock ?? 0
     if (t0 > 0) {
@@ -1354,9 +1353,16 @@ class Store {
   }
 
   // A file or skill a task failed without, given back: from the ask's moment, as with the brand guide.
+  // Each time a file or skill went on or off during this run, in order: a check sees what was on at its own moment.
+  private toggled(p: Project, key: string, on: boolean, t: number) {
+    if (!p.run) return
+    const was = p.run.toggles?.[key] ?? []
+    p.run.toggles = { ...p.run.toggles, [key]: [...was, { t, on }].sort((a, b) => a.t - b.t) }
+  }
+
   private giveBack(p: Project, ask: Extract<RunEvent, { type: 'ask' }>) {
     const n = ask.need!
-    if (p.run) p.run.addedAt = { ...p.run.addedAt, [needKey(n)]: Math.max(p.run.addedAt?.[needKey(n)] ?? 0, ask.t) }
+    if (p.run) this.toggled(p, needKey(n), true, ask.t)
     this.editKit(p.id, n.farmer, (e) => {
       if (n.skill) e.off = e.off.filter((x) => x !== n.skill)
       if (n.path) e.contextOff = e.contextOff.filter((x) => x !== n.path)
@@ -1396,9 +1402,9 @@ class Store {
       // From now on the Designer sees the brand guide; a check that failed without it stays failed in the past.
       if (brandAdded) p.run.brandAt = Math.max(p.clock ?? 0, p.run.brandAt ?? 0)
       // So does any other file or skill you turned back on.
-      for (const k of back) p.run.addedAt = { ...p.run.addedAt, [k]: Math.max(p.clock ?? 0, p.run.addedAt?.[k] ?? 0) }
+      for (const k of back) this.toggled(p, k, true, p.clock ?? 0)
       // A file or skill you took away from now on: a check that already passed stays passed.
-      for (const k of gone) p.run.removedAt = { ...p.run.removedAt, [k]: Math.max(p.clock ?? 0, p.run.removedAt?.[k] ?? 0) }
+      for (const k of gone) this.toggled(p, k, false, p.clock ?? 0)
       this.rebuild(p)
       // Added on the Designer's page while it was asking for it: that's the answer.
       if (brandAdded && !this.viewerAnswers[BRAND_ASK] && pendingAsk(p.events, p.clock ?? 0, this.viewerAnswers) === BRAND_ASK) this.answer(BRAND_ASK, BRAND_FIX)
