@@ -142,6 +142,7 @@ function Farm() {
       ) : (
         <PlannerDialogue p={p} s={s} side={side} />
       )}
+      {p.approved && <WaitingFaces s={s} current={ask?.id} />}
       {p.approved && st.pending?.pid !== p.id && d?.kind !== 'chat' && (ask || rolled || trust) && (
         <button className="btn tan planner-reach" onClick={() => store.setDrawer({ kind: 'chat' })}>
           <Ico name="chat" />
@@ -258,6 +259,13 @@ function Top({ p, s }: { p: Project; s: RunState }) {
             <i aria-hidden />
             Paused
           </span>
+        )}
+        {p.approved && !s.done && (pendingAsk(p.events, st.clock, st.viewerAnswers) || st.openRollback(p)) && (
+          // Shown only while the window that stopped the run is hidden (hud.css), so the still farm has a reason.
+          <button className="tag waiting" onClick={() => (document.querySelector('.dlg.tucked.alert .tuck-frame') as HTMLElement | null)?.click()} title="Open what's waiting on you">
+            <Ico name="alert" tone="light" />
+            Waiting on you
+          </button>
         )}
         {p.approved && !!p.reshapes?.length && !look.hidden.includes('chips') && (
           <div className="reshapes">
@@ -1194,7 +1202,7 @@ function Center({
     <>
       {/* First, so the farm's camera measures the frame, not the hidden window. */}
       {hidden && (
-        <section className="dlg tucked">
+        <section className={`dlg tucked${alert ? ' alert' : ''}`}>
           <button className="tuck-frame" onClick={() => set(false)} title="Open this window">
             <span className="portrait">
               <Portrait farmer={farmer} />
@@ -1204,7 +1212,7 @@ function Center({
               <i />
             </span>
             <span className="thought paper">
-              {alert && <Ico name="alert" />}
+              {alert && <Ico name="alert" tone="light" />}
               <span className="words">{thought}</span>
             </span>
           </button>
@@ -1220,6 +1228,26 @@ function Center({
         {children}
       </Dialogue>
     </>
+  )
+}
+
+// Anyone else who needs you, beyond the window in the corner: one small face each, stacked above it. Each opens
+// the inbox, where every open question waits in order.
+function WaitingFaces({ s, current }: { s: RunState; current?: string }) {
+  const others = s.asks.filter((a) => !a.answer && a.id !== current)
+  const faces = [...new Map(others.map((a) => [a.farmer, a])).values()]
+  if (!faces.length) return null
+  return (
+    <div className="waiting-faces" aria-label={`${others.length} more need${others.length === 1 ? 's' : ''} you`}>
+      {faces.map((a) => (
+        <button key={a.farmer} className="waiting-face" onClick={() => store.setDrawer({ kind: 'inbox' })} title={`${s.farmers[a.farmer]?.label ?? 'An agent'} needs you: ${a.question}`}>
+          <span className="portrait">
+            <Portrait farmer={a.farmer} size={48} />
+          </span>
+          <Ico name="alert" tone="light" />
+        </button>
+      ))}
+    </div>
   )
 }
 

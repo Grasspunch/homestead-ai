@@ -427,6 +427,22 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .tuck-frame .thought { align-self: flex-end; margin-bottom: 60px; max-width: 320px; padding: 2px 6px; display: flex; gap: 8px; align-items: flex-start; font: 600 var(--t-body)/1.35 var(--ui); color: var(--bark); }
 .tuck-frame .thought .words { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .tuck-frame .thought .ico { flex: none; margin-top: 2px; }
+.tuck-frame .thought .ico { background-color: var(--berry); border-radius: 4px; }
+/* Waiting on you and hidden: the thought nudges now and then, and the top bar says why the farm is still. */
+.dlg.tucked.alert .thought { animation: nudge 2600ms ease-in-out infinite; }
+@keyframes nudge { 0%, 80%, 100% { transform: translateY(0); } 86% { transform: translateY(-5px); } 92% { transform: translateY(0); } 96% { transform: translateY(-2px); } }
+.top .tag.waiting { display: none; align-items: center; gap: 5px; background: var(--berry); border: 0; cursor: pointer; }
+.top .tag.waiting .ico { margin: -2px 0; }
+.stage:has(.dlg.tucked.alert) .top .tag.waiting, body:has(.dlg.tucked.alert) .top .tag.waiting { display: inline-flex; }
+/* Others who need you: small faces stacked above the corner portrait. */
+.waiting-faces { position: absolute; left: 16px; bottom: 164px; z-index: 6; display: flex; flex-direction: column-reverse; gap: 8px; }
+.waiting-face { all: unset; cursor: pointer; position: relative; display: block; }
+.waiting-face .portrait { display: block; width: 72px; height: 72px; border-width: 10px; border-image-width: 12px; }
+.waiting-face .portrait canvas { inset: 2px; }
+.waiting-face .ico { position: absolute; right: -4px; top: -4px; background-color: var(--berry); border-radius: 4px; }
+.waiting-face:hover .portrait { transform: translateY(-2px); }
+.waiting-face:focus-visible { outline: 3px solid var(--leaf); outline-offset: 3px; border-radius: 6px; }
+@media (max-width: 900px) { .waiting-faces { left: 10px; bottom: 96px; } .waiting-face .portrait { display: block; } }
 .tuck-frame .portrait { transition: transform .12s; }
 .tuck-frame:hover .portrait, .tuck-frame:hover .thought { transform: translateY(-3px); }
 .tuck-frame .thought { transition: transform .12s; }
