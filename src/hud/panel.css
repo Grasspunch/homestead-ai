@@ -67,6 +67,9 @@
 .tests-list li.fail { background: var(--berry-wash); }
 .tests-list .grow { flex: 1; min-width: 0; }
 .tests-list .err { display: block; color: var(--berry); font-size: var(--t-meta); }
+.tests-list .trace { font-size: var(--t-meta); color: var(--bark-3); margin-top: 2px; }
+.tests-list .trace summary { cursor: pointer; width: max-content; text-decoration: underline; }
+.tests-list .trace code { display: block; margin-top: 4px; padding: 4px 8px; background: rgba(106,74,52,.07); color: var(--bark-2); white-space: pre-wrap; word-break: break-word; }
 .tests-list .ms { color: var(--bark-3); font-size: var(--t-meta); }
 
 /* proof: screenshots (a small mock of the screen the crew built) */
@@ -405,6 +408,7 @@ button.crew-x:hover { opacity: 1; }
 .outlier .what { font-size: var(--t-body); min-width: 0; }
 .outlier .what p { margin: 2px 0 0; font-size: var(--t-meta); color: var(--bark-2); line-height: 1.4; }
 .outlier .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
+.outlier-open { display: flex; flex-direction: column; gap: 6px; }
 .team-none { margin: 0; font-size: var(--t-body); color: var(--bark-2); }
 .budgets { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
 .budgets > [role=row] > :not(:last-child) { padding-right: 14px; }

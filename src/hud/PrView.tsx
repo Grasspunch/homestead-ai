@@ -13,6 +13,7 @@ import { Ico, Mark, Portrait, Swatch, mins, usd } from './bits'
 import { Rollout } from './Proof'
 import { caughtLine } from './Side'
 import { ExportButtons } from './Export'
+import { soloLine } from '../run/export'
 
 type Tab = 'conversation' | 'commits' | 'checks' | 'files'
 
@@ -138,7 +139,7 @@ export function PrView({ s, p }: { s: RunState; p: Project }) {
         {tab === 'conversation' && <Conversation s={s} p={p} pr={pr} state={state.key} failing={failing} openFile={openFile} />}
         {tab === 'commits' && <Commits s={s} pr={pr} openFile={openFile} />}
         {tab === 'checks' && <Checks s={s} />}
-        {tab === 'files' && <Files s={s} pr={pr} path={path} setPath={setPath} ask={s.asks.find((a) => !a.answer && isShipAsk(a))} />}
+        {tab === 'files' && <Files s={s} pr={pr} path={path} setPath={setPath} ask={p.owner ? undefined : s.asks.find((a) => !a.answer && isShipAsk(a))} />}
       </div>
     </aside>
   )
@@ -158,7 +159,8 @@ function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: 
   const tests = proofs.reduce((n, x) => n + (x?.tests?.filter((t) => t.pass).length ?? 0), 0)
   const shots = proofs.reduce((n, x) => n + (x?.shots?.length ?? 0), 0)
   const passed = s.tasks.reduce((n, t) => n + t.checks.filter((c) => c.pass).length, 0)
-  const ask = s.asks.find((a) => !a.answer && isShipAsk(a))
+  // A teammate's pull request is theirs to review: no merge or request-changes controls on it.
+  const ask = p.owner ? undefined : s.asks.find((a) => !a.answer && isShipAsk(a))
   const planner: FarmerId = s.farmers.planner ? 'planner' : (FARMER_ORDER.find((f) => s.farmers[f]) ?? 'builder')
   const reviewers = [...new Set(s.tasks.flatMap((t) => t.checks.map((c) => c.by)))]
   const assignees = FARMER_ORDER.filter((f) => s.tasks.some((t) => t.farmer === f && !t.gate))
@@ -257,6 +259,7 @@ function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: 
         <div>
           <h4>Spent</h4>
           <p className="prv-side-num">{usd(s.usage.usd)}</p>
+          {s.done && s.soloActual && <p className="fine">{soloLine(s, true)}</p>}
         </div>
         {decided.length > 0 && (
           <div>

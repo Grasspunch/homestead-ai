@@ -4,6 +4,10 @@ import type { Proof, RunState, Screen, Shot, TaskState, TestResult } from '../ru
 import { Rollout } from './Rollout'
 import { Mark } from './bits'
 
+// What failed, in plain words. A bare stack-trace line never leads: it goes behind the Trace disclosure.
+export const plainFail = (t: TestResult) => t.why ?? (t.error && /^[A-Z]\w*Error\b/.test(t.error) ? 'The code crashed on this test' : t.error)
+const isTrace = (t: TestResult) => !!t.error && plainFail(t) !== t.error
+
 export function Tests({ tests, kind }: { tests: TestResult[]; kind: 'unit' | 'integration' }) {
   const failed = tests.filter((t) => !t.pass)
   return (
@@ -20,7 +24,14 @@ export function Tests({ tests, kind }: { tests: TestResult[]; kind: 'unit' | 'in
             <Mark pass={t.pass} />
             <span className="grow">
               {t.name}
-              {t.error && <span className="mono err">{t.error}</span>}
+              {/* Plain words first; the raw trace only for whoever opens it. */}
+              {isTrace(t) ? <span className="err">{plainFail(t)}</span> : t.error && <span className="mono err">{t.error}</span>}
+              {isTrace(t) && (
+                <details className="trace">
+                  <summary>Trace</summary>
+                  <code className="mono">{t.error}</code>
+                </details>
+              )}
             </span>
             <span className="mono ms">{t.ms} ms</span>
           </li>
@@ -136,7 +147,7 @@ export function ProofPop({ check, task, state, style, onOpen, size }: { check: C
           </span>
           <span className="pp-line">
             {failed.length ? (
-              <span className="mono bad">{failed[0].error ?? failed[0].name}</span>
+              isTrace(failed[0]) ? <span className="bad">{plainFail(failed[0])}</span> : <span className="mono bad">{failed[0].error ?? failed[0].name}</span>
             ) : (
               <>
                 {tests.length} of {tests.length} {pr?.kind === 'integration' ? 'end-to-end runs' : 'tests'} pass

@@ -54,6 +54,7 @@ function unit(task: PlanTask, failing = false): Proof {
     pass: !(failing && i < 2),
     ms: 4 + ((i * 37) % 90),
     error: failing && i === 0 ? 'TypeError: Cannot read properties of undefined (reading "trim")' : failing && i === 1 ? 'Expected status 400, got 500' : undefined,
+    why: failing && i === 0 ? 'Empty input crashes the handler' : failing && i === 1 ? 'An empty body fails with a server error, not a clear one' : undefined,
   }))
   return { kind: 'unit', tests }
 }

@@ -45,7 +45,8 @@ export interface TestResult {
   name: string
   pass: boolean
   ms: number
-  error?: string
+  error?: string // the raw trace, behind a disclosure
+  why?: string // what failed, in plain words: what a pop shows
 }
 export type Shot = { device: 'phone' | 'desktop'; state: 'ok' | 'overlap' | 'alt' | 'offbrand' }
 // Which captured screen a screenshot shows: the support widget, a checkout form, a metrics board, or the agent dashboard.

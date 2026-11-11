@@ -121,6 +121,13 @@ input, textarea { font: inherit; color: inherit; }
 .tag.sky { background: var(--sky); } .tag.gold { background: var(--honey); } .tag.green { background: var(--leaf); } .tag.grey { background: var(--bark-4); } .tag.red { background: var(--berry); }
 .dlg p { margin: 0; font-size: var(--t-lead); line-height: 1.45; }
 .dlg p.impact { font-size: var(--t-body); color: var(--bark-2); }
+/* A teammate's ask, read only: the options as flat ruled rows, not buttons. */
+.ask-options { list-style: none; margin: 0; padding: 0; font-size: var(--t-body); color: var(--bark-2); }
+.ask-options li { padding: 6px 0; border-top: 1px solid rgba(106,74,52,.16); }
+.ask-options li:last-child { border-bottom: 1px solid rgba(106,74,52,.16); }
+.ask-options li.suggested { color: var(--bark); font-weight: 700; }
+.ask-options .sub { font-weight: 400; color: var(--bark-3); font-size: var(--t-meta); }
+.dlg p.view-only-note { font-size: var(--t-meta); color: var(--bark-3); }
 .dlg p.legend { font-size: var(--t-meta); color: var(--bark-2); margin-top: 2px; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .row .end { margin-left: auto; }

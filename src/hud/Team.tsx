@@ -1,8 +1,8 @@
 // The lead's view on Home: spend against each area's budget, and the few projects worth a look.
-// Teammates' projects are simulated; what you see is spend and outliers, never what anyone is doing.
+// Teammates' projects are simulated; what you see is spend and outliers. Opening one is view only: their asks are theirs.
 import { Fragment } from 'react'
 import { store, useStore } from '../run/store'
-import { buildTeam, type Outlier, type TeamFarm } from '../run/team'
+import { BUDGET, buildTeam, spentOf, type Outlier, type TeamFarm } from '../run/team'
 import { Ico, LimitField, Quiet, Ticks, usd, type IconName } from './bits'
 
 // The same urgency tags an ask leads with: honey for money, bark for the rest.
@@ -14,6 +14,7 @@ const KIND: Record<Outlier['kind'], { label: string; urgency: 'honey' | 'calm'; 
 
 const whose = (f: TeamFarm) => (f.mine ? 'yours' : f.owner)
 const openFarm = (f: TeamFarm) => (f.mine ? store.open(f.id) : store.openTeam(f.id))
+const openLabel = (f: TeamFarm) => (f.mine ? 'Open yours' : `Open ${f.owner}’s`)
 
 export function TeamPanel() {
   const st = useStore()
@@ -47,9 +48,20 @@ export function TeamPanel() {
                   )}
                   <p>{o.text}</p>
                 </div>
-                <button className="btn tan xs" onClick={() => openFarm(o.farm)} aria-label={`Open ${o.farm.name}`}>
-                  Open
-                </button>
+                {o.kind === 'twice' ? (
+                  // Both projects in the pair, each opening its own farm.
+                  <span className="outlier-open">
+                    {[o.farm, o.other].map((f) => (
+                      <button key={f.id} className="btn tan xs" onClick={() => openFarm(f)} aria-label={`${openLabel(f)}: ${f.name}`}>
+                        {openLabel(f)}
+                      </button>
+                    ))}
+                  </span>
+                ) : (
+                  <button className="btn tan xs" onClick={() => openFarm(o.farm)} aria-label={`Open ${o.farm.name}`}>
+                    Open
+                  </button>
+                )}
               </li>
             )
           })}
@@ -71,7 +83,7 @@ export function TeamPanel() {
                 Budget per project
               </span>
               <span role="cell">
-                <LimitField value={a.budget} unit="$" label={`${a.name}: budget per project`} onChange={(v) => store.setBudget(a.id, v)} />
+                <LimitField value={a.budget} unit="$" min={BUDGET.min} max={BUDGET.max} label={`${a.name}: budget per project`} onChange={(v) => store.setBudget(a.id, v)} />
               </span>
             </div>
             {a.farms.map((f) => (
@@ -85,7 +97,7 @@ export function TeamPanel() {
                 <span role="cell" className={`spend${f.spent > f.limit ? ' over' : ''}`}>
                   <Ticks used={f.spent} total={f.limit} n={12} />
                   <span>
-                    <b>{usd(f.spent)}</b> of {usd(f.limit)}
+                    <b>{spentOf(f.spent, f.limit).spent}</b> of {spentOf(f.spent, f.limit).limit}
                   </span>
                 </span>
               </div>

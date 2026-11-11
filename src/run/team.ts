@@ -17,6 +17,16 @@ export const AREAS: Area[] = [
   { id: 'insights', name: 'Insights', budget: 50 },
 ]
 
+// An area's budget per project: whole dollars, at least $1 and at most $1,000. Anything typed outside is pulled in.
+export const BUDGET = { min: 1, max: 1000 }
+export const clampBudget = (n: number) => Math.min(BUDGET.max, Math.max(BUDGET.min, Math.round(n)))
+
+// Spent against a limit, both in one format: cents only when both are under $10, so "$13 of $5", never "$13 of $5.00".
+export function spentOf(spent: number, limit: number) {
+  const f = spent < 10 && limit < 10 ? (n: number) => `$${n.toFixed(2)}` : (n: number) => `$${Math.round(n)}`
+  return { spent: f(spent), limit: f(limit), over: f(Math.max(0, spent - limit)) }
+}
+
 // The area a new project belongs to, from its goal.
 export function areaFor(goal: string): string {
   const g = goal.toLowerCase()
@@ -139,7 +149,7 @@ export function buildTeam(mine: MineIn[], budgets: Record<string, number>): Team
   }
   const over = farms.find((f) => f.spent > f.limit)
   const spike = farms.map((f) => ({ f, p: pending(f, 'cost') })).find((x) => x.p)
-  if (over) outliers.push({ kind: 'spike', farm: over, text: `Over its limit by $${(over.spent - over.limit).toFixed(0)}.` })
+  if (over) outliers.push({ kind: 'spike', farm: over, text: `Over its limit by ${spentOf(over.spent, over.limit).over}.` })
   else if (spike?.p) outliers.push({ kind: 'spike', farm: spike.f, text: spike.p.a.question })
   for (let i = 0; i < farms.length && !outliers.some((o) => o.kind === 'twice'); i++)
     for (let j = i + 1; j < farms.length; j++) {

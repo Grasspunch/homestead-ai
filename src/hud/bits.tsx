@@ -104,9 +104,11 @@ export const mins = (n: number) => (n >= 60 ? `${Math.floor(n / 60)} h ${Math.ro
 export const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n))
 
 // A limit you type: "$ 53" or "50 min". Saves on Enter or when you leave the field.
-export function LimitField({ value, unit, label, min = 1, onChange }: { value: number; unit: '$' | 'min'; label: string; min?: number; onChange: (v: number) => void }) {
+// With max, a bigger number is pulled down to it rather than refused.
+export function LimitField({ value, unit, label, min = 1, max, onChange }: { value: number; unit: '$' | 'min'; label: string; min?: number; max?: number; onChange: (v: number) => void }) {
   const commit = (el: HTMLInputElement) => {
-    const v = Math.round(Number(el.value.replace(/[^0-9.]/g, '')))
+    const typed = Math.round(Number(el.value.replace(/[^0-9.]/g, '')))
+    const v = max !== undefined ? Math.min(max, typed) : typed
     if (Number.isFinite(v) && v >= min && v !== value) onChange(v)
     else el.value = String(Math.round(value))
   }

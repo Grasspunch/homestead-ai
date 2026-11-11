@@ -2,10 +2,12 @@
 // Built only from the run's own events (through its RunState), so every number matches the screen.
 // Pure: no DOM, no store. `download` at the bottom is the one browser helper.
 
-import type { FarmerId, RunState, TaskState } from './types'
+import type { FarmerId, RunEvent, RunState, TaskState } from './types'
 import { FARMER_ORDER } from './types'
 import { BY_YOU as ROLLED_BY_YOU } from './rollback'
 import { prOf } from './files'
+import { doneLead } from './done'
+import { lessonLine, type Lesson } from './learn'
 
 // What the exports need from a farm. A Project fits it as it is.
 export interface ExportFarm {
@@ -16,6 +18,8 @@ export interface ExportFarm {
   plannedEarlier?: string
   liveSource?: string
   notes?: Record<string, string> // answers you gave in your own words, by ask id
+  events?: RunEvent[] // with run.lesson: the "Learned from run N" line, as Done says it
+  run?: { lesson?: Lesson }
 }
 
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`
@@ -32,13 +36,6 @@ export const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, 
 
 const label = (s: RunState, f: FarmerId) => s.farmers[f]?.label ?? f
 
-// Where the release ended up.
-function releaseState(s: RunState) {
-  const last = s.deploy[s.deploy.length - 1]
-  if (!last) return 'Not merged'
-  return last.stage === '100%' ? 'Merged, live for everyone' : last.stage === 'rollback' ? 'Merged, then rolled back' : 'Merged, live for 10% of users'
-}
-
 // What was real and what was simulated, said first.
 function provenance(p: ExportFarm) {
   const plan = p.plannedEarlier
@@ -50,6 +47,18 @@ function provenance(p: ExportFarm) {
   return `> ${plan} ${run}: commits, checks, spend and the release are the simulation's, not a real repository's.`
 }
 
+// One agent alone on the same work, with the assumption the time rests on. The pull request window says it too.
+export function soloLine(s: Pick<RunState, 'soloActual'>, short = false) {
+  if (!s.soloActual) return ''
+  if (short) return `One agent alone: about ${usd(s.soloActual.usd)} in ${mins(s.soloActual.minutes)}, assuming it runs a third slower.`
+  return `One Claude Sonnet 5 agent alone, estimated from this run: about ${usd(s.soloActual.usd)} over ${mins(s.soloActual.minutes)}, assuming one agent runs a third slower.`
+}
+
+// What the last run taught the Planner, in Done's words.
+function learnedLine(p: ExportFarm) {
+  return p.run?.lesson && p.events ? lessonLine(p.run.lesson, p.events, true) : ''
+}
+
 // One line per check: pass or fail, by whom, and what the proof showed.
 function checkLine(c: TaskState['checks'][number]) {
   const tests = c.proof?.tests
@@ -57,13 +66,16 @@ function checkLine(c: TaskState['checks'][number]) {
   return `${c.notes}${proof}`
 }
 
-// The commits: each task whose check passed, then each change you asked for on it.
-function commitsOf(s: RunState) {
-  const out: { task: TaskState; title: string; body: string }[] = []
-  for (const t of s.tasks.filter((x) => !x.gate && x.status === 'accepted')) {
-    const pass = [...t.checks].reverse().find((c) => c.pass)
-    out.push({ task: t, title: t.name, body: `By the ${label(s, t.farmer)}${pass ? `, checked by the ${label(s, pass.by)}` : ''}. Done when: ${t.doneWhen}` })
-    for (const c of t.changes ?? []) out.push({ task: t, title: `${t.name}: changed`, body: /^your way/i.test(c) ? c : `You asked: ${c}` })
+// The commits, the same list the pull request window shows: each task once its check passed, each change you
+// asked for on it, and any refactor or rollout fix. A task's commit carries the task's cost.
+function commitsOf(p: ExportFarm, s: RunState) {
+  const out: { title: string; body: string; usd?: number }[] = []
+  for (const c of prOf(s, p.goal).commits) {
+    const t = s.tasks.find((x) => x.id === c.task)
+    const by = `By the ${label(s, c.farmer)}${c.checkedBy ? `, checked by the ${label(s, c.checkedBy)}` : ''}`
+    if (c.kind === 'task' && t) out.push({ title: c.message, usd: t.usd, body: `${by}. Done when: ${t.doneWhen}` })
+    else if (c.kind === 'change') out.push({ title: c.message, body: c.check && /^your way/i.test(c.check) ? c.check : `You asked: ${c.check ?? ''}` })
+    else out.push({ title: c.message, body: `${by}. ${c.check ?? ''}`.trim() })
   }
   return out
 }
@@ -100,24 +112,27 @@ function spendLines(s: RunState) {
   if (s.estimate) lines.push(`- Planned: ${usd(s.estimate.usd)} over ${mins(s.estimate.minutes)}`)
   lines.push(`- Reading ${cents(k.read.usd)}, writing ${cents(k.write.usd)}, redoing work ${cents(k.retry.usd)}`)
   if (s.checkUsd !== undefined) lines.push(`- Checks: ${cents(s.checkUsd)}`)
-  if (s.soloActual) lines.push(`- One Claude Sonnet 5 agent alone, estimated from this run: about ${usd(s.soloActual.usd)} over ${mins(s.soloActual.minutes)}, assuming one agent runs a third slower`)
+  if (s.soloActual) lines.push(`- ${soloLine(s).replace(/\.$/, '')}`)
   return lines.join('\n')
 }
 
 // The pull request, as you'd paste it into GitHub: title, summary, commits, checks, your decisions and the spend.
 export function prMarkdown(p: ExportFarm, s: RunState): string {
-  const commits = commitsOf(s)
+  const commits = commitsOf(p, s)
   const work = s.tasks.filter((t) => !t.gate)
   const stopped = work.filter((t) => t.stopped && t.status !== 'accepted')
   const c = caught(s)
+  const learned = learnedLine(p)
+  // Tasks counted as Done counts them: every plot, the release included.
   const summary = [
     `- ${p.goal}`,
-    `- ${commits.length} commit${commits.length === 1 ? '' : 's'} from ${work.length - stopped.length} of ${work.length} tasks. ${releaseState(s)}.`,
+    `- ${doneLead(s)} ${commits.length} commit${commits.length === 1 ? '' : 's'}.`,
     `- ${c.checks.length || 'No'} problem${c.checks.length === 1 ? '' : 's'} caught by a check before merge${c.canary.length ? `, ${c.canary.length} bad release stopped at 10%` : ''}.`,
     `- ${s.asks.filter((a) => a.answer).length} decisions came to you; the crew handled ${s.autoFixes.length} by itself.`,
+    ...(learned ? [`- ${learned}`] : []),
   ]
   const commitList = commits.length
-    ? commits.map((x, i) => `${i + 1}. **${x.title}** (${cents(x.task.usd)})\n   ${x.body}`).join('\n')
+    ? commits.map((x, i) => `${i + 1}. **${x.title}**${x.usd !== undefined ? ` (${cents(x.usd)})` : ''}\n   ${x.body}`).join('\n')
     : '_No commits._'
   const left = stopped.map((t) => `- ~~${t.name}~~: ${t.stopped ?? 'stopped, left out of this pull request'}`).join('\n')
   const checks = work.filter((t) => t.checks.length)
@@ -163,22 +178,23 @@ function filesTable(p: ExportFarm, s: RunState) {
 // The run, start to end: outcome, the crew and what each could see, every moment in order, and the spend.
 export function runReport(p: ExportFarm, s: RunState): string {
   const c = caught(s)
-  const work = s.tasks.filter((t) => !t.gate)
-  const done = work.filter((t) => t.status === 'accepted').length
+  const learned = learnedLine(p)
   const crew = FARMER_ORDER.filter((f) => s.farmers[f]).map((f) => {
     const x = s.farmers[f]!
     return [x.label, `${x.model} on ${x.agent === 'codex' ? 'Codex' : 'Claude Code'}`, x.context.join(', '), x.constraints.join('; '), `${whole(x.limits.usd)}, ${mins(x.limits.minutes)}`]
   })
   const outcome = [
-    `- ${done} of ${work.length} tasks committed. ${releaseState(s)}.`,
+    `- ${doneLead(s)}`,
     s.done ? `- ${cents(s.done.usd)} over ${mins(s.done.minutes)}${s.estimate ? `, against a plan of ${usd(s.estimate.usd)} over ${mins(s.estimate.minutes)}` : ''}.` : '- The run has not finished.',
     `- ${c.checks.length || 'No'} problem${c.checks.length === 1 ? '' : 's'} caught before merge${c.canary.length ? `, ${c.canary.length} bad release stopped at 10%` : ''}.`,
     `- ${s.asks.filter((a) => a.answer).length} decisions came to you; the crew handled ${s.autoFixes.length} by itself.`,
+    ...(learned ? [`- ${learned}`] : []),
   ]
   // Every moment worth a line: not each tool step.
   const moments = s.activity.filter((a) => a.kind !== 'tool').map((a) => `- ${at(a.t)}${a.farmer ? `, ${label(s, a.farmer)}` : ''}: ${a.text}`)
   const caughtList = [...c.checks.map((x) => `- ${x.where}: ${x.what}`), ...c.canary.map((d) => `- Rollout: ${d.reason ?? 'errors passed the limit at 10%, so it rolled back by itself'}`)]
-  const byTask = work.map((t) => [t.name, label(s, t.farmer), t.status === 'accepted' ? 'Committed' : t.stopped ? 'Stopped' : 'Not done', cents(t.usd)])
+  // Every plot, the release included, so the rows add up to the count above.
+  const byTask = s.tasks.map((t) => [t.name, label(s, t.farmer), t.status === 'accepted' ? (t.gate ? 'Done' : 'Committed') : t.stopped ? 'Stopped' : 'Not done', cents(t.usd)])
   return [
     `# Run report: ${p.name}`,
     provenance(p),
