@@ -1,0 +1,48 @@
+/* The rollout chart: paper inset, tinted stage bands, pixel dot fill, square points. */
+.roll { display: flex; flex-direction: column; gap: 6px; }
+.roll-head { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.roll-lbl { display: block; font: 400 12px/1 px4; letter-spacing: .6px; text-transform: uppercase; color: var(--bark-3); margin-bottom: 5px; }
+.roll-big { font: 400 30px/1 px7; letter-spacing: .5px; color: var(--bark); font-variant-numeric: tabular-nums; }
+.roll-big.bad { color: var(--berry); }
+.roll-head .tag { margin-bottom: 3px; }
+.roll-who { margin-left: auto; text-align: right; }
+.roll-who b { font-size: var(--t-body); color: var(--bark); }
+.roll-compact .roll-big { font-size: 24px; }
+
+.roll-plot { position: relative; background: rgba(106, 74, 52, .07); box-shadow: inset 0 0 0 1px rgba(106, 74, 52, .12); touch-action: pan-y; user-select: none; }
+.roll-plot:focus-visible { outline: 2px solid var(--sky); outline-offset: 3px; }
+.roll-plot svg { display: block; overflow: visible; }
+.roll .band.ten { fill: rgba(208, 160, 60, .2); }
+.roll .band.all { fill: var(--leaf-wash); }
+.roll .band-lbl { font: 400 11px/1 px4; letter-spacing: .6px; fill: var(--bark-3); }
+.roll .band-lbl.all { fill: var(--leaf); }
+.roll .grid { stroke: rgba(106, 74, 52, .14); stroke-dasharray: 3 4; }
+.roll .grid.base { stroke: rgba(106, 74, 52, .35); stroke-dasharray: none; }
+.roll .axis { font: 400 12px var(--ui); fill: var(--bark-3); font-variant-numeric: tabular-nums; }
+.roll .limit { stroke: var(--berry); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.roll .limit-lbl { fill: var(--berry); }
+.roll .ln { fill: none; stroke: var(--leaf); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.roll .ln.bad { stroke: var(--berry); }
+.roll .pt { fill: var(--leaf); shape-rendering: crispEdges; }
+.roll .pt.bad, .roll .tip.bad, .roll .hit.bad { fill: var(--berry); }
+.roll .back { stroke: var(--berry); stroke-width: 1.5; }
+.roll .peak { fill: var(--berry); }
+.roll .peak-lbl { fill: #fff6e4; }
+.roll .tip-ring { fill: var(--paper, #f3dfbd); shape-rendering: crispEdges; }
+.roll .tip { fill: var(--leaf); shape-rendering: crispEdges; }
+.roll .cross { stroke: var(--bark); stroke-opacity: .35; stroke-dasharray: 3 3; }
+.roll .hit { fill: var(--leaf); stroke: var(--paper, #f3dfbd); stroke-width: 2; shape-rendering: crispEdges; }
+
+.roll-tip { position: absolute; z-index: 2; pointer-events: none; transform: translate(-50%, -100%); white-space: nowrap; font-size: var(--t-meta); color: var(--bark-2); padding: 1px 6px;
+  border: 8px solid transparent; border-image: url(/ui/btn_cream.png) 6 fill / 10px stretch; image-rendering: pixelated; opacity: 0; transition: opacity .12s; }
+.roll-tip.on { opacity: 1; }
+.roll-tip b { color: var(--bark); font-variant-numeric: tabular-nums; }
+
+.roll-nums { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--t-meta); color: var(--bark-2); }
+.roll-nums b { color: var(--bark); font-variant-numeric: tabular-nums; }
+.roll-nums b.bad { color: var(--berry); }
+.roll-nums .roll-who-s { margin-left: auto; font-weight: 700; color: var(--bark); }
+.roll-full .roll-nums { font-size: 13px; }
+.roll-pop .roll-plot { background: rgba(106, 74, 52, .05); }
+
+@media (prefers-reduced-motion: reduce) { .roll-tip { transition: none; } }
