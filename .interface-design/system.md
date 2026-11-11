@@ -88,14 +88,14 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - Every free-text answer is said back before it applies, the suggestion included.
 - Money asks before the step that would go over are tagged "Heading over budget"; "Over budget" only once it has passed.
 - Task costs in the pull request and task panel are to the cent, the same as the ask that named them.
-- Both Simulated tags (your farms and the sample) use the gold tag.
+- Both Simulated tags (your farms and the sample) use the gold tag. (Now one `SimTag`; see Visual system pass.)
 - Home picks the largest scale (3, 2.5, 2 or 1.5) that shows every farm and the new-farm plot above the dialogue.
 - Done's time gain says "assuming one agent runs a third slower".
 
 ## Learning and projection on Done
 - On run 2 and later, the Planner's first line names what it learned: "Last time “Index the help docs” ran over, so I split it from the start: about $3.51 less, and no ask." The task name is quoted as the plot shows it.
 - Done adds one plain body line under the gain line: "Learned from run 1: “…” split from the start, $X less, and no ask." The numbers are the two runs' own costs for that task.
-- Last on Done, before the buttons: a grey "Projection" tag, then one meta-ink line multiplying this run's numbers across 10 people × 2 crews a day. It never reads as a result: the tag and "at this run's rates" say it's projected.
+- Last on Done, before the buttons: a "Projection" tag (the Simulated tag, see Visual system pass), then one meta-ink line multiplying this run's numbers across 10 people × 2 crews a day. It never reads as a result: the tag and "at this run's rates" say it's projected.
 
 ## Changing the farm
 - Ask the Planner in the talk bar, at any time, to change how the farm runs. A request that reads as a change gets one change card in the Planner's bubble; anything else goes to the crew as a note.
@@ -149,7 +149,7 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - A check that failed for missing context says which file and whose context. Its screenshot proof rings the header. The ask that follows offers "Add the brand guide" and "Show me the Designer’s context", which opens the page and leaves the ask open. Adding the guide on the page answers the ask.
 
 ## Taking the run with you
-- When a run is done, the Planner’s Done dialogue has a second row under its buttons: "Download PR" and "Download run report", small tan buttons in the reading font. Both save markdown built from the run’s own events (src/run/export.ts), and both open by saying what was live and what was simulated.
+- When a run is done, the Planner’s Done dialogue ends its one button row with a quiet download group: "Download" in meta ink, then "PR" and "Run report" as xs tan buttons in the reading font (aria-labels "Download PR", "Download run report"). (Replaces the earlier second row.) Both save markdown built from the run’s own events (src/run/export.ts), and both open by saying what was live and what was simulated.
 ## Home and the team view
 - Home is two sides. Left, vertically centred: one paper with the title, the Mine / Team switch, who it is for (one bold body line) and why (two meta lines), then the Planner. Right: your farms at the largest scale that fits (3 down to 1), centred in the room left, so nothing overflows at 1280x720 and 1920 has no empty half. On screens wider than 1680px the whole of Home sits centred.
 - Mine / Team is a choice of two pack buttons (xs), cream for the chosen one. The title follows it: "Your projects" or "Your team".
@@ -159,3 +159,21 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - "Budgets" is a ruled grid by area: the area's row has its budget per project in a soft well; each project under it has its name (a link), whose and how many agents in meta ink, the tick meter (12 ticks) and "$13 of $60". Over its limit, the spend turns berry.
 - A new project starts with its area's budget as its spend limit. Changing the budget moves every project still on the old one; a project with a limit of its own keeps it.
 - A teammate's project you open carries the gold "Simulated team" tag in the title and stays out of Mine.
+
+## Visual system pass
+- Tokens live once in `:root` of hud.css; nothing else sets a literal size, ink or corner.
+  - Reading type: `--t-meta` 13, `--t-body` 15, `--t-lead` 17; big numbers `--t-big` 34, `--t-hero` 40.
+  - Pixel type: `--px-tag` 13, `--px-xs` 15, `--px-sm` 17, `--px-btn` 20, `--px-name` 21, `--px-title` 24. The top bar's size steps use these only (the largest coin is `--t-big`).
+  - Ink and fills: the ramp above plus `--cream` (type on coloured tags, the chosen half of a segment), `--honey-deep` (honey under cream type), `--honey-ink` (honey as text), `--paper-hi`, `--edge`, `--edge-soft`, `--rule` (every 1px row line), `--tint` (a grouped block), `--track` (the empty part of a bar or segment), `--shadow`, `--scrim`. Categorical swatches: `--k-skill`, `--k-tool`, `--k-connector`, `--k-file`, `--k-read`, `--k-write`.
+  - Corners: `--r-s` 2 (bars, dots), `--r` 4 (tags, chips, swatches), `--r-m` 6 (segments, inset blocks). The pack's art keeps square pixel corners.
+  - kit.css keeps literal fallbacks after each token so it loads anywhere; that is the only exception.
+- One Simulated tag: `SimTag` (`.tag.sim`, `--honey-deep` under cream) for "Simulated", "Simulated sample", "Simulated run", "Simulated team", "Simulated (out of credits)" and "Projection". The gold chip (`.tag.gold`) shares the colour; its × or Undo tells it apart.
+- Quiet states (`Quiet` in bits.tsx, `.quiet`): an icon, one bold body line, at most one meta line, on `--tint`. A failure is `tone="bad"`: `--berry-wash` behind, the bold line in berry, the error itself in mono. Used for:
+  - the inbox with nothing in it ("Nothing yet."); an empty inbox section is left out, not labelled "Nothing yet";
+  - Team with no outliers ("Nothing stands out.");
+  - a live plan call that failed ("The live call failed, so this plan is simulated." with the error), and a plan that failed ("The Planner couldn’t split this goal into tasks.").
+- Home with no projects: the empty plot's tag reads "+ Your first project" with "Tell the Planner what to build" under it.
+- Paused: the title tag is bark-2 with a pause glyph, and the farm's canvas drains to 55% saturation (eased 400 ms; none under reduced motion) until you press Play. No other chrome.
+- The farm camera centres each axis on its own: the whole farm (house and yard) when it fits, else every plot, else the work happening now or the popped proof. At 1920 the whole farm sits centred; on Done the plot columns stay centred while the rows follow the proof.
+- Done is one calm block: the lead (17px), then gain, learned and projection lines 4px apart, then one row of actions with the download group at its end. Its first line counts every plot on the farm, the release and "Hard cases" included, the same as the top bar: "All 7 tasks are in and live for everyone." or "6 of 7 tasks done, rolled back, so nothing is live."
+- The title paper is tight (4px padding, 8px gaps, 6px tag padding) so "0 of 6 tasks done", Paused and Simulated sample fit beside six top bar buttons at 1280.
