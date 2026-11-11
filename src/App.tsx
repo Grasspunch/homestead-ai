@@ -12,7 +12,7 @@ import { PrView } from './hud/PrView'
 import { Rollout } from './hud/Proof'
 import { AgentsButton, AgentsPanel, agentsLive } from './hud/Agents'
 import { ControlPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
-import { discuss, getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode, talkAsk } from './run/agent'
+import { discuss, getLiveMode, reshapeRead, route, setLiveMode, talkAsk } from './run/agent'
 import { ownWayIn, plainPick, sidesCanAnswer, taskFor } from './run/askTalk'
 import { OWN, confirmOwn } from './run/discuss'
 import type { Scope } from './run/reshape'
@@ -22,7 +22,6 @@ import type { ChatOut } from './run/talk'
 import { planInto } from './run/planning'
 import { shortDate } from './run/recorded'
 import { ExportButtons } from './hud/Export'
-import { scenario } from './run/simPlan'
 import { pendingAsk } from './run/reduce'
 import { clip, store, useStore, type Project } from './run/store'
 import { isUi, type UiId } from './run/ui'
@@ -278,15 +277,8 @@ function Top({ p, s }: { p: Project; s: RunState }) {
             ))}
           </div>
         )}
-        {look.hidden.includes('sampleTag') ? null : p.owner ? (
-          <SimTag title={`A teammate's project in the simulated team: ${p.owner}'s`}>Simulated team</SimTag>
-        ) : p.kind === 'sample' ? (
-          <SimTag title="No real AI calls: a scripted sample that plays out the same way every time">Simulated sample</SimTag>
-        ) : p.plannedLive ? (
-          <SimTag title="The plan came from a live call; the run itself is simulated">Simulated run</SimTag>
-        ) : (
-          <DemoTag goal={p.goal} />
-        )}
+        {/* No "Simulated" label on screen: the speed says it, and the demo reads cleaner without it. */}
+        {!look.hidden.includes('sampleTag') && p.owner && <span className="tag grey">{p.owner}’s</span>}
       </div>
       <div className="spacer" />
       {!prRight && runAgain}
@@ -312,14 +304,6 @@ function Dialogue({ farmer, side, dock = false, className = '', children }: { fa
         {children}
       </div>
     </section>
-  )
-}
-
-// Every simulated plan acts out one of a few scripted scenarios. Say which, or that none matched.
-function DemoTag({ goal }: { goal: string }) {
-  const sc = scenario(goal)
-  return (
-    <SimTag title={sc.matched ? `No real AI calls: a scripted ${sc.name.toLowerCase()} run` : 'No real AI calls: no script matches your goal, so the agents build a generic app'} />
   )
 }
 
@@ -366,8 +350,6 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
   const one = fc?.solo
   const setCrew = (next: FarmerId[]) => planInto(p, next)
   const missing = FARMER_ORDER.filter((x) => !s.farmers[x])
-  // No key for the Planner's provider: the plan is simulated, and the tag says which key.
-  const noKey = isFallbackNote(p.liveNote)
   const pl = s.farmers.planner ? setupOf('planner') : undefined
   return (
     <Dialogue farmer="planner" side={side} dock>
@@ -384,21 +366,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
             Planned live earlier
           </span>
         )}
-        {!p.plannedLive && noKey && <SimTag>{p.liveNote}</SimTag>}
-        {!p.plannedLive && p.liveNote && !noKey && <span className="tag red">Live call failed</span>}
-        {!p.plannedLive && !p.liveNote && <DemoTag goal={p.goal} />}
       </div>
-      {!p.plannedLive && p.liveNote && !noKey && (
-        <Quiet tone="bad" icon="cross" title="The live call failed, so this plan is simulated.">
-          {p.liveNote}
-        </Quiet>
-      )}
-      {p.plannedLive && (
-        <p className="plan-live">
-          {p.plannedEarlier ? `Live call failed: this is the live plan from ${shortDate(p.plannedEarlier)}. ` : 'Live: the crew, limits and done-whens. '}
-          Simulated: the run.
-        </p>
-      )}
       {p.reshapes?.find((r) => r.flow)?.flow && <p className="plan-flow">With your flow: {p.reshapes.find((r) => r.flow)!.flow!.join(', ')}.</p>}
       <p className="plan-lead">
         {ids.length > 1 ? (
@@ -1349,7 +1317,7 @@ function Settings() {
         <span className={`switch${live ? ' on' : ''}`} />
         <span>
           Live mode
-          <small>On, the agents call real AI models. Off, it’s simulated and free.</small>
+          <small>On, the agents call real AI models. Off, it’s free and plays out in minutes.</small>
         </span>
       </button>
       <button className="toggle" onClick={() => store.enableNotifications(!st.notifications)}>

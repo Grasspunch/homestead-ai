@@ -3,7 +3,7 @@
 import { Fragment } from 'react'
 import { store, useStore } from '../run/store'
 import { buildTeam, type Outlier, type TeamFarm } from '../run/team'
-import { Ico, LimitField, Quiet, SimTag, Ticks, usd, type IconName } from './bits'
+import { Ico, LimitField, Quiet, Ticks, usd, type IconName } from './bits'
 
 // The same urgency tags an ask leads with: honey for money, bark for the rest.
 const KIND: Record<Outlier['kind'], { label: string; urgency: 'honey' | 'calm'; icon: IconName }> = {
@@ -21,7 +21,6 @@ export function TeamPanel() {
   return (
     <section className="team paper" aria-label="Your team">
       <div className="team-head">
-        <SimTag>Simulated team</SimTag>
         <p>
           <b>{team.people.length} people</b> run <b>{team.agents} agents</b> on {team.projects} projects, {usd(team.spent)} spent so far.
         </p>

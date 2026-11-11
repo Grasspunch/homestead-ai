@@ -356,7 +356,7 @@ export function Kit() {
         </div>
       </Sec>
 
-      <Sec title="Team view" note="Home's Team side: spend against each area's budget and the few projects worth a look, never what anyone is doing. Simulated data carries the Simulated team tag. An outlier row is its urgency tag, the project and whose it is, one line, and Open. The budget is a soft well; a new project in the area starts with it as its spend limit.">
+      <Sec title="Team view" note="Home's Team side: spend against each area's budget and the few projects worth a look, never what anyone is doing. An outlier row is its urgency tag, the project and whose it is, one line, and Open. The budget is a soft well; a new project in the area starts with it as its spend limit.">
         <div className="kp-row">
           <span className="view-switch" role="group" aria-label="Show" style={{ marginLeft: 0 }}>
             <button className="btn xs" aria-pressed>
@@ -366,7 +366,6 @@ export function Kit() {
               Team
             </button>
           </span>
-          <SimTag>Simulated team</SimTag>
         </div>
         <ul className="outliers" style={{ maxWidth: 720 }}>
           <li className="outlier">
@@ -408,12 +407,8 @@ export function Kit() {
         </div>
       </Sec>
 
-      <Sec title="Simulated" note="One tag for anything not real, in the open on the title, the plan and Done: the same class (SimTag) and the same deep honey, whatever it says.">
+      <Sec title="Projection" note="The deep honey tag marks a number that is projected, not measured. No screen says Simulated: the run's speed already says it.">
         <div className="kp-row">
-          <SimTag>Simulated sample</SimTag>
-          <SimTag>Simulated run</SimTag>
-          <SimTag>Simulated team</SimTag>
-          <SimTag />
           <SimTag>Projection</SimTag>
         </div>
       </Sec>
@@ -425,9 +420,6 @@ export function Kit() {
           </Quiet>
           <Quiet icon="check" title="Nothing stands out.">
             No cost spikes, repeated work or disagreements across the team.
-          </Quiet>
-          <Quiet tone="bad" icon="cross" title="The live call failed, so this plan is simulated.">
-            Lovable AI answered 500: upstream timeout after 30 s
           </Quiet>
         </div>
       </Sec>
