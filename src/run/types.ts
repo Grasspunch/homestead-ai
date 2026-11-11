@@ -72,7 +72,7 @@ export type RunEvent =
   | { t: number; type: 'plan'; tasks: PlanTask[]; estimate: Estimate; singleAgentEstimate?: Estimate; basis?: Estimate } // basis: the Planner's own estimate, which sizes the simulated work
   | { t: number; type: 'task_start'; task: string; farmer: FarmerId }
   | { t: number; type: 'tool'; farmer: FarmerId; task?: string; tool: string; summary: string }
-  | { t: number; type: 'usage'; farmer: FarmerId; task?: string; tokensIn: number; tokensOut: number; usd: number; kind?: UsageKind }
+  | { t: number; type: 'usage'; farmer: FarmerId; task?: string; tokensIn: number; tokensOut: number; usd: number; kind?: UsageKind; rate?: number } // rate: the model's price per token it was paid at, against Sonnet 5's
   | { t: number; type: 'progress'; task: string; value: number }
   | { t: number; type: 'task_built'; task: string; worked?: number } // worked: ms one careful agent would take, when it differs
   | { t: number; type: 'check'; task: string; by: FarmerId; pass: boolean; notes: string; evidence?: string[]; proof?: Proof; yours?: boolean }

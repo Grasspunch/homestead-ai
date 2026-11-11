@@ -25,7 +25,8 @@ export function soloFromRun(events: RunEvent[]): Estimate {
       owner.set(e.task, e.farmer)
     }
     if (e.type === 'usage' && e.task && owner.get(e.task) === e.farmer && e.task !== 'e2e-check' && e.farmer !== 'tester')
-      usd += (e.usd / rate(model[e.farmer])) * rate(SOLO.model)
+      // Each step repriced from the model it was really paid at: a model you changed later never reprices it.
+      usd += (e.usd / (e.rate ?? rate(model[e.farmer]))) * rate(SOLO.model)
     if ((e.type === 'task_built' || e.type === 'stop') && starts.has(e.task) && e.task !== 'e2e-check') {
       ms += (e.type === 'task_built' && e.worked) || e.t - starts.get(e.task)!.t
       starts.delete(e.task)

@@ -270,9 +270,11 @@ export function simulateRun(input: SimInput): RunEvent[] {
 
   const usage = (min: number, f: FarmerId, task: string, usd0: number, kind: 'read' | 'write' | 'retry') => {
     const from = input.modelFrom?.[f]
-    const usd = from !== undefined && min * MIN < from ? (usd0 * planned(f)) / rateOf(modelOf(f)) : usd0
+    const before = from !== undefined && min * MIN < from
+    const usd = before ? (usd0 * planned(f)) / rateOf(modelOf(f)) : usd0
+    const rate = before ? planned(f) : rateOf(modelOf(f))
     const tokIn = Math.round((usd / 0.000004) * (0.8 + r() * 0.4))
-    at(min, { type: 'usage', farmer: f, task, tokensIn: tokIn, tokensOut: Math.round(tokIn * 0.12), usd: +usd.toFixed(3), kind })
+    at(min, { type: 'usage', farmer: f, task, tokensIn: tokIn, tokensOut: Math.round(tokIn * 0.12), usd: +usd.toFixed(3), kind, rate })
   }
   const finish = (task: PlanTask, end: number, notes = task.doneWhen, evidence = ['tests/report.json'], change?: string) => {
     finished.add(task.id)

@@ -241,3 +241,31 @@ describe('checkpoint 22: one Raise says so once, and the limit shown is the one 
           expect(b.limits.usd).toBe(said)
         })
 })
+
+describe('checkpoint 23: the one-agent comparison prices each step at the model it was paid at', () => {
+  for (const goal of [SAMPLE_GOAL, 'Stripe checkout for our pricing page', 'A habit tracker app'])
+    for (const model of ['GPT-6 Luna', 'Claude Opus 5.5', 'GPT-6 Astra'])
+      for (const at of ['cost', 'big', 'irreversible'])
+        it(`${goal.slice(0, 24)}: Builder to ${model} at the ${at} ask, one agent alone costs about the same`, () => {
+          const play = (change: boolean) => {
+            const p = farm(goal)
+            let changed = !change
+            for (let i = 0; i < 40; i++) {
+              const a = nextAsk(p)
+              if (!a) break
+              p.clock = Math.max(p.clock!, a.t)
+              if (!changed && a.reason === at) {
+                changed = true
+                store.editKit(p.id, 'builder', (e) => void (e.model = model))
+                continue
+              }
+              store.answer(a.id, a.suggested)
+            }
+            p.clock = doneT(p)!
+            return store.state(p)!.soloActual!.usd
+          }
+          const base = play(false)
+          // One agent does the same work whatever model the crew's Builder was moved to.
+          expect(Math.abs(play(true) - base)).toBeLessThan(base * 0.06)
+        })
+})
