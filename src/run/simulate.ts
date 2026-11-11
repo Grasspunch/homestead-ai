@@ -874,8 +874,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
         type: 'ask', id, farmer: lead, task: task || undefined, reason: 'cost', budgetFor: f.id, limitTo: to,
         confidence: known >= 0.6 ? 'high' : known >= 0.35 ? 'medium' : 'low',
         basis: `${fmt(spentNow)} of the ${fmt(whole)} is already spent; the rest is from the steps left.`,
-        question: spentNow > now + 0.005 ? `This run has passed its ${fmt(now)} budget, with ${fmt(spentNow)} spent, so I paused the crew.` : `This run is about to pass its ${fmt(now)} budget, with ${fmt(spentNow)} spent, so I paused the crew.`,
-        impact: `Finishing the run needs about ${fmt(Math.max(0, whole - spentNow))} more, ${fmt(whole)} in all. Stopping it here keeps what's already committed and leaves the rest, the release included, out.`,
+        question: spentNow > now + 0.005 && fmt(spentNow) !== fmt(now) ? `This run has passed its ${fmt(now)} budget, with ${fmt(spentNow)} spent, so I paused the crew.` : spentNow >= now - 0.005 ? `This run has reached its ${fmt(now)} budget, so I paused the crew.` : `This run is about to pass its ${fmt(now)} budget, with ${fmt(spentNow)} spent, so I paused the crew.`,
+        impact: `Finishing the run needs ${whole - spentNow < 1 ? 'less than $1' : `about ${fmt(whole - spentNow)}`} more, ${fmt(whole)} in all. Stopping it here keeps what's already committed and leaves the rest, the release included, out.`,
         suggested, alternatives: [stop],
       })
       const c = choose(id, suggested)
@@ -906,6 +906,23 @@ export function simulateRun(input: SimInput): RunEvent[] {
       cuts.push({ f, tm, spentNow, task: last && last.type === 'task_start' ? last.task : undefined, mine })
     }
     ev.sort((a, b) => a.t - b.t)
+    // Once the release is live for everyone there is nothing left to hold back, so the budget no longer pauses.
+    const liveAll = ev.find((e) => e.type === 'deploy' && e.stage === '100%')?.t ?? Number.POSITIVE_INFINITY
+    // Already over the budget now (you lowered it below what's spent): the Planner asks at once, with what is
+    // really spent, before another step runs.
+    if (budget !== undefined && past && !input.budgetStop && runSpent > budget + 0.005 && pastT < liveAll) {
+      const first = ev.find((e) => e.type === 'usage' && e.t > pastT)
+      const f = first && first.type === 'usage' ? farmers.find((x) => x.id === first.farmer) : undefined
+      if (f && first && first.type === 'usage') {
+        const tmB = pastT / MIN + 0.001
+        const id = `ask-budget${bAsked + 1 === 1 ? '' : `-${bAsked + 1}`}`
+        if (budgetAsk(f, tmB, runSpent, first.task) === 'stop') {
+          const halts = { ...input.halts }
+          for (const x of farmers) halts[x.id] = Math.min(halts[x.id] ?? tmB, tmB)
+          return simulateRun({ ...input, halts, budgetStop: { t: tmB, id, f: f.id } })
+        }
+      }
+    }
     // Raises before a stop are asked again, the same way, so the stop's ask keeps its place in the count.
     for (const e of [...ev]) {
       const bump = e.type === 'auto_fix' && e.t > pastT ? bumps.find((b) => b.t === e.t) : undefined
@@ -921,7 +938,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const runBefore = runSpent
       runSpent += e.usd
       if (!f || done.has(f.id)) continue
-      if (budget !== undefined && runSpent > budget + 0.005) {
+      if (budget !== undefined && !input.budgetStop && e.t < liveAll && runSpent > budget + 0.005) {
         const tmB = e.t / MIN - 0.016
         const id = `ask-budget${bAsked + 1 === 1 ? '' : `-${bAsked + 1}`}`
         if (budgetAsk(f, tmB, runBefore, e.task) === 'stop') {

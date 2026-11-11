@@ -58,7 +58,7 @@ export interface Project {
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   talks?: Record<string, (TalkLine | { from: 'you'; text: string })[]> // talking a disagreement through, by ask id
-  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; fixedRollback?: number; brandAt?: number; toggles?: Record<string, { t: number; on: boolean }[]> } // seq: which run of this farm, from 1
+  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; fixedRollback?: number; budgetStop?: { t: number; id: string; f: FarmerId }; brandAt?: number; toggles?: Record<string, { t: number; on: boolean }[]> } // seq: which run of this farm, from 1
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
@@ -660,6 +660,11 @@ class Store {
     // So is any other file or skill a farmer asked for back.
     const needs = p?.events.find((e) => e.type === 'ask' && e.id === askId)
     if (p && needs && needs.type === 'ask' && needs.need && choice === needs.suggested) this.giveBack(p, needs)
+    // Stop the run here: recorded once, at the moment you stopped it, and final for this run.
+    if (p?.run && !p.run.budgetStop && needs && needs.type === 'ask' && needs.budgetFor && /^stop the run/i.test(choice)) {
+      p.run.budgetStop = { t: Math.max(needs.t, this.clock) / 60_000 - 0.01, id: needs.id, f: needs.budgetFor }
+      this.rebuild(p)
+    }
     // A budget you raised is the project's budget from now on, the same one Home and Spend show.
     const raisedTo = needs && needs.type === 'ask' && needs.budgetFor ? /^Raise the budget to \$(\d+)/.exec(choice) : null
     if (p && raisedTo) p.spendLimit = clampBudget(Number(raisedTo[1]))
@@ -701,6 +706,7 @@ class Store {
   lockedWhy(p: Project, askId: string) {
     const ask = p.events.find((e) => e.type === 'ask' && e.id === askId)
     if (!ask) return 'I can’t find that question in this run.'
+    if (p.run?.budgetStop) return 'You stopped this run at its budget, and that’s final. Run it again to start over.'
     const clock = p.clock ?? 0
     const shipped = p.events.find((e) => e.type === 'deploy' && e.t > ask.t && e.t <= clock && e.stage !== 'rollback')
     if (shipped && shipped.type === 'deploy') return `A release went out after it (${shipped.stage === '100%' ? 'to everyone' : 'to 10%'}), so it can’t be un-asked. I can roll the release back instead.`
@@ -716,6 +722,11 @@ class Store {
     const why = this.lockedWhy(p, askId)
     if (why) return why
     const ask = p.events.find((e) => e.type === 'ask' && e.id === askId)!
+    if (ask.type === 'ask' && ask.budgetFor) {
+      const spentThen = p.events.reduce((n, e) => n + (e.type === 'usage' && e.t <= ask.t ? e.usd : 0), 0)
+      const b = this.budgetOf(p)
+      if (b > spentThen + 0.005) return `The budget is $${b.toLocaleString('en-US')} now, above the $${Math.round(spentThen)} spent then, so there’s nothing to stop at. Lower the budget and I’ll ask again.`
+    }
     const later = new Set(p.events.filter((e) => e.type === 'ask' && e.t > ask.t).map((e) => (e.type === 'ask' ? e.id : '')))
     const answers = Object.fromEntries(Object.entries(p.answers ?? {}).filter(([k]) => k !== askId && !later.has(k)))
     const sendBacks = Object.fromEntries(Object.entries(p.sendBacks ?? {}).filter(([k]) => k !== askId && !later.has(k)))
@@ -725,10 +736,13 @@ class Store {
     // Back to the moment it was asked, and the run from there made again without the answer.
     p.clock = ask.t
     if (p.run) p.run.counted = false
+    // A budget ask asked again is made again from the budget and the spend as they are now.
+    if (ask.type === 'ask' && ask.budgetFor) p.events = p.events.filter((e) => !((e.type === 'ask' || e.type === 'answer') && e.id === askId))
     this.rebuild(p)
     this.drawer = null
     this.pause()
-    if (choice) this.answer(askId, choice)
+    const again = ask.type === 'ask' && ask.budgetFor ? p.events.find((e) => e.type === 'ask' && !!e.budgetFor && !(p.answers ?? {})[e.id]) : undefined
+    if (choice) this.answer(again?.type === 'ask' ? again.id : askId, choice)
     else {
       this.notify()
       this.persist()
@@ -883,6 +897,16 @@ class Store {
     if (run.toggles) (built.input as SimInput).toggles = run.toggles
     // The project's budget for this run: before a step would take the run over it, the Planner asks.
     ;(built.input as SimInput).budget = this.budgetOf(p)
+    // A stop at the budget is final: the run ends at that moment, whatever happens afterwards to the budget,
+    // the models or the inbox.
+    if (run.budgetStop) {
+      const bs = run.budgetStop
+      const inp = built.input as SimInput
+      const halts = { ...inp.halts }
+      for (const x of built.farmers) halts[x.id] = Math.min(halts[x.id] ?? bs.t, bs.t)
+      inp.halts = halts
+      inp.budgetStop = bs
+    }
     // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
     const t0 = p.clock ?? 0
     if (t0 > 0) {
@@ -893,15 +917,7 @@ class Store {
         // The run's budget: raised by you in this run, or a farmer you stopped there.
         if (e.type === 'ask' && e.budgetFor) {
           const c = answers[e.id]
-          if (c && /^stop/i.test(c)) {
-            // The whole crew, from that minute, as the run you watched had it.
-            const inp = built.input as SimInput
-            const tm = e.t / 60_000 - 0.01
-            const halts = { ...inp.halts }
-            for (const x of built.farmers) halts[x.id] = Math.min(halts[x.id] ?? tm, tm)
-            inp.halts = halts
-            inp.budgetStop = { t: tm, id: e.id, f: e.budgetFor }
-          } else {
+          if (!(c && /^stop/i.test(c))) {
             // A raise is the project's budget now (see answer), so the run reads it from there.
             past.budgetAsked = (past.budgetAsked ?? 0) + 1
           }
@@ -1326,8 +1342,9 @@ class Store {
   setProjectBudget(id: string, typed: number) {
     const p = this.project(id)
     if (!p || !Number.isFinite(typed) || !(typed > 0)) return
+    if (clampBudget(typed) === p.spendLimit) return
     p.spendLimit = clampBudget(typed)
-    if (p.approved && p.run && !this.isDone(p)) {
+    if (p.approved && p.run && !p.run.budgetStop && !this.isDone(p)) {
       // A budget ask on screen is answered by the new budget when it covers what's spent; otherwise it's
       // withdrawn, and the Planner asks again with the new figure.
       const now = p.clock ?? 0
