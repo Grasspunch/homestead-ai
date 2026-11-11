@@ -9,6 +9,7 @@
 import type { Estimate, FarmerId, FarmerSetup, PlanTask } from '../run/types'
 import { reshapeSchema, type Ctx as ReshapeCtx } from '../run/reshape'
 import type { Talk, TalkLine } from '../run/discuss'
+import type { AskTalkIn, AskTalkOut, ChatAction, ChatIn, ChatOut } from '../run/talk'
 import { MODELS, modelOf, providerOf } from '../run/kit'
 
 export const MODEL = 'claude-opus-5-5'
@@ -78,6 +79,8 @@ export function errorReply(e: unknown): { status: number; body: Record<string, u
 export function modelFor(task: AgentTask, plannerModel?: string): string {
   const quick = task === 'route' || task === 'reshape'
   const m = modelOf(plannerModel)
+  // Chat with the Planner answers while you wait, so it runs on the everyday model from the same maker.
+  if (task === 'chat') return providerOf(plannerModel) === 'openai' ? 'GPT-6.1 Sol' : 'Claude Sonnet 5'
   if (providerOf(plannerModel) === 'openai') return quick ? 'GPT-6 Luna' : m!.model
   return quick ? 'Claude Haiku 4.5' : m?.model ?? 'Claude Opus 5.5'
 }
@@ -492,9 +495,141 @@ ${input.question}
   )
 }
 
+// ---- Talking an ask through ---------------------------------------------------------
+
+const said = (h: { from: string; text: string }[]) => h.map((l) => `${l.from === 'you' ? 'Person' : l.from}: ${l.text}`).join('\n')
+
+// The person typed into a question an agent asked them. The agent answers like a colleague: it answers what was
+// asked, takes pushback seriously, and only reads a pick when the person clearly made one. It never decides for them.
+export async function talkAsk(client: Clients, input: AskTalkIn, model = 'Claude Sonnet 5'): Promise<AgentResult<AskTalkOut>> {
+  const a = input.ask
+  const sides = a.sides?.length ? `\nTwo agents disagree:\n${a.sides.map((x) => `- ${x.label}: ${x.position}. Option "${x.option}". Why: ${x.why}`).join('\n')}` : ''
+  return callJSON<AskTalkOut>(
+    client,
+    `You are the ${a.farmerLabel}, an AI agent on a small team building software for a person. You stopped to ask them a question, and they typed a reply. Talk it through with them like a trusted colleague. Answer what they actually asked, from the facts given; never make up numbers or claim you did something. If they push back, take it seriously: say what each option really trades off, and that they can wait or tell you what they'd rather do. If they ask for something the options don't offer (for example more review or more tests before merging), say plainly what you can do: on a pull request question you can send the work back with their words as the note. Set choice only when their words clearly and unconditionally pick one of the options; a question, a condition ("yes but"), a doubt or a counter-offer is not a pick, so leave choice null and answer. Set sendBack (the note, in their words) only on a pull request question when they ask for changes, more review or more tests before merging. Set hold only when they want to wait or think. Up to three short sentences, plain words: say agent, project and task, never farm or farmer. ${STYLE}`,
+    `Your question to them: ${a.question}
+${a.impact ? `What it means: ${a.impact}\n` : ''}${a.basis ? `How sure you are: ${a.confidence ?? 'unsure'}, because ${a.basis}\n` : ''}${a.task ? `The task: ${a.task}\n` : ''}Their options: ${a.options.map((o) => `"${o}"`).join(', ')} (you suggested "${a.suggested}")${a.canSendBack ? '. This is the pull request review, so work can also go back to an agent with a note.' : ''}${sides}
+
+The talk so far:
+${said(input.history) || '(nothing yet)'}
+
+Their message:
+<message>
+${input.message}
+</message>`,
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['reply', 'choice', 'sendBack', 'hold'],
+      properties: {
+        reply: { type: 'string', description: 'Your answer, up to three short sentences' },
+        choice: { anyOf: [{ type: 'string', enum: a.options }, { type: 'null' }], description: 'The option their words clearly pick, or null' },
+        sendBack: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'On a pull request question, the note to send the work back with, or null' },
+        hold: { type: 'boolean', description: 'True when they want to wait or think first' },
+      },
+    },
+    model,
+  )
+}
+
+// ---- Chatting with the Planner -------------------------------------------------------
+
+interface ChatRaw {
+  reply: string
+  kind: ChatAction['kind']
+  to: FarmerId | null
+  request: string | null
+  id: string | null
+  askId: string | null
+  choice: string | null
+  keep: string[] | null
+  scope: 'farm' | 'every' | null
+}
+
+// A flat answer, as strict JSON schemas need, read into one action.
+export function chatAction(r: ChatRaw): ChatAction {
+  switch (r.kind) {
+    case 'note':
+      return r.to ? { kind: 'note', to: r.to } : { kind: 'none' }
+    case 'change':
+      return r.request ? { kind: 'change', request: r.request } : { kind: 'none' }
+    case 'undo':
+      return r.id ? { kind: 'undo', id: r.id } : { kind: 'none' }
+    case 'reopen':
+      return r.askId ? { kind: 'reopen', askId: r.askId, choice: r.choice } : { kind: 'none' }
+    case 'adjust':
+      return { kind: 'adjust', keep: r.keep, scope: r.scope }
+    case 'cancel':
+      return { kind: 'cancel' }
+    default:
+      return { kind: 'none' }
+  }
+}
+
+// The person typed to the Planner. It answers questions from the run as it stands, and takes at most one action:
+// pass a note to an agent, read a change to how the project runs, turn a change off, change an earlier answer,
+// or adjust or drop a change card that's open. Nothing is ever final, and it says so when it matters.
+export async function plannerChat(client: Clients, input: ChatIn, model = 'Claude Sonnet 5'): Promise<AgentResult<ChatOut>> {
+  const st = input.status
+  const ids = st.farmers.map((f) => f.id)
+  const decided = st.decided.map((d) => `- ${d.id}: "${d.question}" They chose "${d.choice}". Options: ${d.options.map((o) => `"${o}"`).join(', ')}.${d.canChange ? '' : ` Can't change: ${d.why}`}`).join('\n')
+  const out = await callJSON<ChatRaw>(
+    client,
+    `You are the Planner for a small team of AI agents building software for a person. They typed a message to you while the work runs. First, answer it like a trusted colleague, from the run as it stands below; never make up numbers or claim something happened that the run doesn't show. Then pick at most one action:
+- none: the answer is all they need (questions, opinions, "hmm").
+- note: something for one agent to act on in its work, such as feedback on the code or design. Say who you handed it to.
+- change: they want to change how the project runs (skip a task, ship differently, turn the review off, hide or move a part of the screen, notifications). Put their request in request, in their words; they'll see a card to confirm it.
+- undo: they want a change that's on turned off or put back. id is that change's id.
+- reopen: they changed their mind about an earlier answer. askId is that question's id; choice is the new option when they named one, else null to ask it again. If it can't be changed, use none and say why and what you can do instead.
+- adjust: only while a change card is open: keep only some rows (keep, by row id) or set how long it lasts (scope farm for this project, every for every new project).
+- cancel: only while a change card is open, they want it dropped.
+Never pick an action they didn't ask for. Up to three short sentences, plain words: say agent, project and task, never farm or farmer. ${STYLE}`,
+    `The goal: ${st.goal}
+${st.done ? 'The run is finished.' : `${st.minutes} min into the run.`} Spent so far: $${st.spent.toFixed(2)}${st.budget ? ` of $${st.budget}` : ''}. Release: ${st.deploy ?? 'not shipped'}. Pull requests ${st.merge === 'auto' ? 'merge by themselves when every check passes' : 'wait for them to review and merge'}.
+
+The agents:
+${st.farmers.map((f) => `- ${f.id} (${f.label}): ${CREW[f.id]?.role ?? ''}. ${f.state}${f.task ? ` on "${f.task}"` : ''}${f.model ? `, model ${f.model}` : ''}`).join('\n')}
+
+The tasks:
+${st.tasks.map((t) => `- ${t.id}: ${t.name} (${t.farmer}, ${t.status})`).join('\n') || '(none yet)'}
+${st.openAsk ? `\nWaiting on them now: "${st.openAsk.question}" Options: ${st.openAsk.options.map((o) => `"${o}"`).join(', ')}\n` : ''}
+What they decided so far:
+${decided || '(nothing yet)'}
+
+Changes they made that are on:
+${st.changesOn.map((c) => `- ${c.id}: ${c.title} (they asked: "${c.request}")`).join('\n') || '(none)'}
+${st.pending ? `\nA change card is open for "${st.pending.request}", with rows:\n${st.pending.rows.map((r) => `- ${r.id}: ${r.label}${r.loss ? ` (${r.loss})` : ''}`).join('\n')}\n` : ''}
+The chat so far:
+${said(input.history) || '(nothing yet)'}
+
+Their message:
+<message>
+${input.message}
+</message>`,
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['reply', 'kind', 'to', 'request', 'id', 'askId', 'choice', 'keep', 'scope'],
+      properties: {
+        reply: { type: 'string', description: 'Your answer, up to three short sentences' },
+        kind: { type: 'string', enum: ['none', 'note', 'change', 'undo', 'reopen', 'adjust', 'cancel'] },
+        to: ids.length ? { anyOf: [{ type: 'string', enum: ids }, { type: 'null' }] } : { type: 'null' },
+        request: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'For change: the request in their words' },
+        id: st.changesOn.length ? { anyOf: [{ type: 'string', enum: st.changesOn.map((c) => c.id) }, { type: 'null' }] } : { type: 'null' },
+        askId: st.decided.length ? { anyOf: [{ type: 'string', enum: st.decided.map((d) => d.id) }, { type: 'null' }] } : { type: 'null' },
+        choice: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'For reopen: the new option, word for word, or null' },
+        keep: st.pending ? { anyOf: [{ type: 'array', items: { type: 'string', enum: st.pending.rows.map((r) => r.id) } }, { type: 'null' }] } : { type: 'null' },
+        scope: { anyOf: [{ type: 'string', enum: ['farm', 'every'] }, { type: 'null' }] },
+      },
+    },
+    model,
+  )
+  return { ...out, data: { reply: out.data.reply, action: chatAction(out.data) } }
+}
+
 // ---- Entry point used by /api/agent ---------------------------------------------------
 
-export type AgentTask = 'plan' | 'route' | 'reshape' | 'discuss'
+export type AgentTask = 'plan' | 'route' | 'reshape' | 'discuss' | 'talk' | 'chat'
 
 // An Anthropic client alone still works, for local dev without the gateway.
 export async function runAgent(clients: Clients | ClaudeClient, task: AgentTask, input: Record<string, unknown>): Promise<AgentResult<unknown>> {
@@ -529,6 +664,18 @@ export async function runAgent(clients: Clients | ClaudeClient, task: AgentTask,
       if (!question || !talk || !Array.isArray(talk.sides)) throw new Error('A question and the disagreement are needed.')
       const own = typeof input.model === 'string' && modelOf(input.model) ? input.model : 'Claude Sonnet 5'
       return discussDisagreement(client, { question, talk }, own)
+    }
+    case 'talk': {
+      // Runs on the model of the agent that asked.
+      const inp = input as unknown as AskTalkIn
+      if (typeof inp.message !== 'string' || !inp.message.trim() || !inp.ask || !Array.isArray(inp.ask.options)) throw new Error('A message and the question are needed.')
+      const own = typeof input.model === 'string' && modelOf(input.model) ? input.model : 'Claude Sonnet 5'
+      return talkAsk(client, { ask: inp.ask, history: Array.isArray(inp.history) ? inp.history.slice(-10) : [], message: inp.message.trim() }, own)
+    }
+    case 'chat': {
+      const inp = input as unknown as ChatIn
+      if (typeof inp.message !== 'string' || !inp.message.trim() || !inp.status) throw new Error('A message and the run are needed.')
+      return plannerChat(client, { message: inp.message.trim(), history: Array.isArray(inp.history) ? inp.history.slice(-12) : [], status: inp.status }, model)
     }
     default:
       throw new Error(`Unknown task: ${String(task)}`)

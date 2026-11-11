@@ -9,8 +9,9 @@ import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent
 import { AUTONOMY_PRESETS } from './types'
 import { OWN, confirmOwn, isOwnWay, ownText, ownWayOf, type TalkLine } from './discuss'
 import { applyEdit, emptyEdit, type KitEdit } from './kit'
-import { key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope, type Suggestion } from './reshape'
+import { CAN_DO, key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope, type Suggestion } from './reshape'
 import { isUi, propOf, uiLookOf, type UiId, type UiLook } from './ui'
+import type { ChatIn, DecidedAsk } from './talk'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from our help docs, and hands off to a person when it is not sure'
 
@@ -646,6 +647,88 @@ class Store {
     this.persist()
   }
 
+  // ---- changing your mind ----
+
+  // Everything you've decided on this run, newest first, and whether each can still be changed.
+  // An answer can be changed until a release went out after it: what shipped can be rolled back, not un-asked.
+  decided(p = this.project()): DecidedAsk[] {
+    if (!p) return []
+    const s = this.state(p)
+    if (!s) return []
+    return s.asks
+      .filter((a) => a.answer)
+      .reverse()
+      .map((a) => {
+        const why = this.lockedWhy(p, a.id)
+        const options = [a.suggested, ...a.alternatives].filter((o) => !/^show me/i.test(o) && o !== SEND_BACK)
+        return { id: a.id, question: a.question, choice: a.answer!.choice, options, canChange: !why, ...(why ? { why } : {}) }
+      })
+  }
+
+  // Why an answer can't be changed any more, or '' when it can.
+  lockedWhy(p: Project, askId: string) {
+    const ask = p.events.find((e) => e.type === 'ask' && e.id === askId)
+    if (!ask) return 'I can’t find that question in this run.'
+    const clock = p.clock ?? 0
+    const shipped = p.events.find((e) => e.type === 'deploy' && e.t > ask.t && e.t <= clock && e.stage !== 'rollback')
+    if (shipped && shipped.type === 'deploy') return `A release went out after it (${shipped.stage === '100%' ? 'to everyone' : 'to 10%'}), so it can’t be un-asked. I can roll the release back instead.`
+    return ''
+  }
+
+  // Take back an answer and ask it again: the run goes back to that moment, with every answer you gave before it
+  // kept and the ones after it cleared, since they may not come up the same way. With a choice, it's answered
+  // straight away and the run forks from there. Returns why it couldn't, or '' when it did.
+  reopen(askId: string, choice?: string): string {
+    const p = this.project()
+    if (!p) return 'Open a project first.'
+    const why = this.lockedWhy(p, askId)
+    if (why) return why
+    const ask = p.events.find((e) => e.type === 'ask' && e.id === askId)!
+    const later = new Set(p.events.filter((e) => e.type === 'ask' && e.t > ask.t).map((e) => (e.type === 'ask' ? e.id : '')))
+    const answers = Object.fromEntries(Object.entries(p.answers ?? {}).filter(([k]) => k !== askId && !later.has(k)))
+    const sendBacks = Object.fromEntries(Object.entries(p.sendBacks ?? {}).filter(([k]) => k !== askId && !later.has(k)))
+    p.answers = answers
+    p.sendBacks = sendBacks
+    if (p.notes?.[askId]) p.notes = Object.fromEntries(Object.entries(p.notes).filter(([k]) => k !== askId))
+    // Back to the moment it was asked, and the run from there made again without the answer.
+    p.clock = ask.t
+    if (p.run) p.run.counted = false
+    this.rebuild(p)
+    this.drawer = null
+    this.pause()
+    if (choice) this.answer(askId, choice)
+    else {
+      this.notify()
+      this.persist()
+    }
+    return ''
+  }
+
+  // The run as it stands, for the Planner to answer questions from.
+  chatStatus(p: Project): ChatIn['status'] {
+    const s = this.state(p)
+    const look = (id: FarmerId) => (s?.farmers[id] ? applyEdit(s.farmers[id]!, this.kit[p.id]?.[id]) : undefined)
+    const open = s?.asks.find((a) => !a.answer)
+    const last = s?.deploy[s.deploy.length - 1]
+    const pd = this.pending?.pid === p.id ? this.pending : null
+    return {
+      goal: p.goal,
+      done: !!s?.done,
+      minutes: Math.round((p.clock ?? 0) / 60_000),
+      spent: +(s?.usage.usd ?? 0).toFixed(2),
+      farmers: Object.values(s?.farmers ?? {})
+        .filter((f): f is NonNullable<typeof f> => !!f)
+        .map((f) => ({ id: f.id, label: f.label, state: f.state, model: look(f.id)?.model, ...(f.task ? { task: s?.tasks.find((t) => t.id === f.task)?.name ?? f.task } : {}) })),
+      tasks: (s?.tasks ?? []).map((t) => ({ id: t.id, name: t.name, farmer: t.farmer, status: t.stopped ? 'stopped' : t.status })),
+      ...(open ? { openAsk: { id: open.id, question: open.question, options: [open.suggested, ...open.alternatives] } } : {}),
+      decided: this.decided(p),
+      changesOn: (p.reshapes ?? []).map((r) => ({ id: r.id, title: r.title, request: r.request })),
+      merge: p.autonomy.ship === 'auto' ? 'auto' : 'ask',
+      deploy: !last ? 'not shipped' : last.stage === '100%' ? 'everyone' : last.stage === '10%' ? '10%' : 'rolled back',
+      ...(pd ? { pending: { request: pd.request, rows: pd.proposal.rows.map((r) => ({ id: r.id, label: r.label, ...(r.loss ? { loss: r.loss } : {}) })) } } : {}),
+    }
+  }
+
   // An answer in your own words. Yes-like words take the suggestion; no-like words, or words that name another
   // option, take that one. The Planner says how it read you. Returns the option, or null when it can't tell.
   // Free text only ever picks one of the ask's options. Something hard to undo is confirmed first.
@@ -687,11 +770,31 @@ class Store {
     this.persist()
   }
 
+  // More of the talk on an ask without a message from you: the agent's reply after you said no to a reading.
+  talkAdd(askId: string, lines: TalkLine[]) {
+    const p = this.project()
+    if (!p || !lines.length) return
+    p.talks = { ...p.talks, [askId]: [...(p.talks?.[askId] ?? []), ...lines] }
+    this.notify()
+    this.persist()
+  }
+
+  // Work sent back from the pull request because of what you said in words, once you said yes to it.
+  sendBackInWords(askId: string, text: string, task: string, note: string) {
+    const p = this.project()
+    if (!p) return
+    const name = this.state(p)?.tasks.find((t) => t.id === task)?.name ?? task
+    this.chatTo(p.id, { from: 'you', text: clip(text) })
+    this.chatTo(p.id, { from: 'planner', text: `Sent “${clip(name, 40)}” back with your note. Ask me to change it any time before it ships.` })
+    p.notes = { ...p.notes, [askId]: text }
+    this.sendBack(askId, task, note)
+  }
+
   confirmInWords(askId: string, text: string, choice: string) {
     const p = this.project()
     if (!p) return
     this.chatTo(p.id, { from: 'you', text: clip(text) })
-    this.chatTo(p.id, { from: 'planner', text: isOwnWay(choice) ? `Going with your way: ${ownText(choice)}.` : `Got it. I read that as “${choice}”.` })
+    this.chatTo(p.id, { from: 'planner', text: isOwnWay(choice) ? `Going with your way: ${ownText(choice)}. Ask me to change it any time.` : `Got it. I read that as “${choice}”. Ask me to change it any time.` })
     p.notes = { ...p.notes, [askId]: text }
     this.answer(askId, choice)
   }
@@ -849,13 +952,32 @@ class Store {
   answerTrust(yes: boolean) {
     const p = this.project()
     if (!p) return
+    const was = p.trust
     p.trust = yes ? 'yes' : 'no'
     // Applies to the next run: this one has already shipped.
     if (yes) {
       p.autonomy = { ...p.autonomy, ship: 'auto' }
       p.level = 'custom'
-    }
+    } else if (was === 'yes' && p.autonomy.ship === 'auto') p.autonomy = { ...p.autonomy, ship: 'ask' }
     this.notify()
+    this.persist()
+  }
+
+  // Merging by itself, in words to the Planner: "keep asking me before merging", "merge by itself". From the next
+  // pull request on. Returns what the Planner says back.
+  setShip(pid: string, value: 'ask' | 'auto'): string {
+    const p = this.project(pid)
+    if (!p) return ''
+    if (p.autonomy.ship === value) return value === 'ask' ? 'Pull requests already ask you before they merge.' : 'Pull requests already merge by themselves when every check passes.'
+    p.autonomy = { ...p.autonomy, ship: value }
+    p.level = 'custom'
+    if (value === 'ask' && p.trust === 'yes') p.trust = 'no'
+    if (value === 'auto' && !p.trust) p.trust = 'yes'
+    this.notify()
+    this.persist()
+    return value === 'ask'
+      ? 'Done: pull requests ask you before they merge again, from the next one. Say “merge by itself” to switch back.'
+      : 'Done: pull requests merge by themselves when every check passes, from the next one. A failed check still asks you. Say “keep asking me before merging” to switch back.'
   }
 
   // The pull request review: send one task back with what should change. Its farmer changes it,
@@ -913,23 +1035,27 @@ class Store {
   pending: PendingChange | null = null
 
   // Read a message as a change to the farm. Returns false when it isn't one, so it goes to the crew as a note.
-  async proposeChanges(pid: string, text: string, live?: (text: string, ctx: Parameters<typeof readChanges>[1]) => Promise<{ proposal: Proposal | null; note?: string }>): Promise<'card' | 'reply' | false> {
+  async proposeChanges(pid: string, text: string, live?: (text: string, ctx: Parameters<typeof readChanges>[1]) => Promise<{ proposal: Proposal | null; note?: string; reply?: string }>): Promise<'card' | 'reply' | false> {
     const p = this.project(pid)
     if (!p) return false
     const ctx = this.reshapeCtx(p)
     let proposal: Proposal | null = null
     let note: string | undefined
+    let liveReply: string | undefined
     if (live) {
       const r = await live(text, ctx)
       proposal = r.proposal
       note = r.note
+      liveReply = r.reply?.trim() || undefined
     }
     if (!proposal) {
       const r = readChanges(text, ctx)
       if (r.kind === 'not-a-change') return false
       if (r.kind === 'none') {
         this.chatTo(pid, { from: 'you', text: clip(text) })
-        this.chatTo(pid, { from: 'planner', text: r.reply, closest: r.closest, chips: r.chips.length ? r.chips : undefined })
+        // The live Planner's own words, when it found no change it can make, over the script's.
+        const said = liveReply && r.reply === CAN_DO ? liveReply : r.reply
+        this.chatTo(pid, { from: 'planner', text: said, closest: r.closest, chips: r.chips.length ? r.chips : undefined })
         return 'reply'
       }
       proposal = { ...r.proposal, note }
@@ -947,6 +1073,8 @@ class Store {
       tasks: (s?.tasks ?? []).map((k) => ({ id: k.id, name: k.name, farmer: k.farmer, gate: k.gate, status: k.status })),
       farmers: Object.values(s?.farmers ?? {}).filter((f): f is NonNullable<typeof f> => !!f).map((f) => f.id),
       active: (p.reshapes ?? []).flatMap((r) => r.changes),
+      on: (p.reshapes ?? []).map((r) => ({ title: r.title, changes: r.changes })),
+      autonomy: { ship: p.autonomy.ship },
       ui: this.uiLook(p),
     }
   }
@@ -1023,7 +1151,7 @@ class Store {
   }
 
   // Turn a change off. The latest one comes off exactly: the run goes back to what it was before it.
-  undoChanges(id: string) {
+  undoChanges(id: string, said?: string) {
     const p = this.project()
     const list = p?.reshapes ?? []
     const i = list.findIndex((r) => r.id === id)
@@ -1048,7 +1176,8 @@ class Store {
       this.setSpeed(p.events)
     } else if (p.approved && !this.isDone(p)) this.rebuild(p)
     if (this.fresh?.id === id) this.fresh = null
-    this.chatTo(p.id, { from: 'planner', text: `${r.title} is off. The farm runs as it did before.` })
+    // What the Planner said when you asked for it in words, or the plain line for the chip's Undo.
+    this.chatTo(p.id, { from: 'planner', text: said ?? `${r.title} is off. The project runs as it did before.` })
     this.notify()
     this.persist()
   }

@@ -6,11 +6,14 @@
 
 import type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
 import type { FarmerId } from './types'
-import { GatewayRefused, KeyMissing, SOURCE, discussLive, planGoal as livePlan, probeKeys, reshapeLive, routeMessage as liveRoute } from './live'
+import { GatewayRefused, KeyMissing, SOURCE, askTalkLive, chatLive, discussLive, planGoal as livePlan, probeKeys, reshapeLive, routeMessage as liveRoute } from './live'
 import { providerOf } from './kit'
 import { changesFromLive, type Ctx as ReshapeCtx, type Proposal } from './reshape'
 import { simulatePlan, simulateRoute } from './simPlan'
 import { discussSim, type Talk, type TalkLine } from './discuss'
+import { askTalkSim } from './askTalk'
+import { chatSim } from './chatSim'
+import type { AskTalkIn, AskTalkOut, ChatIn, ChatOut } from './talk'
 
 const KEY = 'homestead.live'
 
@@ -80,15 +83,18 @@ export function route(input: RouteInput, model?: string) {
 
 // A change to the farm, read by the live Planner when Live mode is on. Off, or when the call fails, the app reads it
 // with its own scripted parser, and a failed call says so on the card.
-export async function reshapeRead(message: string, ctx: ReshapeCtx, model?: string): Promise<{ proposal: Proposal | null; note?: string }> {
-  if (!live) return { proposal: null }
+// Like chat, it calls a real model even with Live mode off when the server can run one, and falls back quietly.
+// `reply`: what the live Planner said when it found no change it can make, so the reason isn't lost.
+export async function reshapeRead(message: string, ctx: ReshapeCtx, model?: string): Promise<{ proposal: Proposal | null; note?: string; reply?: string }> {
   const provider = providerOf(model)
-  if (!(await probeKeys())[provider]) return { proposal: null, note: NO_KEY[provider] }
+  if (!(await probeKeys())[provider]) return live ? { proposal: null, note: NO_KEY[provider] } : { proposal: null }
   try {
     const out = await reshapeLive(message, ctx, model)
     const proposal = changesFromLive(out, ctx)
-    return { proposal: proposal && { ...proposal, note: `Read by the live Planner, through ${out.source ? SOURCE[out.source] : 'Lovable AI'}` } }
+    if (!proposal) return out.reply ? { proposal: null, reply: out.reply } : { proposal: null }
+    return { proposal: { ...proposal, note: `Read by the live Planner, through ${out.source ? SOURCE[out.source] : 'Lovable AI'}` } }
   } catch (e) {
+    if (!live) return { proposal: null }
     if (e instanceof KeyMissing || e instanceof GatewayRefused) return { proposal: null, note: noteOf(e) }
     return { proposal: null, note: `The live Planner failed (${e instanceof Error ? e.message : String(e)}), so I read this myself.` }
   }
@@ -103,4 +109,40 @@ export async function discuss(question: string, talk: Talk, modelOf: (f: string)
   const r = await run<{ lines: TalkLine[] }>(() => discussLive(question, talk, model), () => ({ lines: discussSim(question, talk) }), 500, model, true)
   const lines = r.data.lines.filter((l) => talk.sides.some((s) => s.farmer === l.from)).slice(0, 2)
   return { ...r, data: lines.length ? lines : discussSim(question, talk) }
+}
+
+// Talking an ask through: you typed into a question an agent asked. Live, it runs on that agent's model; otherwise
+// the script answers from the ask. Either way the reply answers you, and a choice it reads is confirmed first.
+export async function talkAsk(inp: AskTalkIn, model?: string): Promise<AgentAnswer<AskTalkOut>> {
+  const r = await run<AskTalkOut>(() => askTalkLive(inp, model), () => askTalkSim(inp), 500, model, true)
+  return { ...r, data: checkAsk(r.data, inp) }
+}
+
+// Only an option the ask has can be picked; a send-back only where work can go back.
+function checkAsk(out: AskTalkOut, inp: AskTalkIn): AskTalkOut {
+  const choice = out.choice && inp.ask.options.includes(out.choice) ? out.choice : null
+  const sendBack = inp.ask.canSendBack && out.sendBack?.trim() ? out.sendBack.trim() : null
+  return { reply: out.reply?.trim() || askTalkSim(inp).reply, choice: sendBack ? null : choice, sendBack, hold: !!out.hold && !choice && !sendBack }
+}
+
+// A message to the Planner. Live, the Planner answers from the run as it stands and picks at most one action;
+// otherwise the script does what it can, and returns null when it has nothing, so the message goes on as before.
+export async function chatTurn(inp: ChatIn, model?: string): Promise<AgentAnswer<ChatOut | null>> {
+  const r = await run<ChatOut | null>(() => chatLive(inp, model), () => chatSim(inp), 400, model, true)
+  return { ...r, data: r.data && checkChat(r.data, inp) }
+}
+
+// An action the run can't take becomes no action, so a model's slip never changes anything by itself.
+function checkChat(out: ChatOut, inp: ChatIn): ChatOut {
+  const a = out.action
+  const st = inp.status
+  const ok =
+    a.kind === 'none' ||
+    a.kind === 'cancel' ||
+    (a.kind === 'note' && st.farmers.some((f) => f.id === a.to)) ||
+    (a.kind === 'change' && !!a.request?.trim()) ||
+    (a.kind === 'undo' && st.changesOn.some((c) => c.id === a.id)) ||
+    (a.kind === 'reopen' && st.decided.some((d) => d.id === a.askId && (!a.choice || d.options.includes(a.choice)))) ||
+    (a.kind === 'adjust' && !!st.pending && (!a.keep || a.keep.every((id) => st.pending!.rows.some((r) => r.id === id))))
+  return { reply: out.reply, action: ok ? a : { kind: 'none' } }
 }
