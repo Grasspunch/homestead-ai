@@ -223,7 +223,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
       </button>
     )
     // What the demo run built: once its release reaches you, the agent dashboard takes the spend counter's place.
-    if (agentsLive(p, s)) parts.agents = <AgentsButton key="agents" p={p} s={s} className={cls('agents')} label={look.label.agents} onClick={() => store.setDrawer({ kind: 'agents' })} />
+    if (agentsLive(p, s)) parts.agents = <AgentsButton key="agents" s={s} className={cls('agents')} label={look.label.agents} onClick={() => store.setDrawer({ kind: 'agents' })} />
     parts.play = (
       <button key="play" className={cls('play')} disabled={!!s.done} onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
         <Ico name={st.playing ? 'pause' : 'play'} size={ico('play')} />

@@ -2,7 +2,6 @@
 // It is what the demo run builds ("Replace the cost button with an agent dashboard"): once that run's release
 // reaches you, the top bar's coins become the Agents button, and it opens this.
 import './agents.css'
-import { useEffect } from 'react'
 import { Ico, Portrait, usd } from './bits'
 import { store, type Project } from '../run/store'
 import { scenario } from '../run/simPlan'
@@ -28,20 +27,10 @@ const STATE: Record<FarmerRun['state'], { label: string; tone: string }> = {
 const crewOf = (s: RunState) => FARMER_ORDER.filter((id) => s.farmers[id]).map((id) => s.farmers[id]!)
 
 // The top-bar button: the faces of the crew and how many are busy right now.
-// Said once per farm per visit, the first time the release puts the dashboard in front of you.
-const announced = new Set<string>()
-const ARRIVED = 'the Agents button has replaced the coins'
-
-export function AgentsButton({ p, s, className, label, onClick }: { p: Project; s: RunState; className: string; label?: string; onClick: () => void }) {
+export function AgentsButton({ s, className, label, onClick }: { s: RunState; className: string; label?: string; onClick: () => void }) {
   const crew = crewOf(s)
   const busy = crew.filter((f) => f.state === 'working' || f.state === 'stuck').length
   const needs = crew.filter((f) => f.state === 'needs').length
-  const stage = s.deploy[s.deploy.length - 1]?.stage
-  useEffect(() => {
-    if (s.done || announced.has(p.id)) return
-    announced.add(p.id)
-    store.say(stage === '10%' ? `You’re in the first 10%: ${ARRIVED}. Open it to see every agent at work.` : `The Agents button has replaced the coins. Open it to see every agent at work.`)
-  }, [p.id])
   return (
     <button className={`${className} top-agents`} onClick={onClick} aria-label={`${label ?? 'Agents'}: ${busy} working${needs ? `, ${needs} need${needs === 1 ? 's' : ''} you` : ''}`}>
       <span className="agent-faces" aria-hidden>
@@ -58,13 +47,6 @@ export function AgentsButton({ p, s, className, label, onClick }: { p: Project; 
 }
 
 export function AgentsPanel({ s }: { s: RunState }) {
-  // Opening the dashboard is what its arrival note asked for, so the note goes rather than cover the panel's header.
-  useEffect(() => {
-    if (store.toast && store.toast.text.toLowerCase().includes(ARRIVED.toLowerCase())) {
-      store.toast = null
-      store.notify()
-    }
-  }, [])
   const crew = crewOf(s)
   const busy = crew.filter((f) => f.state === 'working' || f.state === 'stuck').length
   const needs = crew.filter((f) => f.state === 'needs').length

@@ -170,10 +170,10 @@ function draft(goal: string): Draft {
     return {
       name: 'Agent dashboard',
       tasks: [
-        { id: 'agent-status', name: 'Track each agent’s work', farmer: 'builder', doneWhen: 'Each agent’s task, last step and spend update as the run plays', mins: 11, usd: 0.8 },
-        { id: 'swap-button', name: 'Swap the cost button for it', farmer: 'builder', doneWhen: 'The top-bar button opens the dashboard, and the coins on the farm still open your spend', mins: 7, usd: 0.5, after: ['agent-status'] },
-        { id: 'live-rows', name: 'Keep it live during the run', farmer: 'builder', doneWhen: 'The dashboard follows the run without slowing the farm', mins: 8, usd: 0.6, after: ['swap-button'] },
-        { id: 'dash-design', name: 'Design the agent dashboard', farmer: 'designer', doneWhen: 'Every agent’s task, last step and spend read at a glance, and nothing covers the ask window', mins: 12, usd: 0.8 },
+        { id: 'agent-status', name: 'Track each agent', farmer: 'builder', doneWhen: 'Each agent’s task, last step and spend update as the run plays', mins: 11, usd: 0.8 },
+        { id: 'swap-button', name: 'Swap the cost button', farmer: 'builder', doneWhen: 'The top-bar button opens the dashboard, and the coins on the farm still open your spend', mins: 7, usd: 0.5, after: ['agent-status'] },
+        { id: 'live-rows', name: 'Keep it live', farmer: 'builder', doneWhen: 'The dashboard follows the run without slowing the farm', mins: 8, usd: 0.6, after: ['swap-button'] },
+        { id: 'dash-design', name: 'Design the dashboard', farmer: 'designer', doneWhen: 'Every agent’s task, last step and spend read at a glance, and nothing covers the ask window', mins: 12, usd: 0.8 },
         { ...SHIP, doneWhen: 'Live for 10% with errors under 2%, then for everyone' },
       ],
       script: AGENT_DASH,
