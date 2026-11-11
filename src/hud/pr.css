@@ -88,7 +88,7 @@
 .prv-files-n { font-size: var(--t-meta); color: var(--bark-3); white-space: nowrap; }
 
 /* Files changed: the tree on the left, the diff on the right. */
-.prv-files { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 14px; align-items: start; }
+.prv-files { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 14px; align-items: start; }
 .prv-tree { list-style: none; margin: 0; padding: 0; position: sticky; top: 0; }
 .prv-tree button { width: 100%; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 4px; text-align: left; font-size: 13px; }
 .prv-tree button:hover { background: rgba(255, 246, 228, .5); }
