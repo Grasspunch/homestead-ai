@@ -562,6 +562,8 @@ class Store {
 
   setDrawer(d: Drawer) {
     this.drawer = d
+    // Opening any panel closes Settings, so the two never stack.
+    if (d) this.settingsOpen = false
     this.notify()
   }
 

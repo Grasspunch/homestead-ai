@@ -111,6 +111,7 @@ function Farm() {
         openAsk={ask}
         onTask={(id) => store.setDrawer(d?.kind === 'task' && d.id === id ? null : { kind: 'task', id })}
         onFarmer={(id) => store.setDrawer(d?.kind === 'farmer' && d.id === id ? null : { kind: 'farmer', id })}
+        onDeselect={() => store.setDrawer(null)}
         onMail={() => store.setDrawer({ kind: 'inbox' })}
         onCoins={() => store.setDrawer({ kind: 'usage' })}
         onChest={() => store.setDrawer({ kind: 'summary' })}
@@ -194,7 +195,10 @@ function Top({ p, s }: { p: Project; s: RunState }) {
         key="settings"
         className={cls('settings')}
         aria-label={look.label.settings ?? 'Settings'}
+        data-settings-toggle
         onClick={() => {
+          // Settings is one popup at a time: opening it closes a panel that's open (not the Planner chat).
+          if (!store.settingsOpen && store.drawer && store.drawer.kind !== 'chat') store.setDrawer(null)
           store.settingsOpen = !store.settingsOpen
           store.notify()
         }}
@@ -1333,8 +1337,20 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
 function Settings() {
   const st = useStore()
   const [live, setLive] = useState(getLiveMode())
+  // A click anywhere outside Settings closes it (its own gear button toggles it instead).
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      const t = e.target as Element | null
+      if (!t || box.current?.contains(t) || t.closest('[data-settings-toggle]')) return
+      store.settingsOpen = false
+      store.notify()
+    }
+    document.addEventListener('pointerdown', down, true)
+    return () => document.removeEventListener('pointerdown', down, true)
+  }, [])
   return (
-    <div className="pop wood" role="dialog" aria-label="Settings">
+    <div ref={box} className="pop wood" role="dialog" aria-label="Settings">
       <h3 className="px-s">Settings</h3>
       <button
         className="toggle"
