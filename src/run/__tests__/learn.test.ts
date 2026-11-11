@@ -53,7 +53,7 @@ describe('learning across runs', () => {
       expect(plan && plan.type === 'plan' && plan.tasks.some((t) => t.id === `${task}-rest`)).toBe(true)
       expect(costAsks(p)).toEqual([])
       const said = (store.chat[p.id] ?? []).at(-1)!
-      expect(said.text).toMatch(/^Last time .* ran over, so I split it from the start: about \$\d+(\.\d\d)? less, and no ask\.$/)
+      expect(said.text).toMatch(/^Last time “.*” ran over, so I split it from the start: about \$\d+(\.\d\d)? less, and no ask\.$/)
       const saved = savedBy(p.lesson!, p.events)
       expect(saved).toBeGreaterThan(0)
       expect(said.text).toContain(saved < 10 ? saved.toFixed(2) : String(Math.round(saved)))
@@ -62,7 +62,7 @@ describe('learning across runs', () => {
 
       playOut(p)
       expect(p.run?.lesson?.task).toBe(task)
-      expect(lessonLine(p.run!.lesson!, p.events, true)).toMatch(/^Learned from run 1: .* was split from the start, \$\d+(\.\d\d)? less, and no ask\.$/)
+      expect(lessonLine(p.run!.lesson!, p.events, true)).toMatch(/^Learned from run 1: “.*” split from the start, \$\d+(\.\d\d)? less, and no ask\.$/)
       // Run 2 had nothing run over, so the lesson stands for run 3.
       expect(p.lesson?.run).toBe(1)
     })
@@ -99,9 +99,9 @@ describe('the scale line', () => {
     playOut(p)
     const s = reduce(p.events, Number.MAX_SAFE_INTEGER, p.answers ?? {})
     const line = scaleLine(s)!
-    expect(line).toMatch(/^Projected at this run’s rates, a 10-person team running 2 crews each a day: /)
+    expect(line).toMatch(/^10 people × 2 crews a day, at this run’s rates: /)
     const checks = s.tasks.reduce((n, t) => n + t.checks.filter((c) => !c.pass).length, 0)
     expect(line).toContain(`${checks * 20} problems caught before merge`)
-    expect(line).toContain(`$${Math.round(s.done!.usd * 20).toLocaleString('en-US')} of spend`)
+    expect(line).toContain(`$${Math.round(s.done!.usd * 20).toLocaleString('en-US')} a day`)
   })
 })

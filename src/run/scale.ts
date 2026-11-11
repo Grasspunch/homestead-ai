@@ -20,6 +20,6 @@ export function scaleLine(s: RunState): string | null {
   const { checks, canary } = caughtCounts(s)
   const parts = [`${checks * runs} problems caught before merge`]
   if (canary) parts.push(`${canary * runs} bad releases stopped at 10%`)
-  parts.push(`${usd(s.done.usd * runs)} of spend${s.checkUsd ? `, ${usd(s.checkUsd * runs)} of it checks` : ''}`)
-  return `Projected at this run’s rates, a ${TEAM.people}-person team running ${TEAM.crewsEach} crews each a day: ${parts.join(', ')}.`
+  parts.push(`${usd(s.done.usd * runs)} a day`)
+  return `${TEAM.people} people × ${TEAM.crewsEach} crews a day, at this run’s rates: ${parts.join(', ')}.`
 }

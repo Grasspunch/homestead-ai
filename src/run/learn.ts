@@ -41,7 +41,6 @@ export function lessonFrom(events: RunEvent[], run: number): Lesson | null {
 }
 
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`
-const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
 
 // What the lesson saved in this run, against the run it came from.
 export function savedBy(lesson: Lesson, events: RunEvent[]) {
@@ -53,6 +52,6 @@ export function lessonLine(lesson: Lesson, events: RunEvent[], done = false) {
   const saved = savedBy(lesson, events)
   const less = saved >= 0.01 ? `${done ? '' : 'about '}${usd(saved)} less, and no ask` : 'no ask this time'
   return done
-    ? `Learned from run ${lesson.run}: ${lower(lesson.name)} was split from the start, ${less}.`
-    : `Last time ${lower(lesson.name)} ran over, so I split it from the start: ${less}.`
+    ? `Learned from run ${lesson.run}: “${lesson.name}” split from the start, ${less}.`
+    : `Last time “${lesson.name}” ran over, so I split it from the start: ${less}.`
 }

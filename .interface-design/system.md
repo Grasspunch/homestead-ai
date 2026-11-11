@@ -92,6 +92,11 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - Home picks the largest scale (3, 2.5, 2 or 1.5) that shows every farm and the new-farm plot above the dialogue.
 - Done's time gain says "assuming one agent runs a third slower".
 
+## Learning and projection on Done
+- On run 2 and later, the Planner's first line names what it learned: "Last time “Index the help docs” ran over, so I split it from the start: about $3.51 less, and no ask." The task name is quoted as the plot shows it.
+- Done adds one plain body line under the gain line: "Learned from run 1: “…” split from the start, $X less, and no ask." The numbers are the two runs' own costs for that task.
+- Last on Done, before the buttons: a grey "Projection" tag, then one meta-ink line multiplying this run's numbers across 10 people × 2 crews a day. It never reads as a result: the tag and "at this run's rates" say it's projected.
+
 ## Changing the farm
 - Ask the Planner in the talk bar, at any time, to change how the farm runs. A request that reads as a change gets one change card in the Planner's bubble; anything else goes to the crew as a note.
 - The change card follows the ask: Planner header, an honey urgency tag naming the change ("Incident mode", "Synthetic checks", "Stage alerts"), one question, then one row per change. Every row is checked. An unticked row greys and strikes through.
