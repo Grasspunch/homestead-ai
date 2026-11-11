@@ -92,6 +92,11 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - Home picks the largest scale (3, 2.5, 2 or 1.5) that shows every farm and the new-farm plot above the dialogue.
 - Done's time gain says "assuming one agent runs a third slower".
 
+## Learning and projection on Done
+- On run 2 and later, the Planner's first line names what it learned: "Last time “Index the help docs” ran over, so I split it from the start: about $3.51 less, and no ask." The task name is quoted as the plot shows it.
+- Done adds one plain body line under the gain line: "Learned from run 1: “…” split from the start, $X less, and no ask." The numbers are the two runs' own costs for that task.
+- Last on Done, before the buttons: a grey "Projection" tag, then one meta-ink line multiplying this run's numbers across 10 people × 2 crews a day. It never reads as a result: the tag and "at this run's rates" say it's projected.
+
 ## Changing the farm
 - Ask the Planner in the talk bar, at any time, to change how the farm runs. A request that reads as a change gets one change card in the Planner's bubble; anything else goes to the crew as a note.
 - The change card follows the ask: Planner header, an honey urgency tag naming the change ("Incident mode", "Synthetic checks", "Stage alerts"), one question, then one row per change. Every row is checked. An unticked row greys and strikes through.
@@ -145,3 +150,12 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 
 ## Taking the run with you
 - When a run is done, the Planner’s Done dialogue has a second row under its buttons: "Download PR" and "Download run report", small tan buttons in the reading font. Both save markdown built from the run’s own events (src/run/export.ts), and both open by saying what was live and what was simulated.
+## Home and the team view
+- Home is two sides. Left, vertically centred: one paper with the title, the Mine / Team switch, who it is for (one bold body line) and why (two meta lines), then the Planner. Right: your farms at the largest scale that fits (3 down to 1), centred in the room left, so nothing overflows at 1280x720 and 1920 has no empty half. On screens wider than 1680px the whole of Home sits centred.
+- Mine / Team is a choice of two pack buttons (xs), cream for the chosen one. The title follows it: "Your projects" or "Your team".
+- The team view is one paper on the right, scrolling inside itself if it must. It shows spend and outliers, never what anyone is doing: no timelines, no activity, no per-person ranking.
+- It leads with the gold "Simulated team" tag and one line: people, agents, projects, spent.
+- "Worth a look" holds outliers only, at most one of each: Cost spike (honey, coin), Same work twice (bark, star), Agents disagree (bark, chat). A row is the urgency tag, the project in bold with whose in meta ink, one line from the run itself, and an "Open" tan button that opens the project at that moment.
+- "Budgets" is a ruled grid by area: the area's row has its budget per project in a soft well; each project under it has its name (a link), whose and how many agents in meta ink, the tick meter (12 ticks) and "$13 of $60". Over its limit, the spend turns berry.
+- A new project starts with its area's budget as its spend limit. Changing the budget moves every project still on the old one; a project with a limit of its own keeps it.
+- A teammate's project you open carries the gold "Simulated team" tag in the title and stays out of Mine.

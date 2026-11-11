@@ -32,23 +32,23 @@ describe('the Planner sizes the crew to the goal', () => {
     for (const g of NOT_SMALL) expect(isSmallChange(g), g).toBe(false)
   })
 
-  it('a small change is the Builder and a light check, then the release', () => {
+  it('a small change is the Builder alone: make it, run the tests, ship once you merge', () => {
     const p = simulatePlan('Change the button text from Submit to Save')
-    expect(p.farmers.map((f) => f.id).sort()).toEqual(['builder', 'tester'])
-    expect(p.tasks.map((t) => [t.id, t.farmer])).toEqual([
-      ['change', 'builder'],
-      ['e2e-check', 'tester'],
-      ['ship', 'builder'],
+    expect(p.farmers.map((f) => f.id)).toEqual(['builder'])
+    // Still the Builder on its own model, not the one general agent on Opus.
+    expect(p.farmers[0].model).toBe('GPT-6.1 Sol')
+    expect(p.farmers[0].constraints).toContain('Waits for you before shipping')
+    expect(p.tasks.map((t) => [t.id, t.farmer, t.gate])).toEqual([
+      ['change', 'builder', false],
+      ['ship', 'builder', true],
     ])
-    expect(p.tasks.find((t) => t.id === 'e2e-check')!.name).toBe('Check the change')
-    // Minutes and a few dollars, not the price of a feature.
-    expect(p.estimate.minutes).toBeLessThan(40)
-    expect(p.estimate.usd).toBeLessThan(5)
-    expect(simulatePlan('Build an AI support assistant that answers from our help docs').estimate.usd).toBeGreaterThan(p.estimate.usd * 3)
+    // Minutes and cents, not the price of a feature.
+    expect(p.estimate.minutes).toBeLessThanOrEqual(10)
+    expect(p.estimate.usd).toBeLessThan(0.5)
   })
 
   it('the bigger the work, the bigger the crew', () => {
-    expect(crewOf('Fix the typo on the pricing page')).toEqual(['builder', 'tester'])
+    expect(crewOf('Fix the typo on the pricing page')).toEqual(['builder'])
     // A feature with no screens: no Designer.
     expect(crewOf('Send a weekly email digest of new orders')).toEqual(['builder', 'deployer', 'planner', 'tester'])
     // A feature people see, and the scripted products: all five.
@@ -56,21 +56,24 @@ describe('the Planner sizes the crew to the goal', () => {
       expect(crewOf(g), g).toEqual(['builder', 'deployer', 'designer', 'planner', 'tester'])
   })
 
-  it('you can still add anyone back: the release goes to the Deployer once it is on the crew', () => {
+  it('you can still add anyone back: a Tester gets a light check, the Deployer takes the release', () => {
     const p = simulatePlan('Fix the typo on the pricing page', ['builder', 'tester', 'deployer'])
     expect(p.farmers.map((f) => f.id)).toContain('deployer')
     expect(p.tasks.find((t) => t.gate)!.farmer).toBe('deployer')
+    expect(p.tasks.find((t) => t.farmer === 'tester')!.name).toBe('Check the change')
     expect(crewOf('Fix the typo on the pricing page', 5)).toHaveLength(5)
   })
 
-  it('a small change runs clean: no money ask, no failed check, no rollback, just your merge', () => {
+  it('a small change runs clean: no money ask, no failed check, no 10% stage, just your merge', () => {
     const goal = 'Change the button text from Submit to Save'
     const plan = simulatePlan(goal)
     const ev = simulateRun({ goal, ...plan })
     const asks = ev.filter((e) => e.type === 'ask')
     expect(asks.map((a) => a.type === 'ask' && a.reason)).toEqual(['irreversible'])
     expect(ev.some((e) => e.type === 'check' && !e.pass)).toBe(false)
-    expect(ev.some((e) => e.type === 'deploy' && e.stage === 'rollback')).toBe(false)
+    expect(ev.filter((e) => e.type === 'deploy').map((e) => e.type === 'deploy' && e.stage)).toEqual(['100%'])
+    const merge = asks[0]
+    expect(merge.type === 'ask' && merge.suggested).toBe('Merge and ship to everyone')
     const s = reduce(ev, Number.MAX_SAFE_INTEGER, {})
     expect(s.done).toBeTruthy()
     expect(s.tasks.every((t) => t.status === 'accepted')).toBe(true)
@@ -79,6 +82,6 @@ describe('the Planner sizes the crew to the goal', () => {
   it('live: the Planner is told to size the crew, not to fill it', () => {
     const say = crewInstruction()
     expect(say).toContain('Choose the team size from the goal')
-    expect(say).toMatch(/small change.*Builder and the Tester only/)
+    expect(say).toMatch(/small change.*Builder alone/)
   })
 })

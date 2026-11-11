@@ -305,7 +305,7 @@ export const PLAN_SCHEMA = {
     },
     tasks: {
       type: 'array',
-      description: 'As few tasks as the goal needs, in the order they run: 2 or 3 for a small change, up to 8 for a big one',
+      description: 'As few tasks as the goal needs, in the order they run: 2 for a small change, up to 8 for a big one',
       items: {
         type: 'object',
         additionalProperties: false,
@@ -328,7 +328,7 @@ export function crewInstruction(crewSize?: number): string {
   if (crewSize === undefined) {
     return [
       'Choose the team size from the goal. Add a farmer only when it has real work on this goal, and never add one just because it exists.',
-      'A small change (a line of copy, a label, a colour, a typo, a config value) is the Builder and the Tester only: the Builder makes it, the Tester gives it a light check, and the Builder ships it.',
+      'A small change (a line of copy, a label, a colour, a typo, a config value) is the Builder alone: it makes the change, runs the existing tests, and ships it straight to everyone once the person merges. No Tester, no Planner, no staged rollout.',
       'Add the Designer only when the goal changes screens, flows or copy that need designing. Add the Planner only when there are several tasks to keep in step. Add the Deployer only when the release needs a staged rollout watched, as most new features with real users do.',
       'A new product or a big feature may need all five.',
     ].join(' ')
@@ -363,7 +363,7 @@ For each farmer:
 - limits: a dollar and minute cap for its share of the work.
 - why: why this project needs this farmer, in its own terms (its tasks, its risk), not a generic job description.
 
-Tasks: as few as the goal needs, in run order, kebab-case ids. A small change is one task to make it, one light check, and the release: 3 tasks. A big feature may need up to 8. Never pad the plan with steps the goal does not need. Each task has one farmer from the crew, a short done-when the Tester can check, and gate true only when it cannot be undone or reaches real users (deploys, sending messages, payments). The release belongs to the Deployer when it is on the crew, otherwise to the Builder.
+Tasks: as few as the goal needs, in run order, kebab-case ids. A small change is one task to make it and run the tests, then the release: 2 tasks. A big feature may need up to 8. Never pad the plan with steps the goal does not need. Each task has one farmer from the crew, a short done-when the Tester can check, and gate true only when it cannot be undone or reaches real users (deploys, sending messages, payments). The release belongs to the Deployer when it is on the crew, otherwise to the Builder.
 
 Estimates, for real agent runs: reason from the number of tasks, how long each takes an agent (often 5 to 20 minutes), what each costs in tokens (often $0.50 to $4 per task), and which tasks can run at the same time.
 - estimate: this crew. Minutes follow the longest chain of tasks that must wait on each other, since farmers work in parallel. Dollars add up, plus a little for handoffs and checks.

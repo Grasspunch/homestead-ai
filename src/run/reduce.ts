@@ -1,5 +1,6 @@
 // Folds a run log into the state shown on screen at time t.
 import { checkCost, soloFromRun } from './compare'
+import { LIMIT_RAISED } from './simulate'
 import type { ActivityLine, Ask, FarmerId, FarmerRun, RunEvent, RunState, TaskState } from './types'
 
 export function emptyState(): RunState {
@@ -125,7 +126,7 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
       }
       case 'auto_fix':
         {
-          const m = /^The (\w+) reached its .* raised it to \$(\d+)/.exec(e.what)
+          const m = /^The (\w+) reached its .* raised it to \$(\d+)/.exec(e.what) ?? LIMIT_RAISED.exec(e.what)
           const lf = m ? Object.values(s.farmers).find((x) => x?.label === m[1]) : undefined
           if (lf && m) lf.limits = { ...lf.limits, usd: Number(m[2]) }
         }
