@@ -1232,6 +1232,8 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
   const chat = st.chat[p.id] ?? []
   const SHOWN = 3
   const lines = all ? chat : chat.slice(-SHOWN)
+  // Hidden, the Planner thinks its last line.
+  const lastSaid = [...chat].reverse().find((l) => l.from !== 'you')?.text
   const plannerModel = plannerModelOf(p, s)
   const input = useRef<HTMLInputElement>(null)
   const you = (t: string) => store.chatTo(p.id, { from: 'you', text: clip(t) })
@@ -1300,7 +1302,6 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
   const answered = s.asks.filter((a) => a.answer).length
   // The release bug the last run rolled back on, fixed in this one, and how far this run counts toward merging by itself.
   const fixed = s.done ? fixLineOf(p, s.deploy.some((d) => d.stage === 'rollback')) : null
-  const lastSaid = [...chat].reverse().find((l) => l.from !== 'you')?.text
   return (
     <Center
       farmer="planner"
