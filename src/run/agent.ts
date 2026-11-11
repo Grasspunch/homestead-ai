@@ -13,6 +13,7 @@ import { simulatePlan, simulateRoute } from './simPlan'
 import { discussSim, type Talk, type TalkLine } from './discuss'
 import { askTalkSim } from './askTalk'
 import { chatSim } from './chatSim'
+import { waitingOn } from './busy'
 import type { AskTalkIn, AskTalkOut, ChatIn, ChatOut } from './talk'
 
 const KEY = 'homestead.live'
@@ -57,7 +58,11 @@ const noteOf = (e: unknown) => (e instanceof KeyMissing ? NO_KEY[e.provider] : e
 // `model` is the Planner's model. On Lovable both makers run through Lovable AI; in local dev without it, only Claude.
 // `chat`: something you said to a farmer. A canned reply to a real question reads as not listening, so chat calls
 // a real model even with Live mode off, and only falls back to the script, quietly, when it can't.
-async function run<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, model?: string, chat = false): Promise<AgentAnswer<T>> {
+function run<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, model?: string, chat = false): Promise<AgentAnswer<T>> {
+  return waitingOn(answer(liveCall, sim, paceMs, model, chat))
+}
+
+async function answer<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, model: string | undefined, chat: boolean): Promise<AgentAnswer<T>> {
   const provider = providerOf(model)
   if ((live || chat) && (await probeKeys())[provider]) {
     try {
@@ -85,7 +90,11 @@ export function route(input: RouteInput, model?: string) {
 // with its own scripted parser, and a failed call says so on the card.
 // Like chat, it calls a real model even with Live mode off when the server can run one, and falls back quietly.
 // `reply`: what the live Planner said when it found no change it can make, so the reason isn't lost.
-export async function reshapeRead(message: string, ctx: ReshapeCtx, model?: string): Promise<{ proposal: Proposal | null; note?: string; reply?: string }> {
+export function reshapeRead(message: string, ctx: ReshapeCtx, model?: string): Promise<{ proposal: Proposal | null; note?: string; reply?: string }> {
+  return waitingOn(readChange(message, ctx, model))
+}
+
+async function readChange(message: string, ctx: ReshapeCtx, model?: string): Promise<{ proposal: Proposal | null; note?: string; reply?: string }> {
   const provider = providerOf(model)
   if (!(await probeKeys())[provider]) return live ? { proposal: null, note: NO_KEY[provider] } : { proposal: null }
   try {

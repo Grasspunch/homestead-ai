@@ -1,0 +1,32 @@
+/* How the page answers the mouse, kept out of hud.css and panel.css so it can sit on top of both. */
+
+/* Button text doesn't underline on hover: the pointing paw already says it's clickable.
+   Buttons drawn as links (.link, .toast-undo, a "Why") keep the underline they have at rest. */
+button:not(.link):not(.toast-undo):hover,
+button:not(.link):not(.toast-undo):hover *:not(.why-open) {
+  text-decoration: none !important;
+}
+
+/* The busy paw: while an agent call is out (run/busy.ts puts `hs-busy` on <html>), the paw holds a sand timer
+   that drains, everywhere but text fields, so you can still see where the caret goes.
+   The frames are steps of one animation on <html>; everything below inherits the cursor it shows.
+   A browser that doesn't animate cursors keeps the first frame, which still reads as busy. */
+html.hs-busy {
+  cursor: url(/cursor-paw-busy-1.png) 4 2, progress;
+  animation: hs-paw-busy 1.2s step-end infinite;
+}
+
+html.hs-busy body *:not(input):not(textarea):not([contenteditable='true']) {
+  cursor: inherit !important;
+}
+
+@keyframes hs-paw-busy {
+  0% { cursor: url(/cursor-paw-busy-1.png) 4 2, progress; }
+  25% { cursor: url(/cursor-paw-busy-2.png) 4 2, progress; }
+  50% { cursor: url(/cursor-paw-busy-3.png) 4 2, progress; }
+  75% { cursor: url(/cursor-paw-busy-4.png) 4 2, progress; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.hs-busy { animation: none; }
+}
