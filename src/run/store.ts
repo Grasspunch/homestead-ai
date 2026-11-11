@@ -92,7 +92,7 @@ export interface Forecast {
 // - An amount that isn't one of the options ("raise it to $100") is never rounded to one: you're told and asked again.
 // - Otherwise naming an option's own words wins, then a plain yes takes the suggestion.
 const CONTRACTED = /\b(dont|dnt|didnt|doesnt|dosnt|dosent|doesent|shant|shouldnt|wouldnt|couldnt|cant|cannot|isnt|arent|wasnt|werent|wont|havent|hasnt|hadnt|mustnt|neednt|aint)\b/
-const NEGATION = /\b(no|nah|nope|not|never|stop|wait|hold|later|cancel|halt|leave it|rather not|avoid|avoiding|reject|refuse|against|bad idea|terrible idea|skip|skipping|drop|forget|decline|veto|scrap|nix|ditch|pass on)\b/
+const NEGATION = /\b(no|nah|nope|not|never|stop|wait|hold|later|cancel|halt|leave it|rather not|avoid|avoiding|reject|refuse|against|bad idea|terrible idea|skip|skipping|drop|forget|decline|veto|scrap|nix|ditch|pass on|overrule|overruled|overrules|is wrong|are wrong)\b/
 // Short replies that start like a question but answer: "do it", "can do", "is fine".
 const AFFIRM = /^\s*(do it|do that|do so|can do|will do|is fine|is ok|is okay|are fine)\b/i
 const QUESTION =/\?|^\s*(should|shall|do|does|did|can|could|would|will|is|are|what|how|why|when|which)\b(?![´`’‘ʼ′']t\b)|\b(what|how|why|explain|can you|could you)\b/i
