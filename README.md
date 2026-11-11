@@ -28,7 +28,7 @@ The comparison is one Claude Sonnet 5 agent doing the same work in a row, with n
 
 ## Learning, export and projection
 
-A farm learns from its own runs. After run 1, the task that ran over is planned in two from the start: run 2 says "Last time 'Index the help docs' ran over, so I split it from the start", needs no ask about it, and costs $3.51 less, $48 in all. Done offers the pull request as Markdown and a run report to download, both opening with what was simulated and matching Done's numbers. Done also shows a projection, tagged as one: the run's own rates over a month of handing off 2 features a week.
+A farm learns from its own runs. After run 1, the task that ran over is planned in two from the start: run 2 says "Last time 'Index the help docs' ran over, so I split it from the start", needs no ask about it, and costs $3.51 less, $48 in all. It also ships the fix for run 1's rollback, so its release stays up and Done counts it as clean run 1 of the 3 that earn the offer to merge by itself. Done offers the pull request as Markdown and a run report to download, both opening with what was simulated and matching Done's numbers. Done also shows a projection, tagged as one: the run's own rates over a month of handing off 2 features a week.
 
 ## What is simulated
 

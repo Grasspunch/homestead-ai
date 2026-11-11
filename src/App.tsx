@@ -27,7 +27,7 @@ import { clip, store, useStore, type Project } from './run/store'
 import { isUi, type UiId } from './run/ui'
 import { SEND_BACK } from './run/simulate'
 import { BY_YOU } from './run/rollback'
-import { lessonLine } from './run/learn'
+import { fixLine, lessonLine } from './run/learn'
 import { scaleLine } from './run/scale'
 import { doneLead } from './run/done'
 import type { Ask, FarmerId, RunState } from './run/types'
@@ -1202,6 +1202,8 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
     }
   }
   const answered = s.asks.filter((a) => a.answer).length
+  // The release bug the last run rolled back on, fixed in this one, and how far this run counts toward merging by itself.
+  const fixed = s.done && p.run?.fixedRollback ? fixLine(p.run.fixedRollback, s.deploy.some((d) => d.stage === 'rollback'), p.autonomy.ship === 'ask' && !p.trust && !p.everSentBack ? (p.cleanRuns ?? 0) : undefined) : null
   return (
     <Dialogue farmer="planner" side={side} className={s.done ? 'done' : ''}>
       <div className="who">
@@ -1216,6 +1218,7 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
           {skippedLine(s) && <p className="impact">{skippedLine(s)}</p>}
           {outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
           {p.run?.lesson && <p className="impact learned-line">{lessonLine(p.run.lesson, p.events, true)}</p>}
+          {fixed && <p className="impact learned-line">{fixed}</p>}
           {scaleLine(s) && (
             <p className="impact scale-line">
               <SimTag>Projection</SimTag> {scaleLine(s)}

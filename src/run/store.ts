@@ -2,7 +2,7 @@
 import { useSyncExternalStore } from 'react'
 import { duration, pendingAsk, reduce } from './reduce'
 import { BRAND_ASK, BRAND_FIX, LIMIT_RAISED, SEND_BACK, fitLimits, needKey, simulateRun, type SimInput } from './simulate'
-import { liveStage, rollBack } from './rollback'
+import { BY_YOU, liveStage, rollBack } from './rollback'
 import { scenario, simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
 import { lessonFrom, lessonLine, type Lesson } from './learn'
@@ -50,6 +50,7 @@ export interface Project {
   everSentBack?: boolean // a send back on this farm, ever: the trust offer never follows one
   trust?: 'offered' | 'yes' | 'no'
   runs?: number // runs watched to the end
+  rolledLast?: boolean // the last finished run rolled back at 10%: the next run ships the fix
   cleanRuns?: number // runs in a row with no rollback, no send back and nothing stopped; after three, the Planner offers once to merge by itself
   // The run you're watching on this farm. Each farm keeps its own place, so leaving and coming back resumes it.
   clock?: number // ms into the run; unset until the run starts
@@ -57,7 +58,7 @@ export interface Project {
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   talks?: Record<string, (TalkLine | { from: 'you'; text: string })[]> // talking a disagreement through, by ask id
-  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; brandAt?: number; toggles?: Record<string, { t: number; on: boolean }[]> } // seq: which run of this farm, from 1
+  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; fixedRollback?: number; brandAt?: number; toggles?: Record<string, { t: number; on: boolean }[]> } // seq: which run of this farm, from 1
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
@@ -531,10 +532,18 @@ class Store {
     for (const k of [...this.seen]) if (k.startsWith(`${p.id}:`)) this.seen.delete(k)
     // Changes you asked for last for the farm: from the start of this run, with nothing earlier to undo to.
     p.reshapes = (p.reshapes ?? []).map((r) => ({ ...r, at: 0, before: undefined }))
-    p.run = { bugFixed: this.nextBugFixed(p), kit: structuredClone(this.kit[p.id] ?? {}), autonomy: { ...p.autonomy }, forecast: this.forecast(p) ?? undefined, seq: (p.run?.seq ?? 0) + 1, lesson: p.lesson }
+    const bugFixed = this.nextBugFixed(p)
+    const seq = (p.run?.seq ?? 0) + 1
+    // The release bug that rolled the last run back is fixed in this one, and Done says it learned that.
+    const fixedRollback = bugFixed && p.rolledLast ? seq - 1 : undefined
+    p.run = { bugFixed, kit: structuredClone(this.kit[p.id] ?? {}), autonomy: { ...p.autonomy }, forecast: this.forecast(p) ?? undefined, seq, lesson: p.lesson, fixedRollback }
     this.rebuild(p)
     // What it learned from the last run, said as the run starts, with this run's forecast against that run.
-    if (p.lesson) this.chatTo(p.id, { from: 'planner', text: lessonLine(p.lesson, p.events) })
+    // Said once: the line from an earlier run gives way to this one.
+    if (p.lesson) {
+      this.chat[p.id] = (this.chat[p.id] ?? []).filter((l) => !(l.from === 'planner' && /^Last time “/.test(l.text)))
+      this.chatTo(p.id, { from: 'planner', text: lessonLine(p.lesson, p.events) })
+    }
     if (this.project()?.id === p.id) this.play()
     this.notify()
   }
@@ -821,8 +830,9 @@ class Store {
 
   // Run the plan again with everything you've decided so far: your answers, your changes to each farmer,
   // the rules you set, and the work you sent back. The simulation is deterministic, so what came before stays the same.
+  // A farm's first run, the sample's too, meets the release bug at 10%; every run after it ships the fix.
   private nextBugFixed(p: Project) {
-    return p.kind !== 'sample' && (p.runs ?? 0) > 0
+    return (p.runs ?? 0) > 0
   }
 
   // The simulation's input for this farm's plan, with the given farmers' changes, rules and answers.
@@ -1033,6 +1043,8 @@ class Store {
     const rolled = s.deploy.some((d) => d.stage === 'rollback')
     const clean = !rolled && !s.asks.some((a) => a.answer?.choice === SEND_BACK) && !s.tasks.some((t) => t.stopped)
     p.cleanRuns = clean ? (p.cleanRuns ?? 0) + 1 : 0
+    // A rollback you made yourself isn't the release bug; one the 10% stage made is.
+    p.rolledLast = s.deploy.some((d, i) => d.stage === 'rollback' && d.reason !== BY_YOU && s.deploy[i - 1]?.stage === '10%')
     if (rolled && p.autonomy.ship === 'auto' && p.trust === 'yes') {
       p.autonomy = { ...p.autonomy, ship: 'ask' }
       p.trust = undefined

@@ -55,3 +55,11 @@ export function lessonLine(lesson: Lesson, events: RunEvent[], done = false) {
     ? `Learned from run ${lesson.run}: “${lesson.name}” split from the start, ${less}.`
     : `Last time “${lesson.name}” ran over, so I split it from the start: ${less}.`
 }
+
+// The other thing a farm learns: the release bug that rolled the last run back at 10% is fixed in this one. Said
+// on Done only when this release stayed up, with how far that run counts toward merging by itself.
+export function fixLine(fromRun: number, rolledNow: boolean, cleanRuns?: number) {
+  if (rolledNow) return null
+  const count = cleanRuns !== undefined ? ` Clean runs in a row: ${Math.min(3, cleanRuns)} of 3 toward merging by itself.` : ''
+  return `Learned from run ${fromRun}: what rolled that release back is fixed, so this one stayed up.${count}`
+}

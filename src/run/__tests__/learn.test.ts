@@ -105,3 +105,35 @@ describe('the scale line', () => {
     expect(line).toContain(`$${Math.round(s.done!.usd * 8).toLocaleString('en-US')} in all`)
   })
 })
+
+describe('the sample earns trust', () => {
+  it('run 2 ships the fix for run 1’s rollback, stays up, and counts 1 of 3 clean runs', async () => {
+    const { fixLine } = await import('../learn')
+    store.projects = store.projects.filter((x) => x.kind !== 'sample')
+    try {
+      localStorage?.clear?.()
+    } catch {
+      // no storage in tests
+    }
+    store.loadSample()
+    const p = store.projects.find((x) => x.kind === 'sample')!
+    store.open(p.id)
+    store.pause()
+    playOut(p)
+    expect(p.events.some((e) => e.type === 'deploy' && e.stage === 'rollback')).toBe(true)
+    expect(p.cleanRuns).toBe(0)
+    store.runAgain()
+    store.pause()
+    expect(p.run?.fixedRollback).toBe(1)
+    playOut(p)
+    const s = reduce(p.events, Number.MAX_SAFE_INTEGER, p.answers ?? {})
+    expect(s.deploy.some((d) => d.stage === 'rollback')).toBe(false)
+    expect(s.deploy.at(-1)?.stage).toBe('100%')
+    expect(p.cleanRuns).toBe(1)
+    expect(fixLine(1, false, p.cleanRuns)).toBe('Learned from run 1: what rolled that release back is fixed, so this one stayed up. Clean runs in a row: 1 of 3 toward merging by itself.')
+    // "Last time…" is said once, however many runs follow.
+    store.runAgain()
+    store.pause()
+    expect((store.chat[p.id] ?? []).filter((l) => /^Last time “/.test(l.text)).length).toBe(1)
+  })
+})
