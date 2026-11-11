@@ -14,8 +14,8 @@ export function liveStage(events: RunEvent[], t: number) {
   let stage: string | null = null
   for (const e of events) {
     if (e.t > t) break
+    // A stopped task doesn't take a release down: only a rollback does.
     if (e.type === 'deploy') stage = e.stage
-    if (e.type === 'stop' && stage) stage = null
   }
   return stage === '10%' || stage === '100%' ? stage : null
 }
@@ -55,8 +55,11 @@ export function rollBack(events: RunEvent[], t0: number, askId: string, choice?:
     return withDone(out)
   }
 
-  // Healthy: it comes down, and the Deployer asks whether to ship again.
   const at = (dm: number) => Math.round(t0 + dm * MIN)
+  // The run was stopped at its budget: it comes down, and nothing ships again.
+  if (events.some((e) => e.type === 'stop' && e.t <= t0 && /^You stopped the run at its budget/.test(e.reason)))
+    return withDone([...events, { t: at(0), type: 'deploy', stage: 'rollback', reason: BY_YOU }])
+  // Healthy: it comes down, and the Deployer asks whether to ship again.
   const before = events.filter((e) => e.t <= t0 || !rollout(e))
   const added: RunEvent[] = [
     { t: at(0), type: 'deploy', stage: 'rollback', reason: BY_YOU },

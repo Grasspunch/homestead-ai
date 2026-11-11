@@ -171,7 +171,7 @@ function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: 
   const assignees = FARMER_ORDER.filter((f) => s.tasks.some((t) => t.farmer === f && !t.gate))
   const now = workingNow(s, pr)
   const last = s.deploy[s.deploy.length - 1]
-  const live = !!last && last.stage !== 'rollback' && !s.tasks.some((t) => t.gate && t.stopped)
+  const live = !!last && last.stage !== 'rollback'
   const decided = s.asks.filter((a) => a.answer)
 
   return (

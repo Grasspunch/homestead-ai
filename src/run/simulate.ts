@@ -914,7 +914,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const first = ev.find((e) => e.type === 'usage' && e.t > pastT)
       const f = first && first.type === 'usage' ? farmers.find((x) => x.id === first.farmer) : undefined
       if (f && first && first.type === 'usage') {
-        const tmB = pastT / MIN + 0.001
+        // Asked a moment after now, before the next step lands.
+        const tmB = pastT / MIN - 0.0099
         const id = `ask-budget${bAsked + 1 === 1 ? '' : `-${bAsked + 1}`}`
         if (budgetAsk(f, tmB, runSpent, first.task) === 'stop') {
           const halts = { ...input.halts }
@@ -972,7 +973,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
     }
     // The ask where you stopped the run at its budget, once, in its place.
     const bs = input.budgetStop
-    if (bs && !(past && bs.t * MIN <= pastT)) {
+    // (The ask sits 0.01 min after the stop; one asked after now is made here.)
+    if (bs && !(past && (bs.t + 0.01) * MIN <= pastT + 1)) {
       const f = farmers.find((x) => x.id === bs.f)
       const spentThen = Object.values(past?.spent ?? {}).reduce((n, x) => n + (x ?? 0), 0) + ev.reduce((n, e) => n + (e.type === 'usage' && e.t > pastT && e.t <= bs.t * MIN ? e.usd : 0), 0)
       if (f) budgetAsk(f, bs.t, spentThen, undefined, bs.id)

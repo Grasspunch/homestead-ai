@@ -3,7 +3,8 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { simulatePlan } from '../simPlan'
 import { SAMPLE_GOAL, store, type Project } from '../store'
-import { budgetStopOf } from '../done'
+import { budgetStopOf, doneLead } from '../done'
+import { liveStage } from '../rollback'
 
 beforeAll(() => {
   ;(globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame = () => 0
@@ -129,5 +130,45 @@ describe('checkpoint 27', () => {
     store.setProjectBudget(p.id, b)
     expect(p.events.length).toBe(before)
     expect(p.answers?.[a.id]).toBeUndefined()
+  })
+  for (const goal of GOALS)
+    it(`${goal.slice(0, 20)}: lowering the budget with a budget ask open asks again before another step, and Stop spends nothing more`, () => {
+      const p = farm(goal)
+      toBudgetAsk(p)
+      const spent = spentAt(p, p.clock!)
+      store.setProjectBudget(p.id, 5)
+      const b = next(p)!
+      expect(b.budgetFor).toBeTruthy()
+      expect(spentAt(p, b.t)).toBeCloseTo(spent, 2)
+      expect(b.question).toContain(`with $${Math.round(spent)}`)
+      p.clock = Math.max(p.clock!, b.t)
+      store.answer(b.id, 'Stop the run here')
+      p.clock = done(p)
+      expect(store.state(p)!.usage.usd).toBeCloseTo(spent, 1)
+    })
+
+  it('stopped while the 10% release is live: still live, and you can roll it back', () => {
+    const p = farm(SAMPLE_GOAL, false)
+    finish(p, 'Raise the budget')
+    const ten = p.events.find((e) => e.type === 'deploy' && e.stage === '10%')!
+    p.clock = ten.t + 1000
+    store.setProjectBudget(p.id, 10)
+    const a = next(p)!
+    expect(a.budgetFor).toBeTruthy()
+    p.clock = Math.max(p.clock, a.t)
+    store.answer(a.id, 'Stop the run here')
+    const end = done(p)
+    p.clock = end
+    expect(liveStage(p.events, end)).toBe('10%')
+    expect(doneLead(store.state(p)!)).toContain('stays live for 10% of users')
+    store.clock = end
+    store.rollBackNow()
+    const t = Math.max(...p.events.map((e) => e.t))
+    p.clock = t
+    const s = store.state(p)!
+    expect(s.deploy.at(-1)?.stage).toBe('rollback')
+    expect(liveStage(p.events, t)).toBeNull()
+    expect(s.asks.every((x) => x.answer)).toBe(true)
+    expect(doneLead(s)).toContain('rolled back, so nothing is live')
   })
 })
