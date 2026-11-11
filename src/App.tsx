@@ -160,7 +160,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
   )
   const parts: Partial<Record<UiId, React.ReactNode>> = {
     home: (
-      <button key="home" className={cls('home')} onClick={() => store.home()} aria-label={look.label.home ?? 'Your farms'}>
+      <button key="home" className={cls('home')} onClick={() => store.home()} aria-label={look.label.home ?? 'Your projects'}>
         <Ico name="home" size={ico('home')} />
         {named('home')}
       </button>
@@ -247,7 +247,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
           </div>
         )}
         {look.hidden.includes('sampleTag') ? null : p.kind === 'sample' ? (
-          <span className="tag gold" title="Simulated: every run plays out the same way">
+          <span className="tag gold" title="No real AI calls: a scripted sample that plays out the same way every time">
             Simulated sample
           </span>
         ) : (
@@ -285,7 +285,7 @@ function Dialogue({ farmer, side, dock = false, children }: { farmer: FarmerId; 
 function DemoTag({ goal }: { goal: string }) {
   const sc = scenario(goal)
   return (
-    <span className="tag gold" title={sc.matched ? `Simulated: the ${sc.name.toLowerCase()} scenario` : 'Simulated: no scenario matches your goal, so the crew builds a generic app'}>
+    <span className="tag gold" title={sc.matched ? `No real AI calls: a scripted ${sc.name.toLowerCase()} run` : 'No real AI calls: no script matches your goal, so the agents build a generic app'}>
       Simulated
     </span>
   )
@@ -300,7 +300,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           <b>Planner</b>
         </div>
         <p className="thinking">
-          Laying out a farm for this <i />
+          Splitting this into tasks and picking agents <i />
           <i />
           <i />
         </p>
@@ -353,7 +353,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
       <p className="plan-lead">
         {ids.length > 1 ? (
           <>
-            About <b>{est && mins(est.minutes)}</b> and <b>{est && usd(est.usd)}</b> with {ids.length} farmers.
+            About <b>{est && mins(est.minutes)}</b> and <b>{est && usd(est.usd)}</b> with {ids.length} AI agents.
             {one && est && (
               <>
                 {' '}One Sonnet 5 agent alone would{' '}
@@ -370,9 +370,9 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         )}
       </p>
       <div className="crew-scroll">
-      <div className="crew" role="table" aria-label="Crew">
+      <div className="crew" role="table" aria-label="AI agents">
         <div className="crew-head" role="row">
-          <span role="columnheader">Farmer</span>
+          <span role="columnheader">AI agent</span>
           <span role="columnheader">Why</span>
           <span role="columnheader">Model</span>
           <span role="columnheader">Limit</span>
@@ -418,7 +418,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
                   <i className="mark no" />
                 </button>
               ) : (
-                <span className="crew-x locked" title="Every crew needs a Builder, since it writes the code" aria-label="The Builder can't be dropped">
+                <span className="crew-x locked" title="Every team needs a Builder, since it writes the code" aria-label="The Builder can't be dropped">
                   <i className="mark no" />
                 </span>
               )}
@@ -544,12 +544,12 @@ function TrustDialogue({ side }: { side: boolean }) {
 // Colour says how urgent it is; the icon says what kind of question it is.
 // Red: broken and waiting on you. Honey: a decision with money or reach. Bark: your call, no rush.
 const REASON: Record<Ask['reason'], { label: string; urgency: 'red' | 'honey' | 'calm'; icon: IconName }> = {
-  anomaly: { label: 'Failed check', urgency: 'red', icon: 'alert' },
+  anomaly: { label: 'A check failed', urgency: 'red', icon: 'alert' },
   cost: { label: 'Over budget', urgency: 'honey', icon: 'coin' },
   big: { label: 'Big change', urgency: 'honey', icon: 'star' },
   irreversible: { label: 'Reaches real users', urgency: 'honey', icon: 'play' },
   risk: { label: 'Ship again', urgency: 'honey', icon: 'play' },
-  disagree: { label: 'Disagreement', urgency: 'calm', icon: 'chat' },
+  disagree: { label: 'Agents disagree', urgency: 'calm', icon: 'chat' },
 }
 
 const isShipAsk = (a: Ask) => a.reason === 'irreversible' && /merge/i.test(a.suggested)
@@ -580,10 +580,10 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
   return (
     <>
       <div className="who">
-        <b>Pull request</b>
+        <b>{s.farmers[ask.farmer]?.label ?? 'The crew'} needs you</b>
         <span className={`urgency ${r.urgency}`}>
           <Ico name={r.icon} tone="light" />
-          Your review
+          Review the pull request
         </span>
       </div>
       <p>{holding ? 'Holding. Nothing merges until you say so.' : ready}</p>
@@ -693,16 +693,18 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
   return (
     <Dialogue farmer={ask.farmer} side={side}>
       <div className="who">
+        {/* Who stopped, and why, before anything else: the portrait alone doesn't name them. */}
+        <b>{s.farmers[ask.farmer]?.label ?? 'An agent'} needs you</b>
+        <span className={`urgency ${r.urgency}`}>
+          <Ico name={r.icon} tone="light" />
+          {r.label}
+        </span>
         {task && (
           <button className="plot-chip" onClick={() => store.setDrawer({ kind: 'task', id: task.id })} title="Open this task">
             <Sign crop={cropOf(s.tasks, task.id)} />
             {task.name}
           </button>
         )}
-        <span className={`urgency ${r.urgency}`}>
-          <Ico name={r.icon} tone="light" />
-          {r.label}
-        </span>
       </div>
       {holding ? (
         <p>Holding. Nothing ships until you say so.</p>
@@ -758,8 +760,8 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
   )
 }
 
-// How sure the farmer is of its suggestion, and what that rests on.
-const SURE = { high: 'Sure', medium: 'Fairly sure', low: 'Unsure' } as const
+// How sure the agent is of its suggestion, and what that rests on.
+const SURE = { high: 'Confidence: high.', medium: 'Confidence: medium.', low: 'Confidence: low.' } as const
 function Sureness({ ask }: { ask: Ask }) {
   if (!ask.confidence) return null
   return (
@@ -896,7 +898,7 @@ function ChangeCard({ side }: { side: boolean }) {
           {pd.proposal.title}
         </span>
       </div>
-      <p>{pd.denied ? 'Notifications are blocked in this browser, so each stage will show here instead.' : `Make ${pd.proposal.rows.length === 1 ? 'this change' : `these ${pd.proposal.rows.length} changes`} to the farm?`}</p>
+      <p>{pd.denied ? 'Notifications are blocked in this browser, so each stage will show here instead.' : `Make ${pd.proposal.rows.length === 1 ? 'this change' : `these ${pd.proposal.rows.length} changes`} to this project?`}</p>
       {pd.proposal.note && <p className="sureness">{pd.proposal.note}</p>}
       <ul className="change-rows" aria-label="Changes">
         {pd.proposal.rows.map((r) => (
@@ -909,7 +911,7 @@ function ChangeCard({ side }: { side: boolean }) {
             <span className="scope" role="radiogroup" aria-label={`How long: ${r.label}`}>
               {(['farm', 'every'] as const).map((k) => (
                 <button key={k} role="radio" aria-checked={scope[r.id] === k} className={scope[r.id] === k ? 'on' : ''} disabled={!on[r.id]} onClick={() => setScope({ ...scope, [r.id]: k })}>
-                  {k === 'farm' ? 'This farm' : 'Every farm'}
+                  {k === 'farm' ? 'This project' : 'Every project'}
                 </button>
               ))}
             </span>
@@ -972,7 +974,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
     <Dialogue farmer="planner" side={side}>
       <div className="who">
         <b>Planner</b>
-        {s.done ? <span className="tag green">Done</span> : <span className="tag grey">Talk to the crew</span>}
+        {s.done ? <span className="tag green">Done</span> : <span className="tag grey">Message the agents</span>}
       </div>
       {s.done ? (
         <p>
@@ -1025,7 +1027,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
             }}
           >
             <span className="field">
-              <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder="Tell the crew something, or ask the Planner to change the farm" aria-label="Message the crew" />
+              <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder="Tell the agents something, or ask the Planner to change this project" aria-label="Message the agents" />
             </span>
             <button className="btn" type="submit" disabled={busy}>
               <Ico name="chat" />
@@ -1055,14 +1057,14 @@ function Settings() {
         <span className={`switch${live ? ' on' : ''}`} />
         <span>
           Live mode
-          <small>On, the farmers call real models. Off, it’s simulated and free.</small>
+          <small>On, the agents call real AI models. Off, it’s simulated and free.</small>
         </span>
       </button>
       <button className="toggle" onClick={() => store.enableNotifications(!st.notifications)}>
         <span className={`switch${st.notifications ? ' on' : ''}`} />
         <span>
           Desktop notifications
-          <small>When a farmer needs you and this tab is in the background.</small>
+          <small>When an agent needs you and this tab is in the background.</small>
         </span>
       </button>
       {!!st.flow.length && (

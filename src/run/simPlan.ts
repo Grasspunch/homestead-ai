@@ -33,7 +33,7 @@ const SUPPORT: Script = {
     topic: 'how the sources fit in the chat panel',
     failNote: 'The sources cover the reply box',
     impact: 'People get either a tidy panel with one click to see sources, or every source at once in smaller text.',
-    designer: { position: 'Fold the sources into one click-to-open chip', why: 'In the 380 px chat panel the three sources take 180 px and cover the reply box. A chip keeps the box clear, and the done-when asks for the sources without getting in the way. The cost is one extra click for people who want them.', option: 'Fold into a chip', tool: 'Folded the sources into a chip', check: 'The sources fold into a chip, and the reply box is clear', shot: 'ok' },
+    designer: { position: 'Fold the sources into one click-to-open chip', why: 'In the 380 px chat panel the three sources take 180 px and cover the reply box. A chip keeps the box clear, and the task’s goal asks for the sources without getting in the way. The cost is one extra click for people who want them.', option: 'Fold into a chip', tool: 'Folded the sources into a chip', check: 'The sources fold into a chip, and the reply box is clear', shot: 'ok' },
     builder: { position: 'List them under the answer in smaller text', why: 'Support answers are only trusted when the source is visible, and a chip hides it. Listing the sources at 12 px under the answer clears the reply box. It is a two-line change with no new component to test.', option: 'Smaller text', tool: 'Listed the sources under the answer at 12 px', check: 'Every source shows under the answer, and the reply box is clear', shot: 'alt' },
   },
   rollout: { peak: 0.031, bug: 'the timeout bug', cause: 'long questions time out after 10 s', fix: 'Shortened long questions before answering, added a timeout fallback', check: 'Long questions answer in under 4 s', file: 'tests/long-questions.test.ts', tests: ['a 2,000-word question answers in under 4 s', 'a timeout falls back to a person', 'short questions are unchanged', 'the fallback keeps the chat', 'no answer is cut mid-sentence'] },
@@ -140,7 +140,7 @@ function draft(goal: string): Draft {
         planner: "Keeps prices, payments and screens reading from one plan config.",
         builder: "Prices, the checkout API and webhooks are one chain of money code.",
         designer: "Buyers leave at confusing errors, so it owns the checkout screens and their copy. It works from the brand guide.",
-        tester: "Runs test-card purchases and refunds against every done-when, so nobody is charged wrong.",
+        tester: "Runs test-card purchases and refunds against every task’s goal, so nobody is charged wrong.",
         deployer: "Payments can't be half broken, so 10% of buyers first, rolled back at the first failed payment.",
       },
     }
@@ -186,7 +186,7 @@ const WHY: Record<FarmerId, string> = {
   planner: 'Splits the work, prices it and passes your messages on.',
   builder: 'Writes most of the code.',
   designer: 'Owns the screens and copy, from the brand guide.',
-  tester: 'Checks the others against each done-when, so nobody grades its own work.',
+  tester: 'Checks the others’ work against each task’s goal, so nobody grades its own work.',
   deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own.',
 }
 
@@ -227,7 +227,7 @@ export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): Plan
   // A Tester on the crew gets its own task: the end-to-end check before shipping.
   if (crew.includes('tester')) {
     const i = tasks.findIndex((t) => t.gate)
-    tasks.splice(i < 0 ? tasks.length : i, 0, { id: 'e2e-check', name: 'Check it end to end', farmer: 'tester', doneWhen: 'Every done-when passes in one end-to-end run', gate: false, mins: 7 * MIN_SCALE, usd: 0.4 * USD_SCALE, after: tasks.filter((t) => !t.gate).map((t) => t.id) })
+    tasks.splice(i < 0 ? tasks.length : i, 0, { id: 'e2e-check', name: 'Check it end to end', farmer: 'tester', doneWhen: 'Every task’s goal holds in one end-to-end run', gate: false, mins: 7 * MIN_SCALE, usd: 0.4 * USD_SCALE, after: tasks.filter((t) => !t.gate).map((t) => t.id) })
   }
 
   // Crew time: the longest chain, since farmers work in parallel. One agent: everything in a row.

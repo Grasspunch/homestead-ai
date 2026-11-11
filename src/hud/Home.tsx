@@ -1,4 +1,4 @@
-// Your farms: every project as a little farm, and the Planner asking what to build next.
+// Your projects: every project drawn as a little farm, and the Planner asking what to build next.
 import { useEffect, useRef, useState } from 'react'
 import { planInto } from '../run/planning'
 import { draw, hasFrame } from '../map/atlas'
@@ -7,7 +7,7 @@ import { pendingAsk, reduce } from '../run/reduce'
 import { liveStage } from '../run/rollback'
 import { store, useStore, type Project } from '../run/store'
 import type { FarmerId, RunState } from '../run/types'
-import { Ico, Portrait, atlasLoaded } from './bits'
+import { ASK_WHY, Ico, Portrait, atlasLoaded } from './bits'
 
 const PX = 16
 // The largest pixel scale that shows every farm and the new-farm plot above the Planner's dialogue.
@@ -18,7 +18,8 @@ function fitScale(W: number, H: number, farms: number) {
   const rows = Math.ceil(slots / 3)
   return [3, 2.5, 2, 1.5].find((s) => (2 + cols * 9) * PX * s <= W - 16 && (1.5 + rows * 7) * PX * s <= H - 230) ?? 1.5
 }
-const EXAMPLES = ['A support assistant that answers from our help docs', 'Stripe checkout for our pricing page', 'A dashboard of weekly signups']
+// Starters that need no context: each matches one of the scripted runs (support, checkout, dashboard).
+const EXAMPLES = ['A chatbot that answers questions from a shop’s help pages', 'Card checkout for an online shop', 'A dashboard of new sign-ups each week']
 
 interface Mini {
   p: Project
@@ -32,9 +33,9 @@ interface Mini {
 
 function minis(projects: Project[]): Mini[] {
   return projects.map((p, i) => {
-    const firstAsk = p.events.find((e) => e.type === 'ask')
-    // A farm you haven't opened yet waits at its first question; the rest show where they are.
-    const t = !p.approved ? Number.MAX_SAFE_INTEGER : p.clock ?? (firstAsk ? firstAsk.t : 0)
+    // A run you haven't opened yet starts from the beginning when you do, so it shows as ready to watch.
+    const unwatched = p.approved && p.clock === undefined
+    const t = !p.approved ? Number.MAX_SAFE_INTEGER : p.clock ?? 0
     const answers = p.answers ?? {}
     const s = reduce(p.events, t, answers)
     const waiting = p.approved && pendingAsk(p.events, t, answers)
@@ -43,14 +44,27 @@ function minis(projects: Project[]): Mini[] {
     const done = work.filter((k) => k.status === 'ripe' || k.status === 'accepted').length
     const prog = work.length ? done / work.length : 0
     const busy = Object.values(s.farmers).find((f) => f && f.state === 'working')
+    // Who needs you and why, in words: the colour alone doesn't say.
+    const ask = waiting ? s.asks.find((a) => !a.answer) : undefined
+    const asker = ask ? s.farmers[ask.farmer]?.label ?? 'An agent' : ''
     return {
       p,
       x: 2 + (i % 3) * 9,
       y: 2 + Math.floor(i / 3) * 7,
       stage: !p.approved ? -1 : s.done ? 3 : Math.min(2, Math.floor(prog * 3)),
-      emote: !p.approved ? 'read' : waiting ? 'alert' : s.done ? 'hearts' : 'notes',
-      farmer: waiting ? (s.asks.find((a) => !a.answer)?.farmer ?? 'planner') : busy?.id ?? 'builder',
-      words: !p.approved ? 'Plan, not started' : waiting ? 'Needs you' : s.done ? doneWords(p, s, t) : `${done} of ${work.length} done`,
+      emote: !p.approved || unwatched ? 'read' : waiting ? 'alert' : s.done ? 'hearts' : 'notes',
+      farmer: ask?.farmer ?? busy?.id ?? 'builder',
+      words: !p.approved
+        ? 'Plan ready, not started'
+        : unwatched
+          ? p.kind === 'sample' ? 'Sample run, open to watch' : 'Ready to run'
+          : ask
+            ? `${asker} needs you: ${ASK_WHY[ask.reason]}`
+            : waiting
+              ? 'Needs you'
+              : s.done
+                ? doneWords(p, s, t)
+                : `${done} of ${work.length} tasks done`,
     }
   })
 }
@@ -102,7 +116,10 @@ export function Home() {
           // The trees stand clear of the farms' columns.
           const edge = 2 + Math.min(3, store.projects.length + 1) * 9
           for (const [n, x, y] of [['tree_big', 27, 0], ['tree_apple', 28, 9], ['bush_0', 0, 12], ['tree_small', 26, 12]] as [string, number, number][]) draw(g, n, (x > 20 ? Math.max(x, edge + x - 26) : x) * PX, y * PX)
-          for (const m of minis(store.projects)) {
+          const all = minis(store.projects)
+          // When a project needs you, only its farmer moves: the rest hold still so the eye goes there.
+          const quiet = all.some((m) => m.emote === 'alert')
+          for (const m of all) {
             draw(g, `house_${m.p.kind === 'sample' ? 2 : 4}`, m.x * PX, m.y * PX)
             const bx = m.x + 4.4
             const by = m.y + 1.2
@@ -117,12 +134,13 @@ export function Home() {
             if (m.stage >= 0) for (let y = 0; y < 2; y++) for (let x = 0; x < 3; x++) draw(g, `crop_${m.p.kind === 'sample' ? 'pumpkin' : 'carrot'}_${m.stage}`, (bx + x) * PX, (by + y) * PX - 3)
             const fx = (m.x + 5.8) * PX
             const fy = (m.y + 4.6) * PX
-            const fr = Math.floor(now / 125) % 8
-            const anim = m.emote === 'notes' ? 'till' : 'idle'
+            const still = quiet && m.emote !== 'alert'
+            const fr = still ? 0 : Math.floor(now / 125) % 8
+            const anim = m.emote === 'notes' && !still ? 'till' : 'idle'
             if (hasFrame(`char_${anim}_down_${fr}`)) draw(g, `char_${anim}_down_${fr}`, fx - 24, fy - 30, { tint: TINT[m.farmer] })
             if (bubble.complete && emoji.complete) {
               const em = { alert: [5, 8], notes: [8, 8], hearts: [0, 9], read: [7, 5] }[m.emote]
-              const bob = Math.round(Math.sin(now / 260))
+              const bob = still ? 0 : Math.round(Math.sin(now / 260))
               g.drawImage(bubble, 0, 0, 31, 32, fx - 8, fy - 52 + bob, 16, 16.5)
               g.drawImage(emoji, em[0] * 32, em[1] * 32, 32, 32, fx - 6.5, fy - 51 + bob, 13, 13)
             }
@@ -156,7 +174,7 @@ export function Home() {
   return (
     <>
       <canvas ref={canvas} className="map-layer" style={{ width: '100%', height: '100%' }} aria-hidden />
-      <h1 className="homehead">Your farms</h1>
+      <h1 className="homehead">Your projects</h1>
       {list.map((m) => (
         <button key={m.p.id} className="farm-hit" style={{ left: m.x * T, top: m.y * T, width: 9 * T, height: 5.6 * T }} onClick={() => store.open(m.p.id)} aria-label={`${m.p.name}, ${m.words}`}>
           <span className="farm-tag" style={{ left: 4.6 * T, top: 4.85 * T }}>
@@ -165,9 +183,9 @@ export function Home() {
           </span>
         </button>
       ))}
-      <button className="farm-hit" style={{ left: newSpot.x * T, top: newSpot.y * T, width: 9 * T, height: 5 * T }} onClick={() => input.current?.focus()} aria-label="New farm">
+      <button className="farm-hit" style={{ left: newSpot.x * T, top: newSpot.y * T, width: 9 * T, height: 5 * T }} onClick={() => input.current?.focus()} aria-label="New project">
         <span className="farm-tag ghost" style={{ left: 5 * T, top: 4.85 * T }}>
-          + New farm
+          + New project
         </span>
       </button>
       <section className="dlg">
@@ -180,11 +198,12 @@ export function Home() {
             {needs > 0 && (
               <span className="aside">
                 <Ico name="alert" size={18} />
-                {needs} farm{needs > 1 ? 's' : ''} need{needs > 1 ? '' : 's'} you
+                {needs} project{needs > 1 ? 's' : ''} need{needs > 1 ? '' : 's'} you
               </span>
             )}
           </div>
-          <p>Tell me what to build. I’ll pick a crew and give each farmer only what it needs.</p>
+          <p>Tell me what to build. I’ll split it into tasks and pick a team of AI agents to do them. They work on their own and come to you when a decision is yours.</p>
+          <p className="legend">On the map, each project is a farm, each task is a plot, and each agent is a farmer.</p>
           <form
             className="row"
             onSubmit={(e) => {
@@ -193,7 +212,7 @@ export function Home() {
             }}
           >
             <span className="field">
-              <input ref={input} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Build a support assistant that answers from our help docs" aria-label="What should the crew build?" />
+              <input ref={input} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Describe an app or feature, for example a chatbot for a shop’s help pages" aria-label="What should the agents build?" />
             </span>
             <button className="btn" type="submit" disabled={!goal.trim()}>
               <Ico name="sprout" />

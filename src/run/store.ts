@@ -12,7 +12,7 @@ import { applyEdit, emptyEdit, type KitEdit } from './kit'
 import { key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope, type Suggestion } from './reshape'
 import { isUi, propOf, uiLookOf, type UiId, type UiLook } from './ui'
 
-export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from our help docs, and hands off to a person when it is not sure'
+export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from a shop’s help pages, and hands off to a person when it is not sure'
 
 export type Screen = { kind: 'home' } | { kind: 'farm'; project: string }
 export type Drawer =
@@ -286,7 +286,7 @@ class Store {
         const p = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission
         if (p === 'granted') {
           this.notifications = true
-          new Notification('Desktop notifications are on', { body: 'You’ll get one when a farmer needs you and this tab is in the background.', icon: '/apple-touch-icon.png' })
+          new Notification('Desktop notifications are on', { body: 'You’ll get one when an agent needs you and this tab is in the background.', icon: '/apple-touch-icon.png' })
         } else this.say('Your browser blocks notifications for this site. Allow them in the site settings, then try again.')
       }
     }
@@ -299,7 +299,7 @@ class Store {
     const ask = p.events.find((e) => e.type === 'ask' && e.id === askId)
     if (!ask || ask.type !== 'ask') return
     const who = p.events.find((e) => e.type === 'farmer' && e.id === ask.farmer)
-    const n = new Notification(`${who && who.type === 'farmer' ? who.label : 'A farmer'} needs you on ${p.name}`, { body: ask.question, tag: askId, icon: '/apple-touch-icon.png' })
+    const n = new Notification(`${who && who.type === 'farmer' ? who.label : 'An agent'} needs you on ${p.name}`, { body: ask.question, tag: askId, icon: '/apple-touch-icon.png' })
     n.onclick = () => {
       window.focus()
       this.open(p.id)
@@ -1011,8 +1011,8 @@ class Store {
     const screenOnly = rows.every((x) => isUi(x.change))
     if (!done && p.approved && !screenOnly) this.rebuild(p)
     const n = rows.length
-    const flowNote = every.length ? (every.length === n ? ' It’s in your flow for every new farm.' : ` ${every.length} of them ${every.length === 1 ? 'is' : 'are'} in your flow for every new farm.`) : ''
-    if (screenOnly) this.chatTo(p.id, { from: 'planner', text: `Done: ${rows.map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join(', ')}${every.length ? ', on every farm' : ' on this farm'}. Ask me to put it back any time.` })
+    const flowNote = every.length ? (every.length === n ? ' It’s in your flow for every new project.' : ` ${every.length} of them ${every.length === 1 ? 'is' : 'are'} in your flow for every new project.`) : ''
+    if (screenOnly) this.chatTo(p.id, { from: 'planner', text: `Done: ${rows.map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join(', ')}${every.length ? ', on every project' : ' on this project'}. Ask me to put it back any time.` })
     else this.chatTo(p.id, { from: 'planner', text: (done ? `${r.title} is on from the next run: ${n} change${n === 1 ? '' : 's'}.` : `${r.title} is on: ${n} change${n === 1 ? '' : 's'}, from now.`) + flowNote })
     // No toast: it would cover the plots. The new chip carries Undo for a few seconds instead.
     this.fresh = { id: r.id, until: Date.now() + Store.FRESH_MS }
@@ -1048,7 +1048,7 @@ class Store {
       this.setSpeed(p.events)
     } else if (p.approved && !this.isDone(p)) this.rebuild(p)
     if (this.fresh?.id === id) this.fresh = null
-    this.chatTo(p.id, { from: 'planner', text: `${r.title} is off. The farm runs as it did before.` })
+    this.chatTo(p.id, { from: 'planner', text: `${r.title} is off. This project runs as it did before.` })
     this.notify()
     this.persist()
   }

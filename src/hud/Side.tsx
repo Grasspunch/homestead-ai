@@ -12,7 +12,7 @@ import { agentName } from '../run/kit'
 
 const STATUS: Record<TaskState['status'], string> = {
   waiting: 'Not started',
-  growing: 'Growing',
+  growing: 'In progress',
   checking: 'Being checked',
   wilted: 'Failed a check',
   ripe: 'Done and checked',
@@ -183,13 +183,13 @@ export function FarmerPanel({ s, id, p }: { s: RunState; id: FarmerId; p: Projec
   const agent = agentName(f.agent)
   const words = { idle: 'Waiting for its next task', working: f.lastTool ?? 'Working', stuck: 'Fixing a failed check', needs: 'Waiting for you', done: 'Finished' }[f.state]
   return (
-    <Panel label={`Farmer: ${f.label}`}>
+    <Panel label={`AI agent: ${f.label}`}>
       <div className="farmer-head">
         <div className="portrait sm">
           <Portrait farmer={id} size={72} />
         </div>
         <div>
-          <h3>Farmer</h3>
+          <h3>AI agent</h3>
           <h2>{f.label}</h2>
           <div className="meta">
             <span>{f.model} on {agent}</span>
@@ -303,7 +303,7 @@ export function InboxPanel({ s }: { s: RunState }) {
       </div>
       <button className="btn tan sm" onClick={() => store.setDrawer({ kind: 'control' })}>
         <Ico name="gear" size={20} />
-        How often the crew stops for you
+        How often the agents check with you
       </button>
     </Panel>
   )
@@ -428,7 +428,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
   const out = outcome(s)
   return (
     <div className="vs">
-      <h3>{done ? 'Crew vs one agent, this run' : 'Crew vs one agent, planned'}</h3>
+      <h3>{done ? 'This team vs one agent, this run' : 'This team vs one agent, planned'}</h3>
       <p className="vs-gap">
         {sooner > 0 ? (
           <>
@@ -445,7 +445,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
       <p className="vs-note">One agent holds every file in context, so each step is about a third slower and 10% dearer.</p>
       <div className="vs-grid" role="table">
         <span role="columnheader" />
-        <span role="columnheader">This crew</span>
+        <span role="columnheader">This team</span>
         <span role="columnheader">One Sonnet 5 agent</span>
         <span>Time</span>
         <b>{mins(crew.minutes)}</b>
@@ -496,7 +496,7 @@ export function UsagePanel({ s }: { s: RunState }) {
         )}
       </div>
       <div>
-        <h3>By farmer</h3>
+        <h3>By agent</h3>
         <div className="crew-spend">
           {ids.map((id) => {
             const f = s.farmers[id]!
@@ -677,8 +677,8 @@ export function HarvestPanel({ s, p }: { s: RunState; p: Project }) {
 
 export const MOMENTS: { key: Moment | 'rollback'; label: string; auto: string }[] = [
   { key: 'cost', label: 'A task goes over its limit', auto: 'The Planner splits or trims it' },
-  { key: 'disagree', label: 'Two farmers disagree', auto: 'The Planner picks, using the done-when' },
-  { key: 'failed', label: 'A check fails', auto: 'The farmer fixes it and checks again' },
+  { key: 'disagree', label: 'Two agents disagree', auto: 'The Planner picks whichever fits the task’s goal' },
+  { key: 'failed', label: 'A check fails', auto: 'The agent fixes it and checks again' },
   { key: 'big', label: 'A big change across many files', auto: 'Lands it as one commit, with every test run before and after' },
   { key: 'ship', label: 'Merging the pull request', auto: 'Merges when every check passes, then ships to 10% first' },
   { key: 'reship', label: 'Shipping again after a rollback', auto: 'Ships to 10% again once fixed' },
@@ -766,13 +766,13 @@ export function AskMe({ level, onPick, up = false }: { level: AutonomyLevel | 'c
         className="field-box select"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Ask me: ${current?.label ?? 'Custom'}`}
+        aria-label={`Check with me: ${current?.label ?? 'Custom'}`}
         onClick={() => (open ? setOpen(false) : show())}
       >
-        <span className="ask-label">Ask me:</span> <b>{current?.label ?? 'Custom'}</b>
+        <span className="ask-label">Check with me:</span> <b>{current?.label ?? 'Custom'}</b>
       </button>
       {open && (
-        <ul className="ask-menu paper" role="listbox" aria-label="How often the crew stops for you" aria-activedescendant={`ask-${LEVELS[at].key}`} tabIndex={-1}>
+        <ul className="ask-menu paper" role="listbox" aria-label="How often the agents check with you" aria-activedescendant={`ask-${LEVELS[at].key}`} tabIndex={-1}>
           {LEVELS.map((l, i) => (
             <li
               key={l.key}
@@ -803,10 +803,10 @@ export function setMoment(p: Project, k: Moment, v: 'ask' | 'auto') {
 export function ControlPanel({ p }: { p: Project }) {
   const set = (k: Moment, v: 'ask' | 'auto') => setMoment(p, k, v)
   return (
-    <Panel label="How often the crew stops for you">
+    <Panel label="How often the agents check with you">
       <div>
         <h3>Control</h3>
-        <h2>How often should the crew stop for you?</h2>
+        <h2>How often should the agents check with you?</h2>
       </div>
       <LevelPicker p={p} />
       <div className="moments">
@@ -819,7 +819,7 @@ export function ControlPanel({ p }: { p: Project }) {
                 {m.label}
                 <span className="sub">
                   {v === 'ask' ? 'Asks you first, with a suggested answer' : m.auto}
-                  {m.key === 'ship' && v === 'ask' ? `. Clean runs in a row: ${Math.min(3, p.cleanRuns ?? 0)} of 3${p.everSentBack ? '. Not offered: you sent work back on this farm' : store.kit[p.id]?.deployer?.rules.deploy === false ? '. Not offered while May deploy is off' : ''}` : ''}
+                  {m.key === 'ship' && v === 'ask' ? `. Clean runs in a row: ${Math.min(3, p.cleanRuns ?? 0)} of 3${p.everSentBack ? '. Not offered: you sent work back on this project' : store.kit[p.id]?.deployer?.rules.deploy === false ? '. Not offered while May deploy is off' : ''}` : ''}
                 </span>
               </span>
               <div className="seg" role="radiogroup" aria-label={m.label}>
