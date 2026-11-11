@@ -694,7 +694,11 @@ function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean })
       setHolding(true)
       return
     }
-    // Looking isn't deciding: open the task with its failing tests, and the ask stays open.
+    // Looking isn't deciding: open the farmer's context, or the task with its failing tests, and the ask stays open.
+    if (/^show me .*context$/i.test(choice)) {
+      store.setDrawer({ kind: 'farmer', id: ask.farmer })
+      return
+    }
     if (/^show me/i.test(choice) && ask.task) {
       store.setDrawer({ kind: 'task', id: ask.task })
       return

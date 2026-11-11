@@ -226,6 +226,9 @@
 .switch { width: 56px; height: 36px; flex: none; background: url(/ui/switch_off.png) 0 0 / 56px 36px no-repeat; image-rendering: pixelated; }
 .switch.on { background-image: url(/ui/switch_on.png); }
 .kit-item .switch { width: 42px; height: 27px; background-size: 42px 27px; }
+.kit-item.missing { opacity: 1; }
+.kit-item.missing .grow { text-decoration: none; }
+.kit-item .miss-why { color: var(--berry); }
 /* tick meter */
 .ticks { display: flex; height: 24px; margin-top: 8px; }
 .ticks i, .ticks b { display: block; height: 24px; background: url(/ui/tick_on.png) 0 0 / 10px 24px repeat-x; image-rendering: pixelated; }

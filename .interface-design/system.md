@@ -137,3 +137,8 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 ## One real AI moment
 - In Live mode the plan is the one live call. Its sky tag names who answered ("Planned live: Lovable AI"), and one meta line under it says what was live: "Live: the crew, limits and done-whens. Simulated: the run." The title then carries a gold "Simulated run" tag.
 - For the demo goals (the sample's and Home's starters) a live plan is kept. If the live call fails, the kept plan stands in with a sky "Planned live earlier" tag and "Live call failed: this is the live plan from 10 Nov. Simulated: the run." Never a kept plan for any other goal, and never one made up.
+
+## What each farmer can see
+- The farmer page's right column starts with "What it can see": one switch row per path in its context. A doc shows its name ("Help docs", "Brand guide") with the path under it in mono; code paths show the path alone. Then the add field, then skills.
+- A doc the farmer needs and doesn't have (the sample's brand guide for the Designer) is listed as an off row at full strength, not struck through. Once a check failed for it, the line under it ends "· Chat widget failed its check without it" in berry. Its switch adds it.
+- A check that failed for missing context says which file and whose context. Its screenshot proof rings the header. The ask that follows offers "Add the brand guide" and "Show me the Designer’s context", which opens the page and leaves the ask open. Adding the guide on the page answers the ask.
