@@ -154,6 +154,7 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
           touches: e.touches,
           files: e.files,
           limitFor: e.limitFor,
+          budgetFor: e.budgetFor,
           talk: e.talk,
           limitTo: e.limitTo,
           confidence: e.confidence,

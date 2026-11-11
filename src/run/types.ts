@@ -93,6 +93,7 @@ export type RunEvent =
       touches?: string[] // tasks whose code a big change reaches
       files?: number
       limitFor?: FarmerId // a farmer paused at its spend limit
+      budgetFor?: FarmerId // a farmer paused because its next step would take the run over its budget
       limitTo?: number // the limit the suggested answer raises it to
       confidence?: Confidence // how sure the farmer is of its suggested answer
       basis?: string // what that rests on, in one short line
@@ -151,6 +152,7 @@ export interface Ask {
   touches?: string[]
   files?: number
   limitFor?: FarmerId
+  budgetFor?: FarmerId
   limitTo?: number
   confidence?: Confidence
   basis?: string

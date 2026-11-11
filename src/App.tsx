@@ -30,6 +30,7 @@ import { BY_YOU } from './run/rollback'
 import { fixLineOf, lessonLine } from './run/learn'
 import { scaleLine } from './run/scale'
 import { doneLead, plannerEstimate } from './run/done'
+import { spentOf } from './run/team'
 import type { Ask, FarmerId, RunState } from './run/types'
 import { FARMER_ORDER } from './run/types'
 import { MODELS, MODEL_GROUPS, applyEdit } from './run/kit'
@@ -387,6 +388,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           </>
         )}
       </p>
+      <BudgetLine p={p} limits={ids.reduce((n, id) => n + setupOf(id).limits.usd, 0)} />
       <div className="crew-scroll">
       <div className="crew" role="table" aria-label="AI agents">
         <div className="crew-head" role="row">
@@ -988,6 +990,20 @@ function plannedLine(p: Project, s: RunState) {
   const gap = s.done.usd - g
   if (Math.abs(gap) < 0.5) return `, the ${usd(g)} the Planner estimated`
   return `, ${usd(Math.abs(gap))} ${gap > 0 ? 'over' : 'under'} the Planner’s ${usd(g)} estimate`
+}
+
+// The run's budget on the plan, and whether the agents' limits fit inside it.
+function BudgetLine({ p, limits }: { p: Project; limits: number }) {
+  const b = store.budgetOf(p)
+  const m = spentOf(limits, b)
+  return (
+    <p className="plan-budget">
+      Budget for this run: <b>{m.limit}</b>.{' '}
+      {limits > b + 0.005
+        ? `The agents’ limits add up to ${m.spent}, more than that, so I’ll ask you before the run passes ${m.limit}.`
+        : `The agents’ limits add up to ${m.spent}, inside it.`}
+    </p>
+  )
 }
 
 // The Planner's own cost estimate, made before anything ran. The plan shows it; Done reads the real total against it.

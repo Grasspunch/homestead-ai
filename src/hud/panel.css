@@ -281,6 +281,7 @@
 
 /* ---- the plan: one sentence, the crew, three settings ---- */
 .plan-flow { margin: 0; font-size: var(--t-body); color: var(--bark-2); }
+.plan-budget { margin: 0; font-size: var(--t-body); color: var(--bark-2); }
 .dlg p.plan-live { margin: 0; font-size: var(--t-meta); color: var(--bark-3); }
 .plan-lead { margin: 0; font-size: var(--t-lead); line-height: 1.4; }
 .plan-lead b { font-variant-numeric: tabular-nums; }
@@ -360,6 +361,9 @@ button.crew-x:hover { opacity: 1; }
   .crew-head span { padding-bottom: 2px; }
 }
 .crew-spend-row .over { color: var(--berry); }
+.returned .over { color: var(--berry); }
+.budget-field { display: inline-flex; align-items: center; gap: 4px; }
+.budget-field input { width: 72px; }
 .plot-label { width: max-content; }
 .plot-label .plot-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; line-height: 1.15; }
 .pp-roll .rollout text { display: none; }

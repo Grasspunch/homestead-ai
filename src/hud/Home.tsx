@@ -84,8 +84,8 @@ export function Home() {
   const tight = [...list].filter((m) => m.spent >= m.budget * 0.9).sort((a, b) => b.spent / b.budget - a.spent / a.budget)[0]
   const tightLine = tight
     ? tight.spent > tight.budget + 0.005
-      ? `${tight.p.name} is ${spentOf(tight.spent, tight.budget).over} over its ${spentOf(tight.spent, tight.budget).limit} budget.`
-      : `${tight.p.name} has spent ${spentOf(tight.spent, tight.budget).spent} of its ${spentOf(tight.spent, tight.budget).limit} budget.`
+      ? `${tight.p.name} is ${spentOf(tight.spent, tight.budget).over} over its ${spentOf(tight.spent, tight.budget).limit} budget this run.`
+      : `${tight.p.name} has spent ${spentOf(tight.spent, tight.budget).spent} of its ${spentOf(tight.spent, tight.budget).limit} budget this run.`
     : null
 
   useEffect(() => {
@@ -277,7 +277,7 @@ export function Home() {
                 <span className={`farm-words${m.emote === 'alert' ? ' alert' : ''}`}>{m.words}</span>
                 {m.spent > 0 && (
                   <span className={`farm-words${m.spent > m.budget + 0.005 ? ' alert' : ''}`}>
-                    {spentOf(m.spent, m.budget).spent} of {spentOf(m.spent, m.budget).limit} budget
+                    {spentOf(m.spent, m.budget).spent} of {spentOf(m.spent, m.budget).limit} this run
                   </span>
                 )}
               </span>

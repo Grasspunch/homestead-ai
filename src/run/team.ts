@@ -23,7 +23,7 @@ export const clampBudget = (n: number) => Math.min(BUDGET.max, Math.max(BUDGET.m
 
 // Spent against a limit, both in one format: cents only when both are under $10, so "$13 of $5", never "$13 of $5.00".
 export function spentOf(spent: number, limit: number) {
-  const f = spent < 10 && limit < 10 ? (n: number) => `$${n.toFixed(2)}` : (n: number) => `$${Math.round(n)}`
+  const f = spent < 10 && limit < 10 ? (n: number) => `$${n.toFixed(2)}` : (n: number) => `$${Math.round(n).toLocaleString('en-US')}`
   return { spent: f(spent), limit: f(limit), over: f(Math.max(0, spent - limit)) }
 }
 

@@ -111,10 +111,14 @@ export interface SimInput {
   // The run you've watched so far, up to t (ms): what each farmer has really spent, its limit now and how many
   // limit asks it has had. Spend limits count from these, so a change mid-run never re-asks or recounts the past.
   // raised: tasks whose raise already moved their farmer's limit in the run you watched, and said so.
-  past?: { t: number; spent: Partial<Record<FarmerId, number>>; limit: Partial<Record<FarmerId, number>>; asked: Partial<Record<FarmerId, number>>; raised?: string[] }
+  past?: { t: number; spent: Partial<Record<FarmerId, number>>; limit: Partial<Record<FarmerId, number>>; asked: Partial<Record<FarmerId, number>>; raised?: string[]; budget?: number; budgetAsked?: number }
   // Farmers you stopped at their spend limit, and the run minute they reached it. Set by the run itself:
   // a stop re-runs the simulation so nothing after it involves that farmer.
   halts?: Partial<Record<FarmerId, number>>
+  // Farmers you stopped because the run reached its budget, not their own limit.
+  budgetStop?: { t: number; id: string; f: FarmerId } // the run minute you stopped the whole run at its budget, and that ask
+  // The project's budget for a run, in dollars: before a step would take the run over it, the Planner pauses and asks.
+  budget?: number
   haltTotals?: Partial<Record<FarmerId, number>> // what each stopped farmer would have spent without the stop
   // Changes you asked the Planner for (reshape.ts): skipped tasks, no review, no Deployer, straight to everyone,
   // synthetic tests as the rollout's measure. They change what the crew does, not just its labels.
@@ -257,7 +261,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
     plan = [...plan.slice(0, gateAt < 0 ? plan.length : gateAt), rest, ...plan.slice(gateAt < 0 ? plan.length : gateAt)]
     const e2e = queue.findIndex((t) => t.id === 'e2e-check')
     queue.splice(e2e < 0 ? queue.length : e2e, 0, rest)
-    sized[rest.id] = Math.max(0, usdPer(rest.farmer) * 0.9 - checkRead(rest)) / steps(rest, rest.farmer).length
+    // Never free: a pricey checker on a cheap Builder still leaves the hard cases a third of their share.
+    sized[rest.id] = Math.max(usdPer(rest.farmer) * 0.3, usdPer(rest.farmer) * 0.9 - checkRead(rest)) / steps(rest, rest.farmer).length
   }
   // Learned from an earlier run of this farm: the task that ran over is planned in two from the start, so its
   // first part runs at the plan's rate and nobody is asked about it.
@@ -299,7 +304,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (halted(f, start)) {
       // Its farmer was stopped before this task began: it stays out of the pull request.
       stopped.add(task.id)
-      at(input.halts![f]! + 0.05, { type: 'stop', task: task.id, reason: `You stopped the ${label(f)} at its spend limit. This task stays out of the pull request.` })
+      at(input.halts![f]! + 0.05, { type: 'stop', task: task.id, reason: input.budgetStop && input.halts?.[f] === input.budgetStop.t ? 'You stopped the run at its budget. This task stays out of the pull request.' : `You stopped the ${label(f)} at its spend limit. This task stays out of the pull request.` })
       continue
     }
     at(start, { type: 'task_start', task: task.id, farmer: f })
@@ -447,7 +452,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     })
     if (haltedHere) {
       stopped.add(task.id)
-      at(input.halts![f]! + 0.05, { type: 'stop', task: task.id, reason: `You stopped the ${label(f)} at its spend limit. This task stays out of the pull request.` })
+      at(input.halts![f]! + 0.05, { type: 'stop', task: task.id, reason: input.budgetStop && input.halts?.[f] === input.budgetStop.t ? 'You stopped the run at its budget. This task stays out of the pull request.' : `You stopped the ${label(f)} at its spend limit. This task stays out of the pull request.` })
       free[f] = Number.MAX_SAFE_INTEGER
       continue
     }
@@ -614,6 +619,12 @@ export function simulateRun(input: SimInput): RunEvent[] {
   for (const task of plan.filter((t) => t.gate)) {
     const f = task.farmer
     const start = lastBuilt + 0.5
+    // The run stopped at its budget before the release: nothing goes out.
+    if (input.budgetStop && start > input.budgetStop.t) {
+      stopped.add(task.id)
+      at(input.budgetStop.t + 0.05, { type: 'stop', task: task.id, reason: 'You stopped the run at its budget. This task stays out of the pull request.' })
+      continue
+    }
     at(start, { type: 'task_start', task: task.id, farmer: f })
     const isShip = /ship|deploy|launch|release|live/i.test(task.name + task.id)
     const shipped = () => [...finished].filter((id) => !plan.find((t) => t.id === id)?.gate).length
@@ -842,6 +853,36 @@ export function simulateRun(input: SimInput): RunEvent[] {
       if (c !== stopIt) limit[f.id] = m ? Number(m[1]) : to
       return c
     }
+    // The run's budget: the same rule across the whole crew. Before a step would take the run over it, the Planner
+    // pauses the farmer taking it and asks: raise the budget, or stop that farmer there.
+    let budget = past?.budget ?? input.budget
+    let runSpent = Object.values(past?.spent ?? {}).reduce((n, x) => n + (x ?? 0), 0)
+    const runWhole = ev.reduce((n, e) => n + (e.type === 'usage' && e.t > pastT ? e.usd : 0), runSpent)
+    // A stop at the budget keeps the id of the ask you answered; new budget asks number on from there.
+    let bAsked = (past?.budgetAsked ?? 0) + (input.budgetStop ? 1 : 0)
+    const budgetAsk = (f: FarmerSetup, tm: number, spentNow: number, task?: string, kept?: string) => {
+      const now = budget!
+      const whole = Math.max(runWhole, spentNow)
+      const to = Math.max(Math.ceil((whole * 1.1) / 5) * 5, Math.ceil(now) + 5)
+      const fmt = fmtFor(whole)
+      const n = kept ? 0 : ++bAsked
+      const id = kept ?? (n === 1 ? 'ask-budget' : `ask-budget-${n}`)
+      const suggested = `Raise the budget to ${money(to)}`
+      const stop = 'Stop the run here'
+      const known = whole > 0 ? spentNow / whole : 1
+      at(tm + 0.01, {
+        type: 'ask', id, farmer: lead, task: task || undefined, reason: 'cost', budgetFor: f.id, limitTo: to,
+        confidence: known >= 0.6 ? 'high' : known >= 0.35 ? 'medium' : 'low',
+        basis: `${fmt(spentNow)} of the ${fmt(whole)} is already spent; the rest is from the steps left.`,
+        question: `This run is about to pass its ${fmt(now)} budget, with ${fmt(spentNow)} spent, so I paused the crew.`,
+        impact: `Finishing the run needs about ${fmt(Math.max(0, whole - spentNow))} more, ${fmt(whole)} in all. Stopping it here keeps what's already committed and leaves the rest, the release included, out.`,
+        suggested, alternatives: [stop],
+      })
+      const c = choose(id, suggested)
+      at(tm + 0.02, { type: 'answer', id, choice: c, by: 'human' })
+      if (c !== stop) budget = Number(/\$(\d+(\.\d+)?)/.exec(c)?.[1] ?? to)
+      return c === stop ? 'stop' : 'raise'
+    }
     // Farmers you stopped: nothing of theirs after the minute you stopped them.
     const cuts: { f: FarmerSetup; tm: number; spentNow: number; task?: string; mine: Set<string> }[] = []
     for (const [id, tm] of Object.entries(input.halts ?? {}) as [FarmerId, number][]) {
@@ -854,6 +895,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const mine = new Set(ev.filter((x) => x.type === 'task_start' && x.farmer === f.id && !accepted.has(x.task)).map((x) => (x.type === 'task_start' ? x.task : '')))
       const keep = ev.filter((x) => {
         if (x.t <= cut || x.type === 'goal' || x.type === 'plan' || x.type === 'farmer' || x.type === 'stop') return true
+        // The whole run stopped at its budget: nothing of anyone's after that minute, releases and answers included.
+        if (input.budgetStop && x.t > input.budgetStop.t * MIN) return false
         if ('farmer' in x && x.farmer === f.id && x.type !== 'ask') return false
         if ('task' in x && x.task && mine.has(x.task)) return false
         return true
@@ -875,7 +918,19 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const f = farmers.find((x) => x.id === e.farmer)
       const before = spent[e.farmer] ?? 0
       spent[e.farmer] = before + e.usd
+      const runBefore = runSpent
+      runSpent += e.usd
       if (!f || done.has(f.id)) continue
+      if (budget !== undefined && runSpent > budget + 0.005) {
+        const tmB = e.t / MIN - 0.016
+        const id = `ask-budget${bAsked + 1 === 1 ? '' : `-${bAsked + 1}`}`
+        if (budgetAsk(f, tmB, runBefore, e.task) === 'stop') {
+          // The whole crew stops from that minute: nothing after it is spent.
+          const halts = { ...input.halts }
+          for (const x of farmers) halts[x.id] = Math.min(halts[x.id] ?? tmB, tmB)
+          return simulateRun({ ...input, halts, budgetStop: { t: tmB, id, f: f.id } })
+        }
+      }
       const lim = limit[f.id] ?? f.limits.usd
       if (before + e.usd <= lim + 0.005) continue
       const tm = e.t / MIN - 0.015
@@ -893,9 +948,17 @@ export function simulateRun(input: SimInput): RunEvent[] {
     // The ask where you stopped each farmer, after the cut, so the cut never takes the ask itself.
     for (const k of cuts) {
       // Already asked in the run you watched: that ask stands as it was.
-      if (!(past && k.tm * MIN <= pastT)) limitAsk(k.f, k.tm, k.spentNow, haltTotals[k.f.id] ?? total[k.f.id] ?? k.spentNow, k.task)
+      const byBudget = !!input.budgetStop && k.tm === input.budgetStop.t
+      if (!byBudget && !(past && k.tm * MIN <= pastT)) limitAsk(k.f, k.tm, k.spentNow, haltTotals[k.f.id] ?? total[k.f.id] ?? k.spentNow, k.task)
       const said = new Set(ev.filter((x) => x.type === 'stop').map((x) => (x.type === 'stop' ? x.task : '')))
-      for (const t of k.mine) if (!said.has(t)) at(k.tm + 0.05, { type: 'stop', task: t, reason: `You stopped the ${k.f.label} at its spend limit. This task stays out of the pull request.` })
+      for (const t of k.mine) if (!said.has(t)) at(k.tm + 0.05, { type: 'stop', task: t, reason: byBudget ? 'You stopped the run at its budget. This task stays out of the pull request.' : `You stopped the ${k.f.label} at its spend limit. This task stays out of the pull request.` })
+    }
+    // The ask where you stopped the run at its budget, once, in its place.
+    const bs = input.budgetStop
+    if (bs && !(past && bs.t * MIN <= pastT)) {
+      const f = farmers.find((x) => x.id === bs.f)
+      const spentThen = Object.values(past?.spent ?? {}).reduce((n, x) => n + (x ?? 0), 0) + ev.reduce((n, e) => n + (e.type === 'usage' && e.t > pastT && e.t <= bs.t * MIN ? e.usd : 0), 0)
+      if (f) budgetAsk(f, bs.t, spentThen, undefined, bs.id)
     }
     ev.sort((a, b) => a.t - b.t)
   }

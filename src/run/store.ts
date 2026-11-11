@@ -660,6 +660,9 @@ class Store {
     // So is any other file or skill a farmer asked for back.
     const needs = p?.events.find((e) => e.type === 'ask' && e.id === askId)
     if (p && needs && needs.type === 'ask' && needs.need && choice === needs.suggested) this.giveBack(p, needs)
+    // A budget you raised is the project's budget from now on, the same one Home and Spend show.
+    const raisedTo = needs && needs.type === 'ask' && needs.budgetFor ? /^Raise the budget to \$(\d+)/.exec(choice) : null
+    if (p && raisedTo) p.spendLimit = clampBudget(Number(raisedTo[1]))
     // A different answer from the one in the log: the run forks from here.
     const rec = p?.events.find((e) => e.type === 'answer' && e.id === askId)
     if (p && rec && rec.type === 'answer' && rec.choice !== choice) this.rebuild(p)
@@ -878,13 +881,31 @@ class Store {
     if (!built) return
     if (run.brandAt !== undefined) (built.input as SimInput).brandAt = run.brandAt
     if (run.toggles) (built.input as SimInput).toggles = run.toggles
+    // The project's budget for this run: before a step would take the run over it, the Planner asks.
+    ;(built.input as SimInput).budget = this.budgetOf(p)
     // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
     const t0 = p.clock ?? 0
     if (t0 > 0) {
-      const past = { t: t0, spent: {} as Partial<Record<FarmerId, number>>, limit: {} as Partial<Record<FarmerId, number>>, asked: {} as Partial<Record<FarmerId, number>>, raised: [] as string[] }
+      const past = { t: t0, spent: {} as Partial<Record<FarmerId, number>>, limit: {} as Partial<Record<FarmerId, number>>, asked: {} as Partial<Record<FarmerId, number>>, raised: [] as string[], budgetAsked: undefined as number | undefined }
       for (const e of p.events) {
         if (e.t > t0) continue
         if (e.type === 'usage') past.spent[e.farmer] = (past.spent[e.farmer] ?? 0) + e.usd
+        // The run's budget: raised by you in this run, or a farmer you stopped there.
+        if (e.type === 'ask' && e.budgetFor) {
+          const c = answers[e.id]
+          if (c && /^stop/i.test(c)) {
+            // The whole crew, from that minute, as the run you watched had it.
+            const inp = built.input as SimInput
+            const tm = e.t / 60_000 - 0.01
+            const halts = { ...inp.halts }
+            for (const x of built.farmers) halts[x.id] = Math.min(halts[x.id] ?? tm, tm)
+            inp.halts = halts
+            inp.budgetStop = { t: tm, id: e.id, f: e.budgetFor }
+          } else {
+            // A raise is the project's budget now (see answer), so the run reads it from there.
+            past.budgetAsked = (past.budgetAsked ?? 0) + 1
+          }
+        }
         if (e.type === 'ask' && e.limitFor) {
           past.asked[e.limitFor] = (past.asked[e.limitFor] ?? 0) + 1
           const c = answers[e.id]
@@ -910,6 +931,7 @@ class Store {
       const open = pendingAsk(p.events, t0, answers)
       const oa = open ? p.events.find((e) => e.type === 'ask' && e.id === open) : undefined
       if (oa && oa.type === 'ask' && oa.limitFor) past.asked[oa.limitFor] = (past.asked[oa.limitFor] ?? 1) - 1
+      if (oa && oa.type === 'ask' && oa.budgetFor && !answers[oa.id]) past.budgetAsked = Math.max(0, (past.budgetAsked ?? 1) - 1)
       ;(built.input as { past?: typeof past }).past = past
     }
     let events = simulateRun(built.input)
@@ -1283,7 +1305,8 @@ class Store {
     return p
   }
 
-  // A project's budget: what you'll spend on it in all. Its own when you set one, its area's otherwise.
+  // A project's budget for each run: before a step would take a run over it, the Planner asks. Its own when you
+  // set one, its area's otherwise.
   budgetOf(p: Project) {
     return p.spendLimit ?? this.budgets[p.area ?? areaFor(p.goal)] ?? 60
   }
@@ -1292,6 +1315,8 @@ class Store {
     const p = this.project(id)
     if (!p || !Number.isFinite(typed) || !(typed > 0)) return
     p.spendLimit = clampBudget(typed)
+    // On a run under way, the new budget counts from now: the Planner asks before the run passes it.
+    if (p.approved && p.run && !this.isDone(p)) this.rebuild(p)
     this.notify()
   }
 

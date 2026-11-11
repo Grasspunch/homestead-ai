@@ -558,7 +558,7 @@ function ProjectBudget({ spent }: { spent: number }) {
       <h3>Spent</h3>
       <div className="stat">
         <span className="big">{m.spent}</span>
-        <span>of this project’s {m.limit} budget</span>
+        <span>of this run’s {m.limit} budget</span>
         <span className="grow" />
         {typing === null ? (
           <button className="btn tan xs" onClick={() => setTyping(String(budget))}>Change budget</button>
@@ -568,6 +568,7 @@ function ProjectBudget({ spent }: { spent: number }) {
               $<input type="number" min={BUDGET.min} max={BUDGET.max} step={1} value={typing} onChange={(e) => setTyping(e.target.value)} aria-label="Project budget in dollars" autoFocus />
             </span>
             <button className="btn xs" type="submit">Save</button>
+            <button className="btn tan xs" type="button" onClick={() => setTyping(null)}>Cancel</button>
           </form>
         )}
       </div>
