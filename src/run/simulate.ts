@@ -174,11 +174,11 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const builderTasks = build.filter((t) => t.farmer === 'builder')
   const designerTask = build.find((t) => t.farmer === 'designer')
   const disputed = designerTask && has('builder') ? designerTask : undefined
-  // The first thing that needs you is money: the first builder task runs over.
-  const pricey = builderTasks[0] ?? build[0]
-  const failing = builderTasks.find((t) => t !== pricey) ?? build.find((t) => t !== pricey && t !== disputed)
+  // The first thing that needs you is money: the first builder task runs over. A small change runs clean.
+  const pricey = sc.quiet ? undefined : builderTasks[0] ?? build[0]
+  const failing = sc.quiet ? undefined : builderTasks.find((t) => t !== pricey) ?? build.find((t) => t !== pricey && t !== disputed)
   // The task where the Builder wants a refactor that reaches the others' code.
-  const sweeping = builderTasks.find((t) => t !== pricey && t !== failing) ?? (builderTasks.length > 1 ? builderTasks[builderTasks.length - 1] : undefined)
+  const sweeping = sc.quiet ? undefined : builderTasks.find((t) => t !== pricey && t !== failing) ?? (builderTasks.length > 1 ? builderTasks[builderTasks.length - 1] : undefined)
   const perTask = Math.max(5, (basis.minutes * 0.6) / Math.max(1, plan.length))
   // Each step costs its farmer's model rate. The plan's estimate fixes the unit; a model you changed since moves its share.
   const rateOf = (model?: string) => MODELS.find((m) => m.model === model)?.rate ?? 1
@@ -565,7 +565,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     const S = 12
     const mx = (errorRate: number, p95ms: number, answerScore: number, pass = S) => ({ errorRate, p95ms, answerScore, ...(synth ? { synth: { pass, total: S } } : {}) })
     const direct = !!rs?.everyone
-    if (!input.bugFixed) {
+    if (!input.bugFixed && !sc.quiet) {
     const first = everyone ? '100%' : '10%'
     at(t, { type: 'progress', task: task.id, value: 0.3 })
     at(t + 0.1, { type: 'deploy', stage: first, metrics: mx(0.003, 1700, 0.91) })
