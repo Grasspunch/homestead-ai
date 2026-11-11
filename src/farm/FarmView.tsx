@@ -86,6 +86,7 @@ export interface FarmViewProps {
   onCoins(): void
   onChest(): void
   hide?: { proofPops?: boolean; bubbles?: boolean; plotLabels?: boolean; chickens?: boolean } // parts you asked the Planner to hide
+  size?: { proofPops?: number; bubbles?: number; plotLabels?: number } // steps bigger you asked for, 0 to 2
 }
 
 interface Cam {
@@ -455,6 +456,7 @@ export function FarmView(p: FarmViewProps) {
               check={c}
               task={t.name}
               state={p.state}
+              size={p.size?.proofPops}
               style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y - 0.7) * T }}
               onOpen={() => p.onTask(pl.id)}
             />
@@ -467,8 +469,8 @@ export function FarmView(p: FarmViewProps) {
         return (
           <button
             key={pl.id}
-            className={`plot-label${p.planning ? ' ghost' : ''}${sel ? ' sel' : ''}${t.status === 'accepted' ? ' done' : ''}`}
-            style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y + pl.h + 1) * T + 2, fontSize: 13, maxWidth: (pl.w + 3) * T }}
+            className={`plot-label${p.planning ? ' ghost' : ''}${sel ? ' sel' : ''}${t.status === 'accepted' ? ' done' : ''}${p.size?.plotLabels ? ` s${p.size.plotLabels}` : ''}`}
+            style={{ left: (pl.x + pl.w / 2) * T, top: (pl.y + pl.h + 1) * T + 2, fontSize: LABEL_PX[p.size?.plotLabels ?? 0] ?? 13, maxWidth: (pl.w + 3) * T * ((LABEL_PX[p.size?.plotLabels ?? 0] ?? 13) / 13) }}
             onClick={(e) => {
               e.stopPropagation()
               p.onTask(pl.id)
@@ -552,8 +554,25 @@ function crops(g: CanvasRenderingContext2D, pl: Plot, stageAt: (i: number) => nu
     }
 }
 
-function emote(g: CanvasRenderingContext2D, fx: number, fy: number, what: Emote, now: number) {
+// Plot label type by size step: the reading sizes, never under 13px.
+const LABEL_PX = [13, 15, 17]
+// Speech bubbles by size step, scaled about the tail's tip.
+const BUBBLE_SCALE = [1, 1.5, 2]
+
+function emote(g: CanvasRenderingContext2D, fx: number, fy: number, what: Emote, now: number, step = 0) {
   if (!ok('bubble') || !ok('emoji')) return
+  const k = BUBBLE_SCALE[step] ?? 1
+  if (k !== 1) {
+    const ax = fx * PX
+    const ay = fy * PX - 35.5
+    g.save()
+    g.translate(ax, ay)
+    g.scale(k, k)
+    g.translate(-ax, -ay)
+    emote(g, fx, fy, what, now, 0)
+    g.restore()
+    return
+  }
   const bob = Math.round(Math.sin(now / 260) * 1)
   const bx = fx * PX - 8
   const by = fy * PX - 30 - 22 + bob
@@ -764,7 +783,7 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
     // One emote per plot when no farmer speaks for it.
     const rolledBack = pl.gate && lastDeploy?.stage === 'rollback' && t.status !== 'ripe' && t.status !== 'accepted'
     const plotEmote: Emote | null = t.status === 'wilted' || rolledBack ? 'x' : t.status === 'ripe' || (t.status === 'accepted' && !lastDeploy) ? 'check' : t.status === 'checking' ? 'read' : null
-    if (plotEmote && !p.hide?.bubbles) emote(g, pl.x + pl.w / 2, pl.y + 1.3, plotEmote, now)
+    if (plotEmote && !p.hide?.bubbles) emote(g, pl.x + pl.w / 2, pl.y + 1.3, plotEmote, now, p.size?.bubbles)
   }
   // A big change: every plot whose code it reaches glows with it, in time with its own plot.
   if (p.openAsk?.touches?.length) {
@@ -815,7 +834,7 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
           g.fill()
         }
         charAt(g, fx, fy, anim, dir, now, idx, { tint: TINT[id], alpha: 'alpha' in pose ? pose.alpha : 1 })
-        if ('emote' in pose && pose.emote && anim !== 'walk' && !p.hide?.bubbles) emote(g, fx, fy, pose.emote, now)
+        if ('emote' in pose && pose.emote && anim !== 'walk' && !p.hide?.bubbles) emote(g, fx, fy, pose.emote, now, p.size?.bubbles)
       },
     })
   })

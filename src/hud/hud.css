@@ -290,3 +290,24 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .toast-undo { border: 0; background: none; color: var(--leaf); font: 700 var(--t-body)/1.2 var(--ui); cursor: pointer; padding: 0; text-decoration: underline; }
 .said.ask-talk .side-line { flex-direction: row; align-items: flex-start; gap: 6px; }
 .said.ask-talk .side-line .sw { margin-top: 5px; flex: none; }
+
+/* The top bar as you asked the Planner to change it. Colours are the pack's own button, its five shades
+   swapped for the tokens' ramps (scripts/tint-buttons.py). Sizes step in whole pixel scales: icons 16, 32 or 48. */
+.btn.leaf { border-image-source: url(/ui/btn_leaf.png); }
+.btn.berry { border-image-source: url(/ui/btn_berry.png); }
+.btn.sky { border-image-source: url(/ui/btn_sky.png); }
+.btn.gold { border-image-source: url(/ui/btn_gold.png); }
+.top .top-ico.named { padding: 0 6px; gap: 8px; }
+.top .top-name { font-size: 17px; line-height: 1; white-space: nowrap; }
+.top .top-ico.s-2 { height: 34px; min-width: 34px; border-width: 8px; }
+.top .top-ico.s-1 { height: 42px; min-width: 42px; border-width: 10px; }
+.top .top-ico.s1 { height: 64px; min-width: 64px; }
+.top .top-ico.s2 { height: 72px; min-width: 72px; }
+.top .top-pr.s-2, .top .top-pr.s-1, .top .s-2 .top-name, .top .s-1 .top-name, .top .top-coin.s-2 b { font-size: 15px; }
+.top .top-coin.s-1 b { font-size: 17px; }
+.top .top-pr.s1, .top .s1 .top-name { font-size: 20px; }
+.top .top-coin.s1 b, .top .top-pr.s2, .top .s2 .top-name { font-size: 24px; }
+.top .top-coin.s2 b { font-size: 28px; }
+.top .s-2 .mail-ico, .top .s-1 .mail-ico { width: 26px; height: 16px; background-size: 26px 16px; }
+.top .s2 .mail-ico { width: 52px; height: 32px; background-size: 52px 32px; }
+.top .top-coin.s2 .coin { width: 44px; height: 44px; background-size: 44px 44px; }

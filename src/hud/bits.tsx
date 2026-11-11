@@ -20,7 +20,7 @@ export type IconName = keyof typeof ICONS
 // Pixel icons only scale by whole numbers (16 or 32 px); anything else smears the pixels.
 // 'bold' is the pack's filled, outlined set, for the top bar.
 export function Ico({ name, size: asked = 16, tone = 'dark' }: { name: IconName; size?: number; tone?: 'dark' | 'light' | 'green' | 'bold' }) {
-  const size = asked >= 28 ? 32 : 16
+  const size = asked >= 44 ? 48 : asked >= 28 ? 32 : 16 // whole pixel scales only
   const [c, r] = ICONS[name]
   const col = tone === 'dark' || tone === 'bold' ? c + 12 : tone === 'light' ? c + 4 : c
   const row = tone === 'green' || tone === 'bold' ? r + 10 : r

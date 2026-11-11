@@ -25,6 +25,7 @@ body { overflow: auto !important; background: #8fc77a; }
 .kp-askbody { flex: 1; padding: 4px 10px 6px; display: flex; flex-direction: column; gap: 10px; }
 .kp-askbody p { margin: 0; font-size: var(--t-lead); }
 .kp-ctl input[type=range] { width: 200px; accent-color: var(--leaf); }
+.kp-top.top { position: static; pointer-events: auto; flex-wrap: wrap; }
 `
 
 function Sec({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
@@ -96,6 +97,27 @@ export function Kit() {
           <button className="btn xs tan">Send back</button>
           <button className="btn" disabled>
             Disabled
+          </button>
+        </div>
+      </Sec>
+
+      <Sec title="Top bar, as you ask" note="Ask the Planner to move, resize, rename or recolour a top bar button. Colours are the pack's button in the HUD's own colours. Sizes step twice each way, with icons at whole pixel scales.">
+        <div className="top kp-top">
+          {(['white', 'cream', 'tan', 'brown', 'leaf', 'berry', 'sky', 'gold'] as const).map((c) => (
+            <button key={c} className={`btn ${c} top-ico`} aria-label={c}>
+              <Ico name="gear" size={32} />
+            </button>
+          ))}
+        </div>
+        <div className="top kp-top">
+          {[-2, -1, 0, 1, 2].map((n) => (
+            <button key={n} className={`btn white top-ico${n ? ` s${n}` : ''}`} aria-label={`Size ${n}`}>
+              <Ico name="gear" size={[16, 16, 32, 32, 48][n + 2]} />
+            </button>
+          ))}
+          <button className="btn white top-ico inbox-btn named" aria-label="Questions">
+            <i className="mail-ico" />
+            <span className="top-name">Questions</span>
           </button>
         </div>
       </Sec>

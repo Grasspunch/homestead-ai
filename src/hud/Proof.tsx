@@ -186,7 +186,7 @@ const WHO: Record<string, string> = { planner: 'Planner', builder: 'Builder', de
 
 // A check that just happened, popped over its plot: the test seeds, the screenshots or the live line.
 // It leads with the task and how it came out, then the proof, and last who checked it.
-export function ProofPop({ check, task, state, style, onOpen }: { check: Check; task: string; state: RunState; style: CSSProperties; onOpen: () => void }) {
+export function ProofPop({ check, task, state, style, onOpen, size }: { check: Check; task: string; state: RunState; style: CSSProperties; onOpen: () => void; size?: number }) {
   const pr = check.proof
   const chat = /support|assistant|chat/i.test(state.goal)
   const tests = pr?.tests ?? []
@@ -216,7 +216,7 @@ export function ProofPop({ check, task, state, style, onOpen }: { check: Check; 
   return (
     <button
       ref={ref}
-      className={`proof-pop paper bubble${check.pass ? '' : ' bad'}`}
+      className={`proof-pop paper bubble${check.pass ? '' : ' bad'}${size ? ` s${size}` : ''}`}
       data-tail="down"
       style={style}
       onClick={(e) => {
