@@ -111,7 +111,8 @@ export interface SimInput {
   // The run you've watched so far, up to t (ms): what each farmer has really spent, its limit now and how many
   // limit asks it has had. Spend limits count from these, so a change mid-run never re-asks or recounts the past.
   // raised: tasks whose raise already moved their farmer's limit in the run you watched, and said so.
-  past?: { t: number; spent: Partial<Record<FarmerId, number>>; limit: Partial<Record<FarmerId, number>>; asked: Partial<Record<FarmerId, number>>; raised?: string[]; budget?: number; budgetAsked?: number }
+  // started: when each task you watched start began (ms).
+  past?: { t: number; spent: Partial<Record<FarmerId, number>>; limit: Partial<Record<FarmerId, number>>; asked: Partial<Record<FarmerId, number>>; raised?: string[]; budget?: number; budgetAsked?: number; started?: Record<string, number> }
   // Farmers you stopped at their spend limit, and the run minute they reached it. Set by the run itself:
   // a stop re-runs the simulation so nothing after it involves that farmer.
   halts?: Partial<Record<FarmerId, number>>
@@ -307,12 +308,19 @@ export function simulateRun(input: SimInput): RunEvent[] {
     lastBuilt = Math.max(lastBuilt, end + 0.5)
   }
 
+  // A task you watched start keeps the start you watched, and one that hadn't started by then starts no earlier, so a
+  // run made again without a task never puts work you didn't see, or the end of work you did, in the past.
+  const startOf = (id: string, min: number) => {
+    const was = input.past?.started?.[id]
+    return was !== undefined ? was / MIN : input.past ? Math.max(min, input.past.t / MIN) : min
+  }
+
   while (queue.length) {
     const task = queue.shift()!
     r = rng(hash(goal + task.id))
     const f = task.farmer
     const deps = task.id === 'e2e-check' ? lastBuilt : 0
-    const start = Math.max(free[f] ?? 0.3, deps)
+    const start = startOf(task.id, Math.max(free[f] ?? 0.3, deps))
     // A Designer that can't see the brand guide works fast and loose: its first pass comes back early, off-brand.
     const loose = task === designerTask && !!sc.brand && !(farmers.find((x) => x.id === 'designer')?.context.includes(sc.brand) && (input.brandAt ?? 0) <= start * MIN)
     const full = perTask * (0.85 + r() * 0.4)
@@ -634,7 +642,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const peak = `${(rb.peak * 100).toFixed(1)}%`
   for (const task of plan.filter((t) => t.gate)) {
     const f = task.farmer
-    const start = lastBuilt + 0.5
+    const start = startOf(task.id, lastBuilt + 0.5)
     // The run stopped at its budget before the release, or with work left out by it: nothing goes out.
     if (input.budgetStop && (start + 0.3 >= input.budgetStop.t || stopped.size > 0)) {
       stopped.add(task.id)

@@ -928,10 +928,11 @@ class Store {
     // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
     const t0 = p.clock ?? 0
     if (t0 > 0) {
-      const past = { t: t0, spent: {} as Partial<Record<FarmerId, number>>, limit: {} as Partial<Record<FarmerId, number>>, asked: {} as Partial<Record<FarmerId, number>>, raised: [] as string[], budgetAsked: undefined as number | undefined }
+      const past = { t: t0, spent: {} as Partial<Record<FarmerId, number>>, limit: {} as Partial<Record<FarmerId, number>>, asked: {} as Partial<Record<FarmerId, number>>, raised: [] as string[], budgetAsked: undefined as number | undefined, started: {} as Record<string, number> }
       for (const e of p.events) {
         if (e.t > t0) continue
         if (e.type === 'usage') past.spent[e.farmer] = (past.spent[e.farmer] ?? 0) + e.usd
+        if (e.type === 'task_start') past.started[e.task] ??= e.t
         // The run's budget: raised by you in this run, or a farmer you stopped there.
         if (e.type === 'ask' && e.budgetFor) {
           const c = answers[e.id]

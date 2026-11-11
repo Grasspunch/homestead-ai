@@ -167,6 +167,24 @@ describe('skipping a task that was split', () => {
     expect(s.reshape?.skipped).toEqual(['Query the metrics', 'Metrics API'])
   })
 
+  it('skipping only the task that ran over: the task it was working beside still finishes, and the run reaches Done', async () => {
+    const p = toAsk2()
+    const now = p.clock!
+    await change(p, 'skip query the metrics')
+    expect(p.reshapes!.at(-1)!.changes).toEqual([{ kind: 'removeTask', task: 'metrics-query' }])
+    // Nothing new is put in the past you watched: the Metrics API keeps the start you saw.
+    const starts = p.events.filter((e) => e.type === 'task_start' && e.task === 'metrics-api')
+    expect(starts).toHaveLength(1)
+    expect(starts[0].t).toBeLessThan(now)
+    expect(p.events.some((e) => e.type === 'accept' && e.task === 'metrics-api' && e.t > now)).toBe(true)
+    finish(p)
+    const s = store.state(p)!
+    expect(s.done).toBeTruthy()
+    expect(s.tasks.map((t) => t.id)).not.toContain('metrics-query')
+    expect(s.tasks.map((t) => t.id)).not.toContain('metrics-query-rest')
+    expect(s.tasks.map((t) => [t.id, t.status])).toEqual(s.tasks.map((t) => [t.id, 'accepted']))
+  })
+
   it('skipping the Metrics API at its ask leaves the split task and its hard cases running', async () => {
     const p = toAsk2()
     await change(p, 'skip the metrics api')
@@ -175,6 +193,41 @@ describe('skipping a task that was split', () => {
     expect(s.tasks.map((t) => t.id)).toEqual(expect.arrayContaining(['metrics-query', 'metrics-query-rest']))
     expect(s.tasks.map((t) => t.id)).not.toContain('metrics-api')
     expect(s.tasks.every((t) => t.status === 'accepted')).toBe(true)
+  })
+})
+
+describe('skipping any task at any moment', () => {
+  const GOALS = [SAMPLE_GOAL, 'Stripe checkout for our pricing page', 'A dashboard of weekly signups', 'A tool that drafts replies to app store reviews']
+  it('every task left still finishes, and the run reaches Done', async () => {
+    const bad: string[] = []
+    for (const goal of GOALS) {
+      for (const task of simulatePlan(goal).tasks.filter((t) => !t.gate)) {
+        for (let k = 0; k < 5; k++) {
+          for (const between of [false, true]) {
+            const p = farm(goal)
+            // At the k-th ask, or a minute before it, taking the suggestion on the asks before.
+            let at: Ask | null = null
+            for (let i = 0; i <= k; i++) {
+              at = nextAsk(p)
+              if (!at) break
+              if (i < k) {
+                p.clock = Math.max(p.clock!, at.t)
+                store.answer(at.id, at.suggested)
+              }
+            }
+            if (!at) continue
+            p.clock = Math.max(p.clock!, between ? at.t - 60_000 : at.t)
+            if ((await store.proposeChanges(p.id, `skip ${task.name}`)) !== 'card') continue
+            await store.applyChanges(store.pending!.proposal.rows.map((r) => r.id))
+            finish(p)
+            const s = store.state(p)!
+            const left = s.tasks.filter((t) => t.status !== 'accepted' && !t.stopped)
+            if (!s.done || left.length) bad.push(`${goal}: skip ${task.id} at ask ${k}${between ? ' (a minute before)' : ''}: ${left.map((t) => `${t.id} ${t.status}`).join(', ')}`)
+          }
+        }
+      }
+    }
+    expect(bad).toEqual([])
   })
 })
 
