@@ -139,3 +139,25 @@ export function Ticks({ used, total, n = 20 }: { used: number; total: number; n?
 
 // The pack's check and cross, for pass and fail.
 export const Mark = ({ pass }: { pass: boolean }) => <span className={`mark ${pass ? 'yes' : 'no'}`} aria-label={pass ? 'passed' : 'failed'} />
+
+// The one tag for anything not real: "Simulated sample", "Simulated run", "Simulated team", "Simulated", "Projection".
+// Same class and colour everywhere, so a simulated thing always looks the same.
+export const SimTag = ({ children = 'Simulated', title }: { children?: React.ReactNode; title?: string }) => (
+  <span className="tag sim" title={title}>
+    {children}
+  </span>
+)
+
+// A quiet state: nothing here yet, nothing stands out, a call that failed, a run you paused.
+// One line in body ink and at most one meta line under it, on the flat tint. Berry only for a failure.
+export function Quiet({ icon, tone, title, children }: { icon?: IconName; tone?: 'bad'; title: React.ReactNode; children?: React.ReactNode }) {
+  return (
+    <div className={`quiet${tone ? ` ${tone}` : ''}`} role={tone === 'bad' ? 'alert' : undefined}>
+      {icon && <Ico name={icon} />}
+      <span>
+        <b>{title}</b>
+        {children && <span className="quiet-sub">{children}</span>}
+      </span>
+    </div>
+  )
+}

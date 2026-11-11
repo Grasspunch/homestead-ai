@@ -1,9 +1,9 @@
 // App state: which screen, the live plan being edited, and the replay of a recorded run.
 import { useSyncExternalStore } from 'react'
 import { duration, pendingAsk, reduce } from './reduce'
-import { LIMIT_RAISED, SEND_BACK, fitLimits, simulateRun } from './simulate'
+import { BRAND_ASK, BRAND_FIX, LIMIT_RAISED, SEND_BACK, fitLimits, simulateRun, type SimInput } from './simulate'
 import { liveStage, rollBack } from './rollback'
-import { simulatePlan } from './simPlan'
+import { scenario, simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
 import { lessonFrom, lessonLine, type Lesson } from './learn'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
@@ -43,6 +43,7 @@ export interface Project {
   liveNote?: string // why a live call fell back to the simulation
   plannedLive?: boolean // the plan came from the real Planner, not the simulation
   liveSource?: string // who answered it: Lovable AI, or your own Anthropic or OpenAI key
+  plannedEarlier?: string // the live call failed, so this is a live plan for the same goal from this date (ISO)
   sendBacks?: Record<string, { task: string; note: string }> // work you sent back from the pull request review, by ask
   rollbacks?: number[] // run times you rolled a live release back
   everSentBack?: boolean // a send back on this farm, ever: the trust offer never follows one
@@ -55,7 +56,7 @@ export interface Project {
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   talks?: Record<string, (TalkLine | { from: 'you'; text: string })[]> // talking a disagreement through, by ask id
-  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson } // seq: which run of this farm, from 1
+  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; brandAt?: number } // seq: which run of this farm, from 1
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
@@ -649,6 +650,8 @@ class Store {
   answer(askId: string, choice: string) {
     this.viewerAnswers = { ...this.viewerAnswers, [askId]: choice }
     const p = this.project()
+    // Adding the brand guide is a change to the Designer's context, the same as adding it on its page.
+    if (p && askId === BRAND_ASK && choice === BRAND_FIX) this.addBrand(p)
     // A different answer from the one in the log: the run forks from here.
     const rec = p?.events.find((e) => e.type === 'answer' && e.id === askId)
     if (p && rec && rec.type === 'answer' && rec.choice !== choice) this.rebuild(p)
@@ -761,6 +764,7 @@ class Store {
     // Steps a farmer took before you changed its model were paid at the old rate.
     const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed, this.kitAt[p.id] ?? {}, run.lesson)
     if (!built) return
+    if (run.brandAt !== undefined) (built.input as SimInput).brandAt = run.brandAt
     // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
     const t0 = p.clock ?? 0
     if (t0 > 0) {
@@ -1224,10 +1228,29 @@ class Store {
     this.notify()
   }
 
+  // The brand guide the Designer couldn't see, added to its context.
+  private addBrand(p: Project) {
+    const b = scenario(p.goal).script.brand
+    // Added in answer to the ask, so never earlier than the ask: the check before it failed without the guide.
+    const ask = p.events.find((e) => e.type === 'ask' && e.id === BRAND_ASK)
+    if (p.run && ask) p.run.brandAt = Math.max(p.run.brandAt ?? 0, ask.t)
+    if (b) this.editKit(p.id, 'designer', (e) => {
+      e.contextOff = e.contextOff.filter((x) => x !== b)
+      if (!e.contextAdd.includes(b)) e.contextAdd = [...e.contextAdd, b]
+    })
+  }
+
   editKit(id: string, farmer: FarmerId, fn: (e: KitEdit) => void) {
     const k = (this.kit[id] ??= {})
     const e = (k[farmer] ??= emptyEdit())
+    const sees = (path?: string) => {
+      const base = this.project(id)?.events.find((x) => x.type === 'farmer' && x.id === farmer)
+      return !!path && !!base && base.type === 'farmer' && applyEdit(base, e).context.includes(path)
+    }
+    const brand = farmer === 'designer' ? scenario(this.project(id)?.goal ?? '').script.brand : undefined
+    const sawBrand = sees(brand)
     fn(e)
+    const brandAdded = !sawBrand && sees(brand)
     this.kit = { ...this.kit, [id]: { ...k } }
     // On a running farm the change applies from now: the run is simulated again with it, and what was already spent stays.
     // A finished run is left alone: the change applies to the next run.
@@ -1236,7 +1259,11 @@ class Store {
       const at = (this.kitAt[id] ??= {})
       at[farmer] ??= p.clock ?? 0
       p.run.kit = structuredClone(this.kit[id])
+      // From now on the Designer sees the brand guide; a check that failed without it stays failed in the past.
+      if (brandAdded) p.run.brandAt = Math.max(p.clock ?? 0, p.run.brandAt ?? 0)
       this.rebuild(p)
+      // Added on the Designer's page while it was asking for it: that's the answer.
+      if (brandAdded && !this.viewerAnswers[BRAND_ASK] && pendingAsk(p.events, p.clock ?? 0, this.viewerAnswers) === BRAND_ASK) this.answer(BRAND_ASK, BRAND_FIX)
     } else if (p?.approved && this.isDone(p)) this.say('Saved for the next run. This one is finished.')
     this.notify()
   }

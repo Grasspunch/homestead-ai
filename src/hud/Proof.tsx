@@ -39,13 +39,15 @@ const RING: Record<Screen, { x: number; y: number; w: number; h: number }> = {
   dash: { x: 0.057, y: 0.466, w: 0.336, h: 0.335 },
   agents: { x: 0.011, y: 0.71, w: 0.978, h: 0.262 },
 }
+// Off-brand: the colours are wrong everywhere, so the ring goes round the header, where they show most.
+const TOP = { x: 0.035, y: 0.022, w: 0.93, h: 0.105 }
 
 export function Screens({ shots, chat, screen, note, thumb = false }: { shots: Shot[]; chat: boolean; screen?: Screen; note?: string; thumb?: boolean }) {
   const shot = shots[shots.length - 1]
   if (!shot) return null
   const kind: Screen = screen ?? (chat ? 'chat' : 'app')
-  const bad = shot.state === 'overlap'
-  const r = RING[kind]
+  const bad = shot.state === 'overlap' || shot.state === 'offbrand'
+  const r = shot.state === 'offbrand' ? TOP : RING[kind]
   return (
     <figure className={`shot ${kind}${thumb ? ' thumb' : ''}`}>
       <span className="shot-img">

@@ -296,15 +296,24 @@ export function FarmView(p: FarmViewProps) {
       if (docked || !box) return null
       const free = freeSize()
       const S = scale * PX
-      if ((box.x1 - box.x0) * S <= free.w && (box.y1 - box.y0) * S <= free.h) return { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 }
+      // Each axis on its own: the whole farm (house and yard included) when it fits, else every plot, else the
+      // plots being worked on now, so the active work is never under the top bar or the dialogue, and on a wide
+      // screen neither side is left empty.
+      const all = { x0: 0.5, x1: box.x1, y0: Math.min(box.y0, 1), y1: Math.max(box.y1, 13.5) }
       // A popped proof comes first: its plot and the pop above it, about 190 px tall.
       const popped = layout.plots.find((q) => q.id === popNow)
       const ps = popped ? [popped] : layout.plots.filter((q) => activeIds.includes(q.id))
-      if (!ps.length) return null
       const up = 190 / S
-      const x0 = Math.min(...ps.map((q) => q.x)), x1 = Math.max(...ps.map((q) => q.x + q.w))
-      const y0 = Math.min(...ps.map((q) => q.y - (q === popped ? up : 1))), y1 = Math.max(...ps.map((q) => q.y + q.h + 2))
-      return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }
+      const now = ps.length
+        ? { x0: Math.min(...ps.map((q) => q.x)), x1: Math.max(...ps.map((q) => q.x + q.w)), y0: Math.min(...ps.map((q) => q.y - (q === popped ? up : 1))), y1: Math.max(...ps.map((q) => q.y + q.h + 2)) }
+        : null
+      const axis = (lo: 'x0' | 'y0', hi: 'x1' | 'y1', room: number) => {
+        for (const r of [all, box, now]) if (r && (r[hi] - r[lo]) * S <= room) return (r[lo] + r[hi]) / 2
+        return now ? (now[lo] + now[hi]) / 2 : null
+      }
+      const x = axis('x0', 'x1', free.w)
+      const y = axis('y0', 'y1', free.h)
+      return x === null || y === null ? null : { x, y }
     })()
     const tgt = !pl ? plots ?? idle ?? home : asking ? { x: pl.x + pl.w / 2, y: pl.y + pl.h / 2 } : { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) }
     c.tx = tgt.x

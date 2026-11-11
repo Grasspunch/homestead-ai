@@ -1,7 +1,7 @@
 // Your projects: every project drawn as a little farm, and the Planner asking what to build next.
 import { useEffect, useRef, useState } from 'react'
 import { planInto } from '../run/planning'
-import { AGENT_DASH_GOAL } from '../run/simPlan'
+import { EXAMPLE_GOALS } from '../run/recorded'
 import { draw, hasFrame } from '../map/atlas'
 import { TINT } from '../run/crew'
 import { pendingAsk, reduce } from '../run/reduce'
@@ -12,9 +12,6 @@ import { ASK_WHY, Ico, Portrait, atlasLoaded } from './bits'
 import { TeamPanel } from './Team'
 import { CELL, PX, fitLayout, type Layout } from './homeLayout'
 
-// Starters that need no context: each matches one of the scripted runs (the agent dashboard demo, support, checkout,
-// metrics dashboard).
-const EXAMPLES = [AGENT_DASH_GOAL, 'A chatbot that answers questions from a shop’s help pages', 'Card checkout for an online shop', 'A dashboard of new sign-ups each week']
 
 interface Mini {
   p: Project
@@ -239,7 +236,7 @@ export function Home() {
             {/* Starters until you type; a tap fills the box so you can edit it before planning. */}
             <div className={`examples-fold${goal ? ' shut' : ''}`} inert={!!goal || undefined} aria-hidden={!!goal || undefined}>
               <div className="row examples">
-                {EXAMPLES.map((x) => (
+                {EXAMPLE_GOALS.map((x) => (
                   <button
                     key={x}
                     type="button"
@@ -273,8 +270,9 @@ export function Home() {
             </button>
           ))}
           <button className="farm-hit" style={{ ...at(newSpot), width: 9 * T, height: 5 * T }} onClick={() => input.current?.focus()} aria-label="New project">
-            <span className="farm-tag ghost" style={{ left: 5 * T, top: 4.85 * T }}>
-              + New project
+            <span className="farm-tag ghost" style={{ left: 5.9 * T, top: 4.85 * T }}>
+              {list.length ? '+ New project' : '+ Your first project'}
+              {!list.length && <span className="farm-words">Tell the Planner what to build</span>}
             </span>
           </button>
         </>

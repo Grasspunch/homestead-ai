@@ -16,6 +16,8 @@ export interface Script {
   // It ships straight to everyone once you merge, with no 10% stage: a line of copy doesn't need a canary.
   direct?: boolean
   refactor: { what: string; line: string }
+  // A brand guide the plan leaves out of the Designer's context, so its screens come out off-brand until you add it.
+  brand?: string
   dispute: { topic: string; failNote: string; impact: string; designer: Side; builder: Side }
   rollout: { peak: number; bug: string; cause: string; fix: string; check: string; file: string; tests: string[] }
   // A part of this app the run really changes once its release reaches you: 'agents' swaps the cost button
@@ -42,6 +44,7 @@ interface Draft {
 
 const SUPPORT: Script = {
   screen: 'chat',
+  brand: 'docs/brand.md',
   refactor: { what: 'move how answers are routed into one module', line: 'Moved answer routing into one module' },
   dispute: {
     topic: 'how the sources fit in the chat panel',
@@ -218,7 +221,7 @@ function draft(goal: string): Draft {
       ],
       script: SUPPORT,
       matched: true,
-      context: { builder: ['src/', 'docs/help/', 'eval/questions.jsonl'], designer: ['src/widget/', 'docs/brand.md'], tester: ['tests/', 'eval/questions.jsonl'] },
+      context: { builder: ['src/', 'docs/help/', 'eval/questions.jsonl'], designer: ['src/widget/', 'docs/help/'], tester: ['tests/', 'eval/questions.jsonl'] },
       why: {
         planner: "Keeps the answers and the widget in step, and passes your notes on.",
         builder: "Indexes the help docs, answers from them and hands off when unsure.",

@@ -1,7 +1,8 @@
 // A farmer's own page: what it is doing right now, and everything it carries, all changeable.
 // Task, model, skills and connectors, the files it may read, its rules and its limits.
 import { store, useStore, type Project } from '../run/store'
-import { MODELS, MODEL_GROUPS, RULES, agentName, SKILLS, applyEdit, contextTokens, defaultRules, emptyEdit, type KitItem } from '../run/kit'
+import { MODELS, MODEL_GROUPS, RULES, agentName, SKILLS, applyEdit, contextName, contextTokens, defaultRules, emptyEdit, type KitItem } from '../run/kit'
+import { scenario } from '../run/simPlan'
 import type { FarmerId, RunState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
 import { Ico, LimitField, Portrait, Swatch, Ticks, tokens, usd } from './bits'
@@ -40,6 +41,12 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
   const rate = MODELS.find((m) => m.model === f.model)?.rate ?? 1
   const kitTokens = items.filter((i) => !edit.off.includes(i.id)).reduce((n, i) => n + i.tokens, 0) + f.context.reduce((n, c) => n + contextTokens(c), 0)
   const set = (fn: Parameters<typeof store.editKit>[2]) => store.editKit(p.id, id, fn)
+  // Everything in its context, the paths you switched off included, each once.
+  const seen = [...new Set([...base.context, ...edit.contextOff, ...edit.contextAdd])]
+  // The brand guide the Designer can't see, offered here, with the check it broke when it broke one.
+  const brand = id === 'designer' ? scenario(p.goal).script.brand : undefined
+  const brandFail = brand ? p.events.find((e) => e.type === 'check' && !e.pass && e.t <= st.clock && e.proof?.shots?.some((x) => x.state === 'offbrand')) : undefined
+  const missing = brand && !seen.includes(brand) ? { path: brand, failed: brandFail && brandFail.type === 'check' ? s.tasks.find((t) => t.id === brandFail.task)?.name : undefined } : undefined
   const changed = !!(edit.model || edit.off.length || edit.contextOff.length || edit.contextAdd.length || Object.keys(edit.rules).length || edit.limits)
   const after = p.approved ? 'Changes apply from now on.' : 'Changes apply when you approve the plan.'
   const status = { idle: 'Waiting for its next task', working: base.lastTool ?? 'Working', stuck: 'Fixing a failed check', needs: 'Waiting for you', done: 'Finished its tasks' }[base.state]
@@ -184,6 +191,67 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
 
           <div className="col">
             <section>
+              <h3>What it can see</h3>
+              <div className="kit">
+                {seen.map((c, i) => {
+                  const on = !edit.contextOff.includes(c)
+                  const added = edit.contextAdd.includes(c)
+                  const reading = working && on && i === 0
+                  const name = contextName(c)
+                  return (
+                    <button
+                      key={c}
+                      className={`kit-item${on ? ' on' : ''}${reading ? ' using' : ''}`}
+                      aria-pressed={on}
+                      onClick={() => set((e) => {
+                        if (added) e.contextAdd = e.contextAdd.filter((x) => x !== c)
+                        else e.contextOff = on ? [...e.contextOff, c] : e.contextOff.filter((x) => x !== c)
+                      })}
+                    >
+                      <span className="kind k-file">F</span>
+                      <span className={`grow${name ? '' : ' mono'}`}>
+                        {name ?? c}
+                        {(name || reading) && <span className="sub">{reading ? 'Reading it now' : <span className="mono">{c}</span>}</span>}
+                      </span>
+                      <span className="mono cost">{tokens(contextTokens(c))}</span>
+                      <span className={`switch${on ? ' on' : ''}`} aria-hidden />
+                    </button>
+                  )
+                })}
+                {missing && (
+                  <button className="kit-item missing" aria-pressed={false} onClick={() => set((e) => (e.contextAdd = [...e.contextAdd, missing.path]))}>
+                    <span className="kind k-file">F</span>
+                    <span className="grow">
+                      {contextName(missing.path) ?? missing.path}
+                      <span className="sub">
+                        <span className="mono">{missing.path}</span>
+                        {missing.failed && <span className="miss-why"> · {missing.failed} failed its check without it</span>}
+                      </span>
+                    </span>
+                    <span className="mono cost">{tokens(contextTokens(missing.path))}</span>
+                    <span className="switch" aria-hidden />
+                  </button>
+                )}
+                <form
+                  className="add-file"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const input = e.currentTarget.elements.namedItem('path') as HTMLInputElement
+                    const v = input.value.trim()
+                    if (v && !f.context.includes(v)) set((x) => (x.contextAdd = [...x.contextAdd, v]))
+                    input.value = ''
+                  }}
+                >
+                  <input name="path" placeholder="Add a file or folder, for example docs/refunds.md" aria-label="Add a file or folder" />
+                  <button className="btn xs" type="submit">
+                    <Ico name="plus" size={14} />
+                    Add
+                  </button>
+                </form>
+              </div>
+            </section>
+
+            <section>
               <h3>Skills, tools and connectors</h3>
               <div className="kit">
                 {items.map((i) => {
@@ -205,52 +273,6 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
                     </button>
                   )
                 })}
-              </div>
-            </section>
-
-            <section>
-              <h3>Files it can read</h3>
-              <div className="kit">
-                {[...base.context, ...edit.contextAdd].map((c, i) => {
-                  const on = !edit.contextOff.includes(c)
-                  const added = edit.contextAdd.includes(c)
-                  const reading = working && on && i === 0
-                  return (
-                    <button
-                      key={c}
-                      className={`kit-item${on ? ' on' : ''}${reading ? ' using' : ''}`}
-                      aria-pressed={on}
-                      onClick={() => set((e) => {
-                        if (added) e.contextAdd = e.contextAdd.filter((x) => x !== c)
-                        else e.contextOff = on ? [...e.contextOff, c] : e.contextOff.filter((x) => x !== c)
-                      })}
-                    >
-                      <span className="kind k-file">F</span>
-                      <span className="grow mono">
-                        {c}
-                        {reading && <span className="sub">Reading it now</span>}
-                      </span>
-                      <span className="mono cost">{tokens(contextTokens(c))}</span>
-                      <span className={`switch${on ? ' on' : ''}`} aria-hidden />
-                    </button>
-                  )
-                })}
-                <form
-                  className="add-file"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    const input = e.currentTarget.elements.namedItem('path') as HTMLInputElement
-                    const v = input.value.trim()
-                    if (v && !f.context.includes(v)) set((x) => (x.contextAdd = [...x.contextAdd, v]))
-                    input.value = ''
-                  }}
-                >
-                  <input name="path" placeholder="Add a file or folder, for example docs/refunds.md" aria-label="Add a file or folder" />
-                  <button className="btn xs" type="submit">
-                    <Ico name="plus" size={14} />
-                    Add
-                  </button>
-                </form>
               </div>
             </section>
 

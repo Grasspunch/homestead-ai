@@ -65,7 +65,7 @@ function integration(plan: PlanTask[]): Proof {
   }
 }
 
-const shot = (screen: Screen, state: 'ok' | 'overlap' | 'alt'): Proof => ({ kind: 'screens', screen, shots: [{ device: 'desktop', state }] })
+const shot = (screen: Screen, state: 'ok' | 'overlap' | 'alt' | 'offbrand'): Proof => ({ kind: 'screens', screen, shots: [{ device: 'desktop', state }] })
 
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
 
@@ -117,11 +117,17 @@ export interface SimInput {
   // Changes you asked the Planner for (reshape.ts): skipped tasks, no review, no Deployer, straight to everyone,
   // synthetic tests as the rollout's measure. They change what the crew does, not just its labels.
   reshape?: Reshaped
+  // When you added the scenario's brand guide to the Designer's context during this run (ms). Before then it couldn't see it.
+  brandAt?: number
   // Tasks an earlier run of this farm split mid-run, which this run plans in two from the start.
   presplit?: string[]
 }
 
 export const SEND_BACK = 'Send back'
+// The Designer can't see the brand guide: one ask, its own id so it never renumbers the others.
+export const BRAND_ASK = 'ask-brand'
+export const BRAND_FIX = 'Add the brand guide'
+export const BRAND_LOOK = 'Show me the Designer’s context'
 
 export function simulateRun(input: SimInput): RunEvent[] {
   const { goal } = input
@@ -390,6 +396,26 @@ export function simulateRun(input: SimInput): RunEvent[] {
     }
     let end = start + len + extra
     at(end, { type: 'task_built', task: task.id })
+
+    // The Designer can't see the brand guide, so its screens come out off-brand. The crew can't fix that alone:
+    // you add the guide to its context, and it redoes the colours.
+    const brand = sc.brand
+    const sees = (path: string, min: number) => !!farmers.find((x) => x.id === f)?.context.includes(path) && (input.brandAt ?? 0) <= min * MIN
+    if (brand && task === designerTask && f === 'designer' && !sees(brand, end + 0.4)) {
+      const fix$ = usdPer(f) * 0.3
+      at(end + 0.4, { type: 'check', task: task.id, by: checkerOf(f), pass: false, notes: `Off-brand: the colours don’t follow ${brand}, which isn’t in the ${label(f)}’s context`, evidence: ['evidence/screen.png'], proof: shot(sc.screen, 'offbrand') })
+      at(end + 0.5, {
+        type: 'ask', id: BRAND_ASK, farmer: f, task: task.id, reason: 'anomaly', confidence: 'high',
+        basis: `${brand} isn’t in my context, so I guessed the colours.`,
+        question: `${task.name} failed its check: it’s off-brand, because I can’t see the brand guide.`,
+        impact: `Add ${brand} to my context and I’ll redo the colours. About 2 minutes and ${cents(fix$)}.`,
+        suggested: BRAND_FIX, alternatives: [BRAND_LOOK],
+      })
+      at(end + 1.4, { type: 'answer', id: BRAND_ASK, choice: choose(BRAND_ASK, BRAND_FIX), by: 'human' })
+      at(end + 1.6, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `Read ${brand} and redid the colours` })
+      usage(end + 1.61, f, task.id, fix$, 'retry')
+      end += 2.6
+    }
 
     if (task === failing) {
       // Goes wrong: the checker catches it.

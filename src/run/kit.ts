@@ -93,6 +93,16 @@ export const RULES: { id: string; label: string }[] = [
   { id: 'install', label: 'May add dependencies' },
 ]
 
+// What a path in a farmer's context is, in a few words, when it's a doc rather than code.
+export function contextName(path: string): string | undefined {
+  if (/brand/i.test(path)) return 'Brand guide'
+  if (/docs\/help/i.test(path)) return 'Help docs'
+  if (/eval\//i.test(path)) return 'Eval questions'
+  if (/pricing\.md$/i.test(path)) return 'Pricing doc'
+  if (/schema\.sql$/i.test(path)) return 'Database schema'
+  return undefined
+}
+
 // A rough token size for a file or folder in its context, so the cost of reading it shows.
 export function contextTokens(path: string) {
   let h = 0
@@ -123,7 +133,8 @@ export function applyEdit(f: FarmerSetup, e?: KitEdit): FarmerSetup {
     ...f,
     model: e.model ?? f.model,
     agent: e.agent ?? f.agent,
-    context: [...f.context.filter((c) => !e.contextOff.includes(c)), ...e.contextAdd],
+    // A rebuilt run's farmers already carry your additions, so each path is listed once.
+    context: [...new Set([...f.context.filter((c) => !e.contextOff.includes(c)), ...e.contextAdd])],
     limits: e.limits ?? f.limits,
   }
 }
