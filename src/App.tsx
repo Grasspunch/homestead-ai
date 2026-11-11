@@ -35,12 +35,23 @@ import type { Ask, FarmerId, RunState } from './run/types'
 import { FARMER_ORDER } from './run/types'
 import { MODELS, MODEL_GROUPS, applyEdit } from './run/kit'
 
+// Is Esc meant for the field you're in? A select, or a text field with something typed in it, keeps what you
+// typed rather than closing the panel around it.
+function typingIn(el: Element | null) {
+  if (!el) return false
+  if (el instanceof HTMLSelectElement) return true
+  if (el instanceof HTMLTextAreaElement) return el.value !== ''
+  if (el instanceof HTMLInputElement) return !/^(checkbox|radio|button|submit|reset|range|color|file|image)$/.test(el.type) && el.value !== ''
+  return el instanceof HTMLElement && el.isContentEditable && (el.textContent ?? '') !== ''
+}
+
 export function App() {
   const st = useStore()
   useEffect(() => {
     if (!st.projects.length) st.loadSample()
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // Esc closes one thing at a time: a menu that took it, or a field with something typed in it, keeps the panel open.
+      if (e.key === 'Escape' && !e.defaultPrevented && !typingIn(document.activeElement)) {
         if (store.settingsOpen) {
           store.settingsOpen = false
           store.notify()
@@ -159,7 +170,9 @@ function Farm() {
   // A rollback is a moment of its own until the next release goes out, or until you carry on.
   const lastDeploy = s.deploy[s.deploy.length - 1]
   const rolled = lastDeploy?.stage === 'rollback' && !st.seen.has(`${p.id}:${lastDeploy.t}`) ? lastDeploy : null
-  const d = st.drawer
+  // A panel for a task the plan no longer has shows nothing, so it doesn't hold the farm aside either.
+  const open = st.drawer
+  const d = open?.kind === 'task' && !s.tasks.some((t) => t.id === open.id) ? null : open
   const sel = d?.kind === 'task' ? { kind: 'task' as const, id: d.id } : d?.kind === 'farmer' ? { kind: 'farmer' as const, id: d.id } : null
   const side = !!d && d.kind !== 'chat' && d.kind !== 'farmer' && d.kind !== 'ask' && d.kind !== 'summary' ? true : d?.kind === 'summary'
   return (
@@ -181,6 +194,7 @@ function Farm() {
       />
       <Top p={p} s={s} />
       <InboxYields win={st.settingsOpen ? 'settings' : st.pending?.pid === p.id ? 'change' : ask ? `ask:${ask.id}` : rolled ? `rollback:${rolled.t}` : trust ? 'trust' : null} />
+      <PrYields ask={ask && !isShipAsk(ask) ? ask.id : null} open={d?.kind === 'summary'} />
       {d?.kind === 'task' && <TaskPanel p={p} s={s} id={d.id} />}
       {d?.kind === 'farmer' && <FarmerPage p={p} s={s} id={d.id} />}
       {d?.kind === 'inbox' && <InboxPanel s={s} />}
@@ -221,6 +235,22 @@ function InboxYields({ win }: { win: string | null }) {
     if (win && win !== last.current && store.drawer?.kind === 'inbox') store.setDrawer(null)
     last.current = win
   }, [win])
+  return null
+}
+
+// The pull request covers the ask window, so a new question closes it: the run waits on you, and you see why.
+// The merge question stays, since the pull request answers it itself. One that comes as you open the pull request
+// (the next step after a rollback, say) leaves it open for you to read: its header says the run waits on you.
+function PrYields({ ask, open }: { ask: string | null; open: boolean }) {
+  const last = useRef(ask)
+  const openedAt = useRef(0)
+  useEffect(() => {
+    if (open) openedAt.current = Date.now()
+  }, [open])
+  useEffect(() => {
+    if (ask && ask !== last.current && store.drawer?.kind === 'summary' && Date.now() - openedAt.current > 2000) store.setDrawer(null)
+    last.current = ask
+  }, [ask])
   return null
 }
 
@@ -591,7 +621,8 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
         <button
           className="btn tan"
           onClick={() => {
-            store.seen.add(`${p.id}:${t}`)
+            // As Carry on does, the run goes on: the pull request is a look, not a pause.
+            done()
             store.setDrawer({ kind: 'summary' })
           }}
         >

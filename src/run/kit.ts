@@ -145,6 +145,16 @@ export function applyEdit(f: FarmerSetup, e?: KitEdit): FarmerSetup {
   }
 }
 
+// Switch a path in a farmer's context on or off, whichever list it was in. On: a path the plan gave it is simply
+// not switched off any more, and one you added is added once. Off: a plan path is switched off, and one you added
+// leaves the list. Adding a path that is switched off is the same as switching it back on.
+export function turnPath(e: KitEdit, path: string, on: boolean, plan: string[]) {
+  e.contextOff = e.contextOff.filter((x) => x !== path)
+  e.contextAdd = e.contextAdd.filter((x) => x !== path)
+  if (on && !plan.includes(path)) e.contextAdd = [...e.contextAdd, path]
+  if (!on && plan.includes(path)) e.contextOff = [...e.contextOff, path]
+}
+
 // The brand guide in a farmer's context, or the one the project has.
 export const brandIn = (paths: string[]) => paths.find((c) => contextName(c) === 'Brand guide')
 

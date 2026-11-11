@@ -69,6 +69,7 @@ export interface Project {
   area?: string
   spendLimit?: number
   lesson?: Lesson // what the last run that ran over taught the Planner: the next run plans that task in two
+  taskEdits?: Record<string, Partial<Pick<PlanTask, 'doneWhen' | 'gate' | 'farmer'>>> // your edits to the plan's tasks, by task id: kept when a crew change re-plans
 }
 
 export interface ReshapeOn {
@@ -1428,9 +1429,24 @@ class Store {
     this.notify()
   }
 
-  setPlan(id: string, name: string, farmers: FarmerSetup[], tasks: PlanTask[], estimate: Estimate, singleAgentEstimate?: Estimate) {
+  // keepEdits: a re-plan for a crew change. Your edits to a task carry over to the same task in the new plan;
+  // a task you gave to a farmer who has left goes where the Planner puts it.
+  setPlan(id: string, name: string, farmers: FarmerSetup[], tasks: PlanTask[], estimate: Estimate, singleAgentEstimate?: Estimate, keepEdits = false) {
     const p = this.project(id)
     if (!p) return
+    if (!keepEdits) p.taskEdits = undefined
+    else if (p.taskEdits) {
+      const edits = p.taskEdits
+      const crew = new Set(farmers.map((f) => f.id))
+      tasks = tasks.map((t) => {
+        const e = edits[t.id]
+        if (!e) return t
+        return { ...t, ...(e.doneWhen !== undefined ? { doneWhen: e.doneWhen } : {}), ...(e.gate !== undefined ? { gate: e.gate } : {}), ...(e.farmer && crew.has(e.farmer) ? { farmer: e.farmer } : {}) }
+      })
+    }
+    // A task panel open on a task the new plan doesn't have closes, so it doesn't hold the farm aside.
+    const d = this.drawer
+    if (this.project()?.id === id && d?.kind === 'task' && !tasks.some((t) => t.id === d.id)) this.drawer = null
     p.name = this.uniqueName(name, id)
     p.planning = false
     p.error = undefined
@@ -1470,7 +1486,18 @@ class Store {
     const plan = p.events.find((e) => e.type === 'plan')
     if (!plan || plan.type !== 'plan') return
     const farmers = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer')
+    const was = new Map(plan.tasks.map((t) => [t.id, { ...t }]))
     fn(plan.tasks, farmers)
+    // Remember what you changed on each task, so a crew change that re-plans keeps it.
+    for (const t of plan.tasks) {
+      const w = was.get(t.id)
+      if (!w) continue
+      const e = { ...p.taskEdits?.[t.id] }
+      if (t.doneWhen !== w.doneWhen) e.doneWhen = t.doneWhen
+      if (t.gate !== w.gate) e.gate = t.gate
+      if (t.farmer !== w.farmer) e.farmer = t.farmer
+      if (Object.keys(e).length) p.taskEdits = { ...p.taskEdits, [t.id]: e }
+    }
     this.notify()
   }
 
@@ -1479,13 +1506,10 @@ class Store {
     if (!p) return
     p.level = level
     p.autonomy = autonomy
-    // On a farm mid-run, the new setting replays the run from the start. A finished run stays as it was;
-    // the setting applies to the next run.
-    if (p.approved && !this.isDone(p)) {
-      this.startRun(p)
-      return
-    }
+    // Before the run starts it is the plan's setting. Once a run has started, it keeps the setting it started
+    // with and your answers stay: the change applies from the next run, as it does when you say it to the Planner.
     this.notify()
+    this.persist()
   }
 
   // The brand guide the Designer couldn't see, added to its context.

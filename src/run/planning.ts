@@ -19,7 +19,8 @@ export async function planInto(p: Project, crewSize?: number | FarmerId[], chang
     // Live mode, and the live call failed: a live plan for this goal from earlier beats a simulated one.
     const earlier = !r.live && getLiveMode() && plain ? recordedPlan(p.goal) : undefined
     const data = earlier?.plan ?? r.data
-    store.setPlan(p.id, data.name, data.farmers, data.tasks, data.estimate, data.singleAgentEstimate)
+    // A crew change keeps your edits to the tasks the new plan still has.
+    store.setPlan(p.id, data.name, data.farmers, data.tasks, data.estimate, data.singleAgentEstimate, Array.isArray(crewSize) && !change)
     p.liveNote = r.error
     p.plannedLive = r.live || !!earlier
     p.liveSource = earlier ? earlier.source : r.source
