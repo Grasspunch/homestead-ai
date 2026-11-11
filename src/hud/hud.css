@@ -279,7 +279,14 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 .dlg.dock .crew-row .why { grid-column: 1 / -1; border-top: 0; min-height: 0; display: block; white-space: normal; line-height: 1.35; padding: 0 0 0 20px; margin-bottom: 8px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .dlg.dock .plan-foot { flex-wrap: nowrap; gap: 10px; }
 .dlg.dock .plan-foot .plan-setting > span:first-child { display: none; }
-@media (max-height: 800px) { .dlg.dock .crew-row .why { -webkit-line-clamp: 1; margin-bottom: 6px; } }
+/* Short screens: every agent and the Approve row fit without scrolling. */
+@media (max-height: 800px) {
+  .dlg.dock { gap: 8px; }
+  .dlg.dock .crew-head span { padding-bottom: 2px; }
+  .dlg.dock .crew-row .why { -webkit-line-clamp: 1; margin-bottom: 2px; }
+  .dlg.dock .crew-row > :not(.why) { min-height: var(--field-h); }
+  .dlg.dock .crew-row > select, .dlg.dock .crew-row > .limit-field { margin: 2px 0; }
+}
 .dlg.dock .plan-foot .approve { margin-left: auto; }
 .vs .vs-note { margin: 0 0 8px; font-size: var(--t-meta); color: var(--bark-3); }
 .top .top-pr { padding: 0 6px; font-size: var(--px-sm); }
