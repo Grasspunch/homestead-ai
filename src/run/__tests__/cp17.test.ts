@@ -100,6 +100,8 @@ describe('checkpoint 17: free text', () => {
 
 describe('checkpoint 17: every run is its own', () => {
   it('a second run of the sample shows its rollback again', () => {
+    // Under jsdom, earlier tests save projects to localStorage; start from the sample itself.
+    if (typeof localStorage !== 'undefined') localStorage.clear()
     store.loadSample()
     const p = store.projects.find((x) => x.kind === 'sample')!
     store.open(p.id)
