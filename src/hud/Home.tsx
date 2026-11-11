@@ -1,6 +1,7 @@
 // Your projects: every project drawn as a little farm, and the Planner asking what to build next.
 import { useEffect, useRef, useState } from 'react'
 import { planInto } from '../run/planning'
+import { AGENT_DASH_GOAL } from '../run/simPlan'
 import { draw, hasFrame } from '../map/atlas'
 import { TINT } from '../run/crew'
 import { pendingAsk, reduce } from '../run/reduce'
@@ -18,8 +19,9 @@ function fitScale(W: number, H: number, farms: number) {
   const rows = Math.ceil(slots / 3)
   return [3, 2.5, 2, 1.5].find((s) => (2 + cols * 9) * PX * s <= W - 16 && (1.5 + rows * 7) * PX * s <= H - 230) ?? 1.5
 }
-// Starters that need no context: each matches one of the scripted runs (support, checkout, dashboard).
-const EXAMPLES = ['A chatbot that answers questions from a shop’s help pages', 'Card checkout for an online shop', 'A dashboard of new sign-ups each week']
+// Starters that need no context: each matches one of the scripted runs (the agent dashboard demo, support, checkout,
+// metrics dashboard).
+const EXAMPLES = [AGENT_DASH_GOAL, 'A chatbot that answers questions from a shop’s help pages', 'Card checkout for an online shop', 'A dashboard of new sign-ups each week']
 
 interface Mini {
   p: Project

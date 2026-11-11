@@ -37,6 +37,7 @@ const RING: Record<Screen, { x: number; y: number; w: number; h: number }> = {
   chat: { x: 0.068, y: 0.599, w: 0.864, h: 0.3125 },
   app: { x: 0.029, y: 0.845, w: 0.943, h: 0.117 },
   dash: { x: 0.057, y: 0.466, w: 0.336, h: 0.335 },
+  agents: { x: 0.011, y: 0.71, w: 0.978, h: 0.262 },
 }
 
 export function Screens({ shots, chat, screen, note, thumb = false }: { shots: Shot[]; chat: boolean; screen?: Screen; note?: string; thumb?: boolean }) {

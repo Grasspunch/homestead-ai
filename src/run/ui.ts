@@ -2,7 +2,7 @@
 // move ("put the inbox on the left"), resize ("make the plot labels bigger"), rename ("call the inbox Questions")
 // and recolour ("make the spend counter green"). Each part has the words people use for it and what it allows.
 
-export type UiId = 'pr' | 'inbox' | 'spend' | 'skip' | 'play' | 'settings' | 'home' | 'sampleTag' | 'chips' | 'progress' | 'proofPops' | 'bubbles' | 'plotLabels' | 'chickens'
+export type UiId = 'pr' | 'inbox' | 'spend' | 'agents' | 'skip' | 'play' | 'settings' | 'home' | 'sampleTag' | 'chips' | 'progress' | 'proofPops' | 'bubbles' | 'plotLabels' | 'chickens'
 
 // What a part allows. Hide covers bringing it back.
 export type UiCan = 'hide' | 'move' | 'size' | 'label' | 'color'
@@ -26,6 +26,8 @@ export const UI_PARTS: UiPart[] = [
   { id: 'pr', name: 'pull request button', words: /\b(pull request|pr) (button|link|tab)\b|\bpull request\b(?= (at|in|on) the top)|\bpr button\b/, loose: /\b(pull request|pr)\b/, instead: 'The chest on the farm still opens the pull request', can: BAR_CAN, text: 'Pull request', sizes: [-2, 2] },
   { id: 'inbox', name: 'inbox button', words: /\b(inbox|mail|mailbox|envelope|letters?)\b/, instead: 'The mailbox on the farm still opens it, and asks still pop up', can: BAR_CAN, text: 'Inbox', sizes: [-2, 2] },
   { id: 'spend', name: 'spend counter', words: /\b(spend|spent|cost|costs|coin|coins|money|dollars?|price|usage) ?(counter|button|badge|total|meter)?\b/, instead: 'The coins on the farm still open your spend', can: BAR_CAN, text: 'Spend', sizes: [-2, 2] },
+  // Not on the bar as it ships: the demo run's release puts it in the spend counter's place (see App's Top).
+  { id: 'agents', name: 'agents button', words: /\bagents? (dashboard|button|board|panel)\b/, instead: 'Each agent’s page is still a click on its farmer', can: ['hide', 'size', 'label', 'color'], text: 'Agents', sizes: [-2, 2] },
   { id: 'skip', name: 'skip button', words: /\bskip (button|icon|ahead button|forward)\b|\bfast ?forward\b/, can: BAR_CAN, text: 'Skip', sizes: [-2, 2] },
   { id: 'play', name: 'play button', words: /\b(play|pause|play ?pause) (button|icon)\b/, loose: /\b(play|pause)\b/, stays: 'The play button stays, so you can always pause the run.', can: ['move', 'size', 'color'], sizes: [-2, 2] },
   { id: 'settings', name: 'settings button', words: /\b(settings?|gear|cog) ?(button|icon)?\b/, stays: 'The settings button stays, so Your flow is always one click away.', can: ['move', 'size', 'label', 'color'], text: 'Settings', sizes: [-2, 2] },

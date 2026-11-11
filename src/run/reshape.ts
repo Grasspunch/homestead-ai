@@ -426,7 +426,7 @@ export function reshapeSchema(ctx: Ctx) {
 }
 
 // A part of the screen in a word or two, for a chip's title.
-const uiShort = (id: UiId) => ({ pr: 'PR button', inbox: 'inbox', spend: 'spend', skip: 'skip', play: 'play', settings: 'settings', home: 'home button', sampleTag: 'tag', chips: 'chips', progress: 'task count', proofPops: 'pop-ups', bubbles: 'bubbles', plotLabels: 'labels', chickens: 'chickens' })[id]
+const uiShort = (id: UiId) => ({ pr: 'PR button', inbox: 'inbox', spend: 'spend', agents: 'agents', skip: 'skip', play: 'play', settings: 'settings', home: 'home button', sampleTag: 'tag', chips: 'chips', progress: 'task count', proofPops: 'pop-ups', bubbles: 'bubbles', plotLabels: 'labels', chickens: 'chickens' })[id]
 function uiTitle(c: UiChange) {
   const s = uiShort(c.el)
   switch (c.kind) {

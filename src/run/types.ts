@@ -46,8 +46,8 @@ export interface TestResult {
   error?: string
 }
 export type Shot = { device: 'phone' | 'desktop'; state: 'ok' | 'overlap' | 'alt' }
-// Which captured screen a screenshot shows: the support widget, a checkout form, or a metrics board.
-export type Screen = 'chat' | 'app' | 'dash'
+// Which captured screen a screenshot shows: the support widget, a checkout form, a metrics board, or the agent dashboard.
+export type Screen = 'chat' | 'app' | 'dash' | 'agents'
 export interface Proof {
   kind: 'unit' | 'integration' | 'screens' | 'rollout'
   tests?: TestResult[]

@@ -8,6 +8,7 @@ import { Home } from './hud/Home'
 import { Ico, LimitField, Mark, Portrait, Sign, Swatch, mins, usd, type IconName } from './hud/bits'
 import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
+import { AgentsButton, AgentsPanel, agentsLive } from './hud/Agents'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
 import { discuss, getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode } from './run/agent'
 import type { Scope } from './run/reshape'
@@ -109,6 +110,7 @@ function Farm() {
       {d?.kind === 'farmer' && <FarmerPage p={p} s={s} id={d.id} />}
       {d?.kind === 'inbox' && <InboxPanel s={s} />}
       {d?.kind === 'usage' && <UsagePanel s={s} />}
+      {d?.kind === 'agents' && <AgentsPanel s={s} />}
       {d?.kind === 'summary' && <HarvestPanel s={s} p={p} />}
       {d?.kind === 'control' && <ControlPanel p={p} />}
       {!p.approved ? (
@@ -200,6 +202,8 @@ function Top({ p, s }: { p: Project; s: RunState }) {
         <b>{usd(s.usage.usd)}</b>
       </button>
     )
+    // What the demo run built: once its release reaches you, the agent dashboard takes the spend counter's place.
+    if (agentsLive(p, s)) parts.agents = <AgentsButton key="agents" p={p} s={s} className={cls('agents')} label={look.label.agents} onClick={() => store.setDrawer({ kind: 'agents' })} />
     parts.play = (
       <button key="play" className={cls('play')} disabled={!!s.done} onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
         <Ico name={st.playing ? 'pause' : 'play'} size={ico('play')} />
@@ -214,9 +218,10 @@ function Top({ p, s }: { p: Project; s: RunState }) {
     )
   }
   const shown = (id: UiId) => (look.hidden.includes(id) ? null : parts[id] ?? null)
-  const at = look.order.indexOf('title')
-  const leftSide = look.order.slice(0, at) as UiId[]
-  const rightSide = look.order.slice(at + 1) as UiId[]
+  const order = parts.agents ? look.order.map((x) => (x === 'spend' ? 'agents' : x)) : look.order
+  const at = order.indexOf('title')
+  const leftSide = order.slice(0, at) as UiId[]
+  const rightSide = order.slice(at + 1) as UiId[]
   // Run again has its own place, never the one Play or skip was in, so a fast click can't restart the run:
   // just left of Pull request, or first on the right when that isn't there.
   const prRight = rightSide.includes('pr') && !!shown('pr')

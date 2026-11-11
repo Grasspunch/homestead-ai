@@ -22,6 +22,7 @@ export type Drawer =
   | { kind: 'ask'; id: string }
   | { kind: 'inbox' }
   | { kind: 'usage' }
+  | { kind: 'agents' }
   | { kind: 'summary' }
   | { kind: 'chat' }
   | { kind: 'control' }
