@@ -45,7 +45,7 @@ function unit(task: PlanTask, failing = false): Proof {
     `${n}: survives a restart`,
     `${n}: rejects a malformed request`,
     `${n}: logs no customer data`,
-    `${n}: matches the done-when`,
+    `${n}: meets the task’s goal`,
     `${n}: stays under 300 ms`,
     `${n}: handles unicode`,
   ]
@@ -76,7 +76,7 @@ function steps(task: PlanTask, farmer: FarmerId): string[] {
     case 'designer':
       return ['Sketched the screen states', 'Wrote the copy', `Built the screens for ${n}`, 'Took screenshots of the built screens']
     case 'tester':
-      return ['Started the app with test data', 'Ran every done-when check', 'Ran the full test suite']
+      return ['Started the app with test data', 'Checked every task’s goal', 'Ran the full test suite']
     case 'deployer':
       return ['Built the release', 'Ran the smoke tests']
     case 'planner':
@@ -430,7 +430,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         if (c === d.builder.option) side = d.builder
         if (isOwnWay(c)) own = ownText(c)
       } else {
-        at(end + 0.8, { type: 'auto_fix', task: task.id, what: `The Designer and Builder disagreed on ${d.topic}. The ${label(lead)} picked the Designer's way, since it fits the done-when.` })
+        at(end + 0.8, { type: 'auto_fix', task: task.id, what: `The Designer and Builder disagreed on ${d.topic}. The ${label(lead)} picked the Designer's way, since it fits the task’s goal.` })
       }
       if (own) {
         // Your way: the Designer builds it at a retry cost, a farmer other than its author checks it, and it's its
