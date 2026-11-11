@@ -1,6 +1,7 @@
 {
   "goals": [
     "Build an AI support assistant that answers customer questions from a shop’s help pages, and hands off to a person when it is not sure",
+    "Replace the cost button with an agent dashboard that shows each agent on the farm and what it’s working on",
     "A chatbot that answers questions from a shop’s help pages",
     "Card checkout for an online shop",
     "A dashboard of new sign-ups each week"

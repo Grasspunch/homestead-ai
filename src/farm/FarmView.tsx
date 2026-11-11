@@ -428,6 +428,25 @@ export function FarmView(p: FarmViewProps) {
     const h = hit(toTile(e))
     hover.current = h
     if (wrap.current) wrap.current.style.cursor = h ? 'url(/cursor-paw-point.png) 6 2, pointer' : ''
+    nameTip(h, e)
+  }
+  // A farmer's name by the cursor while you hover it, and what it's on. Moved by hand, so hovering never re-renders the farm.
+  const tip = useRef<HTMLSpanElement>(null)
+  const nameTip = (h: string | null, e?: React.PointerEvent) => {
+    const el = tip.current
+    const f = h?.startsWith('f:') ? p.state.farmers[h.slice(2) as FarmerId] : undefined
+    if (!el) return
+    if (!f || !e || !wrap.current) {
+      el.hidden = true
+      return
+    }
+    const r = wrap.current.getBoundingClientRect()
+    const task = f.state !== 'done' && f.state !== 'idle' ? p.state.tasks.find((t) => t.id === f.task) : undefined
+    ;(el.children[0] as HTMLElement).textContent = f.label
+    ;(el.children[1] as HTMLElement).textContent = task ? `on ${task.name}` : ''
+    el.style.left = `${e.clientX - r.left + 14}px`
+    el.style.top = `${e.clientY - r.top + 18}px`
+    el.hidden = false
   }
   const onClick = (e: React.PointerEvent) => {
     const d = drag.current
@@ -444,8 +463,12 @@ export function FarmView(p: FarmViewProps) {
 
   const T = PX * cam.s
   return (
-    <div ref={wrap} className="map-layer" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onClick} onPointerLeave={() => (hover.current = null)} style={{ touchAction: 'none' }}>
+    <div ref={wrap} className="map-layer" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onClick} onPointerLeave={() => ((hover.current = null), nameTip(null))} style={{ touchAction: 'none' }}>
       <canvas ref={canvas} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} aria-label="The farm" role="img" />
+      <span ref={tip} className="farmer-tip paper" hidden aria-hidden>
+        <b />
+        <span />
+      </span>
       <div ref={labels} className="plot-labels">
       {!p.planning &&
         !p.hide?.proofPops &&

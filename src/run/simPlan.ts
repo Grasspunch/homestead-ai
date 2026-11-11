@@ -23,6 +23,9 @@ export interface Script {
   needs?: ContextNeed[]
   dispute: { topic: string; failNote: string; impact: string; designer: Side; builder: Side }
   rollout: { peak: number; bug: string; cause: string; fix: string; check: string; file: string; tests: string[] }
+  // A part of this app the run really changes once its release reaches you: 'agents' swaps the cost button
+  // for the agent dashboard.
+  ships?: 'agents'
 }
 
 export interface ContextNeed {
@@ -113,6 +116,22 @@ const GENERIC: Script = {
   rollout: { peak: 0.029, bug: 'the timeout under load', cause: 'requests time out under load after 10 s', fix: 'Added a timeout fallback and paged the slow query', check: 'Every request answers in under 1 s under load', file: 'tests/load.test.ts', tests: ['a busy minute answers in under 1 s', 'a timeout falls back cleanly', 'paging returns every row once', 'a restart keeps the data', 'an empty list shows a clear message'] },
 }
 
+// The demo run: swap the top bar's cost button for a dashboard of every agent on the farm. What the crew builds
+// is real: once the release reaches you, the coins in the top bar become the Agents button (see App's Top).
+const AGENT_DASH: Script = {
+  screen: 'agents',
+  ships: 'agents',
+  refactor: { what: 'move every agent’s run state into one selector that the farm and the dashboard both read', line: 'Moved agent state into one shared selector' },
+  dispute: {
+    topic: 'how the dashboard fits beside the farm',
+    failNote: 'The agent cards cover the ask window',
+    impact: 'You get either a side panel with one row per agent and the farm in view, or cards over the farm with more detail and less farm.',
+    designer: { position: 'Open it as a side panel, one row per agent', why: 'Five agent cards across the bottom cover the ask window, which is the one thing that must never be hidden. A 360 px side panel fits every agent in a row each: what it is on, its last step and its spend, with the farm still in view. The cost is less room for each agent’s detail, one click away on its page.', option: 'Side panel, one row each', tool: 'Moved the agents into a side panel, one row each', check: 'Every agent shows its task, last step and spend, and nothing covers the ask window', shot: 'ok' },
+    builder: { position: 'Keep the cards, and float them above the ask', why: 'Cards show more of each agent at once, and people asked to see the agents on the farm. Raising them 120 px clears the ask window, and it is a one-line change with nothing new to test.', option: 'Float the cards higher', tool: 'Raised the agent cards above the ask window', check: 'The agent cards sit above the ask window, and nothing covers it', shot: 'alt' },
+  },
+  rollout: { peak: 0.026, bug: 'the busy-farm slowdown', cause: 'the dashboard asks every agent for its status each second, and on farms with many agents the calls pile up and time out', fix: 'Pushed each agent’s status when it changes instead of asking every second, and drew only the rows in view', check: 'A farm of 40 busy agents updates the dashboard in under 200 ms', file: 'tests/dashboard/busy-farm.test.ts', tests: ['40 busy agents update in under 200 ms', 'a status change shows within a second', 'a paused agent says what it is waiting on', 'a stopped agent stays listed, marked stopped', 'the farm keeps 60 fps with the dashboard open'] },
+}
+
 // A small change gives the Builder src/ alone, so nothing the generic feature needs applies.
 const SMALL: Script = { ...GENERIC, quiet: true, direct: true, needs: undefined }
 
@@ -132,6 +151,12 @@ export function isSmallChange(goal: string): boolean {
   if (ONE_LINER.test(g)) return true
   return SMALL_VERB.test(g) && (/^(please |can you |could you )?(rename|reword|retitle|recolou?r)\b/.test(g) || SMALL_THING.test(g) || QUOTED.test(goal))
 }
+
+// The demo goal: a dashboard of the agents themselves, in place of the cost button. Never a metrics dashboard
+// and never a small change, however it is worded.
+export const AGENT_DASH_GOAL = 'Replace the cost button with an agent dashboard that shows each agent on the farm and what it’s working on'
+export const isAgentDashboard = (goal: string) =>
+  /\b(agents?|farmers?|crew|workers?)\b.{0,40}\b(dashboard|board|overview|status (panel|view)|panel)\b|\b(dashboard|board|overview)\b.{0,40}\b(each|every|all( the)?|of the) (agents?|farmers?|crew)\b/i.test(goal)
 
 // Whether the goal touches what people see, so a Designer has real work.
 const UI = /\b(screens?|pages?|ui|ux|layout|design|buttons?|forms?|modals?|dialogs?|menus?|nav\w*|sidebar|widget|onboarding|dark mode|theme|mobile|responsive|landing|homepage|dashboard|look|style|css|copy|flows?)\b/
@@ -162,6 +187,28 @@ function draft(goal: string): Draft {
   const g = goal.toLowerCase()
   const short = goal.replace(/[.!?]+$/, '').split(/\s+/).slice(0, 4).join(' ')
   const title = short.charAt(0).toUpperCase() + short.slice(1)
+  // The demo run comes first: "replace the cost button" reads like a small change, and "dashboard" like metrics.
+  if (isAgentDashboard(goal))
+    return {
+      name: 'Agent dashboard',
+      tasks: [
+        { id: 'agent-status', name: 'Track each agent', farmer: 'builder', doneWhen: 'Each agent’s task, last step and spend update as the run plays', mins: 11, usd: 0.8 },
+        { id: 'swap-button', name: 'Swap the cost button', farmer: 'builder', doneWhen: 'The top-bar button opens the dashboard, and the coins on the farm still open your spend', mins: 7, usd: 0.5, after: ['agent-status'] },
+        { id: 'live-rows', name: 'Keep it live', farmer: 'builder', doneWhen: 'The dashboard follows the run without slowing the farm', mins: 8, usd: 0.6, after: ['swap-button'] },
+        { id: 'dash-design', name: 'Design the dashboard', farmer: 'designer', doneWhen: 'Every agent’s task, last step and spend read at a glance, and nothing covers the ask window', mins: 12, usd: 0.8 },
+        { ...SHIP, doneWhen: 'Live for 10% with errors under 2%, then for everyone' },
+      ],
+      script: AGENT_DASH,
+      matched: true,
+      context: { builder: ['src/hud/', 'src/run/store.ts'], designer: ['src/hud/', 'docs/brand.md'], tester: ['tests/hud/'] },
+      why: {
+        planner: 'Keeps the dashboard and the top-bar swap in step, and passes your notes on.',
+        builder: 'Tracks what each agent is doing, swaps the cost button for the dashboard and keeps it live.',
+        designer: 'The dashboard sits beside the farm, so it designs rows that read at a glance without covering it. It works from the brand guide.',
+        tester: 'Runs a farm with agents busy, paused and stopped, so the dashboard never shows a wrong status.',
+        deployer: 'Ships to 10% first, so if the dashboard slows the farm it rolls back on its own.',
+      },
+    }
   // Small first: "Fix the typo on the checkout page" is a typo, not a checkout.
   if (isSmallChange(goal))
     return {

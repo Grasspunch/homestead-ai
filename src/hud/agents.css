@@ -1,0 +1,54 @@
+/* The agent dashboard and its top-bar button. Tokens and type from hud.css; nothing new. */
+
+/* top bar: the crew's faces, the word, and how many are busy */
+.top .top-agents { padding: 0 10px 0 6px; gap: 8px; animation: agents-arrive 520ms steps(4) both, agents-glow 1.2s steps(3) 600ms 3; }
+.top .top-agents .top-name { font-family: px7; font-size: 20px; line-height: 1; }
+.top .top-agents.named .top-name { display: inline; }
+.agent-faces { display: inline-flex; }
+.agent-face { width: 28px; height: 28px; border-radius: 4px; background: var(--paper); border: 2px solid #fff6e4; display: grid; place-items: center; overflow: hidden; margin-left: -8px; }
+.agent-face:first-child { margin-left: 0; }
+.agent-face canvas { image-rendering: pixelated; }
+.agent-face.idle, .agent-face.done { filter: saturate(.5); opacity: .8; }
+.agent-count { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--leaf); color: #fff6e4; font: 700 13px/22px var(--ui); text-align: center; }
+.agent-count.needs { background: var(--berry); }
+@keyframes agents-glow { 0%, 100% { filter: none; } 50% { filter: drop-shadow(0 0 6px #f6d36a) drop-shadow(0 0 2px #f6d36a); } }
+@keyframes agents-arrive { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .top .top-agents { animation: none; } }
+
+/* the panel: one row per agent */
+.agent-rows { display: flex; flex-direction: column; }
+.agent-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 4px; border-top: 1px solid rgba(106, 74, 52, .16); text-align: left; font-size: var(--t-body); line-height: 1.35; }
+.agent-row:first-child { border-top: 0; }
+.agent-row:hover { background: rgba(255, 246, 228, .5); }
+.agent-row:hover b { text-decoration: underline; text-underline-offset: 3px; }
+.agent-portrait { position: relative; flex: none; width: 52px; height: 52px; border-radius: 6px; background: var(--paper); display: grid; place-items: center; overflow: hidden; }
+.agent-portrait canvas { image-rendering: pixelated; }
+.agent-portrait .live-dot { position: absolute; right: 3px; top: 3px; }
+.agent-row.idle .agent-portrait, .agent-row.done .agent-portrait { filter: saturate(.55); }
+.agent-row.needs .agent-portrait { box-shadow: inset 0 0 0 2px var(--berry); }
+.agent-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.agent-head { display: flex; align-items: center; gap: 8px; }
+.agent-head b { font-weight: 700; }
+.agent-head .grow { flex: 1; }
+.agent-head .money { font-weight: 700; font-variant-numeric: tabular-nums; }
+.agent-head .money.over { color: var(--berry); }
+.agent-model, .agent-meta { font-size: var(--t-meta); color: var(--bark-3); }
+.agent-task { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+.agent-task-name { font-weight: 600; }
+.agent-line { color: var(--bark-2); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.agent-row.needs .agent-line { color: var(--bark); }
+.agent-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: var(--t-body); background: var(--paper); border-radius: 6px; padding: 8px 10px; font-variant-numeric: tabular-nums; }
+
+/* A note never covers an open side panel: it centres in the space left of the panel instead. */
+.stage:has(.side) .toast { left: calc((100% - 468px) / 2); max-width: calc(100% - 496px); }
+@media (max-width: 900px) { .stage:has(.side) .toast { left: 50%; max-width: none; } }
+
+/* A farmer's name by the cursor on the farm, and the crew's names on the Agents button's faces. */
+.farmer-tip { position: absolute; z-index: 8; pointer-events: none; display: flex; flex-direction: column; padding: 4px 10px; font-size: var(--t-meta); line-height: 1.3; white-space: nowrap; color: var(--bark); }
+.farmer-tip[hidden] { display: none; }
+.farmer-tip b { font-family: px7; font-weight: 400; font-size: 18px; line-height: 1.1; }
+.farmer-tip span:empty { display: none; }
+.agent-face { position: relative; overflow: visible; }
+.agent-face canvas { border-radius: 2px; }
+.agent-face .face-name { position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%); padding: 3px 8px; font: 400 15px/1.1 px7; color: var(--bark); white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 120ms steps(2); z-index: 20; }
+.agent-face:hover .face-name { opacity: 1; }
