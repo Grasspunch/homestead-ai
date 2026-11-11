@@ -1,18 +1,20 @@
 // App state: which screen, the live plan being edited, and the replay of a recorded run.
 import { useSyncExternalStore } from 'react'
 import { duration, pendingAsk, reduce } from './reduce'
-import { SEND_BACK, fitLimits, simulateRun } from './simulate'
+import { BRAND_ASK, BRAND_FIX, LIMIT_RAISED, SEND_BACK, fitLimits, simulateRun, type SimInput } from './simulate'
 import { liveStage, rollBack } from './rollback'
-import { simulatePlan } from './simPlan'
+import { scenario, simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
+import { lessonFrom, lessonLine, type Lesson } from './learn'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
 import { OWN, confirmOwn, isOwnWay, ownText, ownWayOf, type TalkLine } from './discuss'
 import { applyEdit, emptyEdit, type KitEdit } from './kit'
 import { key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope, type Suggestion } from './reshape'
 import { isUi, propOf, uiLookOf, type UiId, type UiLook } from './ui'
+import { AREAS, MATES, areaFor, mateEvents, snapAt } from './team'
 
-export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from our help docs, and hands off to a person when it is not sure'
+export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from a shop’s help pages, and hands off to a person when it is not sure'
 
 export type Screen = { kind: 'home' } | { kind: 'farm'; project: string }
 export type Drawer =
@@ -40,6 +42,7 @@ export interface Project {
   liveNote?: string // why a live call fell back to the simulation
   plannedLive?: boolean // the plan came from the real Planner, not the simulation
   liveSource?: string // who answered it: Lovable AI, or your own Anthropic or OpenAI key
+  plannedEarlier?: string // the live call failed, so this is a live plan for the same goal from this date (ISO)
   sendBacks?: Record<string, { task: string; note: string }> // work you sent back from the pull request review, by ask
   rollbacks?: number[] // run times you rolled a live release back
   everSentBack?: boolean // a send back on this farm, ever: the trust offer never follows one
@@ -52,10 +55,15 @@ export interface Project {
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   talks?: Record<string, (TalkLine | { from: 'you'; text: string })[]> // talking a disagreement through, by ask id
-  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean }
+  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; brandAt?: number } // seq: which run of this farm, from 1
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
+  // The team view: the area a project belongs to, and its spend limit, which starts as the area's budget.
+  area?: string
+  spendLimit?: number
+  owner?: string // a teammate's simulated project you opened from the team view
+  lesson?: Lesson // what the last run that ran over taught the Planner: the next run plans that task in two
 }
 
 export interface ReshapeOn {
@@ -92,7 +100,7 @@ export interface Forecast {
 // - An amount that isn't one of the options ("raise it to $100") is never rounded to one: you're told and asked again.
 // - Otherwise naming an option's own words wins, then a plain yes takes the suggestion.
 const CONTRACTED = /\b(dont|dnt|didnt|doesnt|dosnt|dosent|doesent|shant|shouldnt|wouldnt|couldnt|cant|cannot|isnt|arent|wasnt|werent|wont|havent|hasnt|hadnt|mustnt|neednt|aint)\b/
-const NEGATION = /\b(no|nah|nope|not|never|stop|wait|hold|later|cancel|halt|leave it|rather not|avoid|avoiding|reject|refuse|against|bad idea|terrible idea|skip|skipping|drop|forget|decline|veto|scrap|nix|ditch|pass on)\b/
+const NEGATION = /\b(no|nah|nope|not|never|stop|wait|hold|later|cancel|halt|leave it|rather not|avoid|avoiding|reject|refuse|against|bad idea|terrible idea|skip|skipping|drop|forget|decline|veto|scrap|nix|ditch|pass on|overrule|overruled|overrules|is wrong|are wrong)\b/
 // Short replies that start like a question but answer: "do it", "can do", "is fine".
 const AFFIRM = /^\s*(do it|do that|do so|can do|will do|is fine|is ok|is okay|are fine)\b/i
 const QUESTION =/\?|^\s*(should|shall|do|does|did|can|could|would|will|is|are|what|how|why|when|which)\b(?![´`’‘ʼ′']t\b)|\b(what|how|why|explain|can you|could you)\b/i
@@ -203,6 +211,8 @@ interface Saved {
   screen?: Screen
   paused?: boolean
   flow?: FlowItem[] // changes for every farm, which new farms start with
+  budgets?: Record<string, number> // each area's budget per project
+  homeView?: 'mine' | 'team'
 }
 
 // Saved farms as they were written, or null when anything in them can't be read.
@@ -229,7 +239,8 @@ function valid(d: unknown): Saved | null {
   const sc = x.screen as Screen | undefined
   const screen = sc && (sc.kind === 'home' || (sc.kind === 'farm' && typeof sc.project === 'string')) ? sc : undefined
   const flow = Array.isArray(x.flow) ? (x.flow as FlowItem[]).filter((f) => !!f && typeof f.id === 'string' && typeof f.label === 'string' && !!f.change && typeof f.change.kind === 'string') : []
-  return { v: 1, projects: x.projects as Project[], kit: o(x.kit), kitAt: o(x.kitAt), chat: o(x.chat), crewNotes: o(x.crewNotes), crewSize: o(x.crewSize), seen, screen, paused: x.paused === true, flow }
+  const budgets = Object.fromEntries(Object.entries(o(x.budgets)).filter(([, v]) => typeof v === 'number' && v > 0)) as Record<string, number>
+  return { v: 1, projects: x.projects as Project[], kit: o(x.kit), kitAt: o(x.kitAt), chat: o(x.chat), crewNotes: o(x.crewNotes), crewSize: o(x.crewSize), seen, screen, paused: x.paused === true, flow, budgets, homeView: x.homeView === 'team' ? 'team' : 'mine' }
 }
 
 class Store {
@@ -244,6 +255,8 @@ class Store {
   chat: Record<string, ChatLine[]> = {}
   settingsOpen = false
   flow: FlowItem[] = [] // Your flow: changes for every farm
+  budgets: Record<string, number> = Object.fromEntries(AREAS.map((a) => [a.id, a.budget])) // each area's budget per project
+  homeView: 'mine' | 'team' = 'mine'
   fresh: { id: string; until: number } | null = null // a change just applied: its chip shows Undo until then
   static FRESH_MS = 8000
   notifications = false
@@ -286,7 +299,7 @@ class Store {
         const p = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission
         if (p === 'granted') {
           this.notifications = true
-          new Notification('Desktop notifications are on', { body: 'You’ll get one when a farmer needs you and this tab is in the background.', icon: '/apple-touch-icon.png' })
+          new Notification('Desktop notifications are on', { body: 'You’ll get one when an agent needs you and this tab is in the background.', icon: '/apple-touch-icon.png' })
         } else this.say('Your browser blocks notifications for this site. Allow them in the site settings, then try again.')
       }
     }
@@ -299,7 +312,7 @@ class Store {
     const ask = p.events.find((e) => e.type === 'ask' && e.id === askId)
     if (!ask || ask.type !== 'ask') return
     const who = p.events.find((e) => e.type === 'farmer' && e.id === ask.farmer)
-    const n = new Notification(`${who && who.type === 'farmer' ? who.label : 'A farmer'} needs you on ${p.name}`, { body: ask.question, tag: askId, icon: '/apple-touch-icon.png' })
+    const n = new Notification(`${who && who.type === 'farmer' ? who.label : 'An agent'} needs you on ${p.name}`, { body: ask.question, tag: askId, icon: '/apple-touch-icon.png' })
     n.onclick = () => {
       window.focus()
       this.open(p.id)
@@ -363,6 +376,8 @@ class Store {
         screen: this.screen,
         paused: this.screen.kind === 'farm' && !this.playing,
         flow: this.flow,
+        budgets: this.budgets,
+        homeView: this.homeView,
       }
       localStorage.setItem(Store.KEY, JSON.stringify(data))
     } catch {
@@ -427,6 +442,8 @@ class Store {
     this.crewSize = d.crewSize
     this.seen = new Set(d.seen)
     this.flow = d.flow ?? []
+    this.budgets = { ...this.budgets, ...d.budgets }
+    this.homeView = d.homeView ?? 'mine'
     this.sampleLoading = false
     const screen = d.screen
     if (screen?.kind === 'farm' && this.projects.some((p) => p.id === screen.project)) {
@@ -517,8 +534,10 @@ class Store {
     for (const k of [...this.seen]) if (k.startsWith(`${p.id}:`)) this.seen.delete(k)
     // Changes you asked for last for the farm: from the start of this run, with nothing earlier to undo to.
     p.reshapes = (p.reshapes ?? []).map((r) => ({ ...r, at: 0, before: undefined }))
-    p.run = { bugFixed: this.nextBugFixed(p), kit: structuredClone(this.kit[p.id] ?? {}), autonomy: { ...p.autonomy }, forecast: this.forecast(p) ?? undefined }
+    p.run = { bugFixed: this.nextBugFixed(p), kit: structuredClone(this.kit[p.id] ?? {}), autonomy: { ...p.autonomy }, forecast: this.forecast(p) ?? undefined, seq: (p.run?.seq ?? 0) + 1, lesson: p.lesson }
     this.rebuild(p)
+    // What it learned from the last run, said as the run starts, with this run's forecast against that run.
+    if (p.lesson) this.chatTo(p.id, { from: 'planner', text: lessonLine(p.lesson, p.events) })
     if (this.project()?.id === p.id) this.play()
     this.notify()
   }
@@ -630,6 +649,8 @@ class Store {
   answer(askId: string, choice: string) {
     this.viewerAnswers = { ...this.viewerAnswers, [askId]: choice }
     const p = this.project()
+    // Adding the brand guide is a change to the Designer's context, the same as adding it on its page.
+    if (p && askId === BRAND_ASK && choice === BRAND_FIX) this.addBrand(p)
     // A different answer from the one in the log: the run forks from here.
     const rec = p?.events.find((e) => e.type === 'answer' && e.id === askId)
     if (p && rec && rec.type === 'answer' && rec.choice !== choice) this.rebuild(p)
@@ -703,7 +724,7 @@ class Store {
   }
 
   // The simulation's input for this farm's plan, with the given farmers' changes, rules and answers.
-  private inputFor(p: Project, kit: Partial<Record<FarmerId, KitEdit>>, autonomy: Autonomy, answers: Record<string, string>, sendBacks: Project['sendBacks'], bugFixed: boolean, modelFrom: Partial<Record<FarmerId, number>> = {}) {
+  private inputFor(p: Project, kit: Partial<Record<FarmerId, KitEdit>>, autonomy: Autonomy, answers: Record<string, string>, sendBacks: Project['sendBacks'], bugFixed: boolean, modelFrom: Partial<Record<FarmerId, number>> = {}, lesson?: Lesson) {
     const plan = p.events.find((e) => e.type === 'plan')
     if (!plan || plan.type !== 'plan') return null
     const planned = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => f)
@@ -712,7 +733,7 @@ class Store {
     const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.plannedModel ?? f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
     const basis = plan.basis ?? plan.estimate
-    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []) } }
+    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []), presplit: lesson ? [lesson.task] : undefined } }
   }
 
   // What the plan will cost and take, by simulating it on its default path with your current farmers and rules,
@@ -721,9 +742,9 @@ class Store {
   forecast(p: Project): Forecast | null {
     const kit = this.kit[p.id] ?? {}
     const bugFixed = this.nextBugFixed(p)
-    const built = this.inputFor(p, kit, p.autonomy, {}, {}, bugFixed)
+    const built = this.inputFor(p, kit, p.autonomy, {}, {}, bugFixed, {}, p.lesson)
     if (!built) return null
-    const key = JSON.stringify([p.id, built.input.farmers, built.input.tasks, p.autonomy, bugFixed, built.input.basis, built.input.reshape])
+    const key = JSON.stringify([p.id, built.input.farmers, built.input.tasks, p.autonomy, bugFixed, built.input.basis, built.input.reshape, p.lesson])
     const hit = this.forecasts.get(key)
     if (hit) return hit
     const events = simulateRun(built.input)
@@ -740,8 +761,9 @@ class Store {
     const kit = run.kit
     const answers = p.answers ?? {}
     // Steps a farmer took before you changed its model were paid at the old rate.
-    const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed, this.kitAt[p.id] ?? {})
+    const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed, this.kitAt[p.id] ?? {}, run.lesson)
     if (!built) return
+    if (run.brandAt !== undefined) (built.input as SimInput).brandAt = run.brandAt
     // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
     const t0 = p.clock ?? 0
     if (t0 > 0) {
@@ -764,7 +786,7 @@ class Store {
         }
         // A raise the lead made by itself.
         if (e.type === 'auto_fix') {
-          const m = /^The (\w+) reached its .* raised it to \$(\d+)/.exec(e.what)
+          const m = /^The (\w+) reached its .* raised it to \$(\d+)/.exec(e.what) ?? LIMIT_RAISED.exec(e.what)
           const f = m ? built.farmers.find((x) => x.label === m[1]) : undefined
           if (f && m) past.limit[f.id] = Number(m[2])
         }
@@ -878,6 +900,9 @@ class Store {
     if (!s?.done) return
     p.run.counted = true
     p.runs = (p.runs ?? 0) + 1
+    // A task that ran over is planned in two from the start next time.
+    const lesson = lessonFrom(p.events, p.runs)
+    if (lesson) p.lesson = lesson
     const rolled = s.deploy.some((d) => d.stage === 'rollback')
     const clean = !rolled && !s.asks.some((a) => a.answer?.choice === SEND_BACK) && !s.tasks.some((t) => t.stopped)
     p.cleanRuns = clean ? (p.cleanRuns ?? 0) + 1 : 0
@@ -1011,8 +1036,8 @@ class Store {
     const screenOnly = rows.every((x) => isUi(x.change))
     if (!done && p.approved && !screenOnly) this.rebuild(p)
     const n = rows.length
-    const flowNote = every.length ? (every.length === n ? ' It’s in your flow for every new farm.' : ` ${every.length} of them ${every.length === 1 ? 'is' : 'are'} in your flow for every new farm.`) : ''
-    if (screenOnly) this.chatTo(p.id, { from: 'planner', text: `Done: ${rows.map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join(', ')}${every.length ? ', on every farm' : ' on this farm'}. Ask me to put it back any time.` })
+    const flowNote = every.length ? (every.length === n ? ' It’s in your flow for every new project.' : ` ${every.length} of them ${every.length === 1 ? 'is' : 'are'} in your flow for every new project.`) : ''
+    if (screenOnly) this.chatTo(p.id, { from: 'planner', text: `Done: ${rows.map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join(', ')}${every.length ? ', on every project' : ' on this project'}. Ask me to put it back any time.` })
     else this.chatTo(p.id, { from: 'planner', text: (done ? `${r.title} is on from the next run: ${n} change${n === 1 ? '' : 's'}.` : `${r.title} is on: ${n} change${n === 1 ? '' : 's'}, from now.`) + flowNote })
     // No toast: it would cover the plots. The new chip carries Undo for a few seconds instead.
     this.fresh = { id: r.id, until: Date.now() + Store.FRESH_MS }
@@ -1048,7 +1073,7 @@ class Store {
       this.setSpeed(p.events)
     } else if (p.approved && !this.isDone(p)) this.rebuild(p)
     if (this.fresh?.id === id) this.fresh = null
-    this.chatTo(p.id, { from: 'planner', text: `${r.title} is off. The farm runs as it did before.` })
+    this.chatTo(p.id, { from: 'planner', text: `${r.title} is off. This project runs as it did before.` })
     this.notify()
     this.persist()
   }
@@ -1099,7 +1124,9 @@ class Store {
     // Two farms made in the same millisecond still get their own ids.
     let id = `own-${Date.now().toString(36)}`
     while (this.project(id)) id += 'x'
-    const p: Project = { id, name: 'New project', goal, kind: 'own', events: [{ t: 0, type: 'goal', text: goal }], approved: false, planning: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters } }
+    // It belongs to an area, and starts with that area's budget as its spend limit.
+    const area = areaFor(goal)
+    const p: Project = { id, name: 'New project', goal, kind: 'own', events: [{ t: 0, type: 'goal', text: goal }], approved: false, planning: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters }, area, spendLimit: this.budgets[area] }
     // A new farm starts with Your flow.
     const flow = this.flow.filter((f) => f.on)
     if (flow.length)
@@ -1108,6 +1135,37 @@ class Store {
     this.projects = [...this.projects, p]
     this.open(id)
     return p
+  }
+
+  // An area's budget per project. Projects still on the old budget follow it; one given its own limit keeps it.
+  setBudget(area: string, usd: number) {
+    const was = this.budgets[area]
+    if (!(usd > 0) || usd === was) return
+    this.budgets = { ...this.budgets, [area]: usd }
+    for (const p of this.projects) if ((p.area ?? areaFor(p.goal)) === area && (p.spendLimit === undefined || p.spendLimit === was)) p.spendLimit = usd
+    this.notify()
+  }
+
+  setHomeView(v: 'mine' | 'team') {
+    this.homeView = v
+    this.notify()
+  }
+
+  // Open a teammate's simulated project where it stands: at the moment the team view points to.
+  openTeam(id: string) {
+    const m = MATES.find((x) => x.id === id)
+    if (!m) return this.open(id)
+    let p = this.project(id)
+    if (!p) {
+      const events = structuredClone(mateEvents(m))
+      p = { id, name: m.name, goal: m.goal, kind: 'sample', owner: m.owner, area: m.area, spendLimit: this.budgets[m.area], events, approved: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters } }
+      this.projects = [...this.projects, p]
+      this.startRun(p)
+      const snap = snapAt(p.events, m.at)
+      p.clock = snap.t
+      p.answers = snap.answers
+    }
+    this.open(id)
   }
 
   setPlan(id: string, name: string, farmers: FarmerSetup[], tasks: PlanTask[], estimate: Estimate, singleAgentEstimate?: Estimate) {
@@ -1169,10 +1227,29 @@ class Store {
     this.notify()
   }
 
+  // The brand guide the Designer couldn't see, added to its context.
+  private addBrand(p: Project) {
+    const b = scenario(p.goal).script.brand
+    // Added in answer to the ask, so never earlier than the ask: the check before it failed without the guide.
+    const ask = p.events.find((e) => e.type === 'ask' && e.id === BRAND_ASK)
+    if (p.run && ask) p.run.brandAt = Math.max(p.run.brandAt ?? 0, ask.t)
+    if (b) this.editKit(p.id, 'designer', (e) => {
+      e.contextOff = e.contextOff.filter((x) => x !== b)
+      if (!e.contextAdd.includes(b)) e.contextAdd = [...e.contextAdd, b]
+    })
+  }
+
   editKit(id: string, farmer: FarmerId, fn: (e: KitEdit) => void) {
     const k = (this.kit[id] ??= {})
     const e = (k[farmer] ??= emptyEdit())
+    const sees = (path?: string) => {
+      const base = this.project(id)?.events.find((x) => x.type === 'farmer' && x.id === farmer)
+      return !!path && !!base && base.type === 'farmer' && applyEdit(base, e).context.includes(path)
+    }
+    const brand = farmer === 'designer' ? scenario(this.project(id)?.goal ?? '').script.brand : undefined
+    const sawBrand = sees(brand)
     fn(e)
+    const brandAdded = !sawBrand && sees(brand)
     this.kit = { ...this.kit, [id]: { ...k } }
     // On a running farm the change applies from now: the run is simulated again with it, and what was already spent stays.
     // A finished run is left alone: the change applies to the next run.
@@ -1181,7 +1258,11 @@ class Store {
       const at = (this.kitAt[id] ??= {})
       at[farmer] ??= p.clock ?? 0
       p.run.kit = structuredClone(this.kit[id])
+      // From now on the Designer sees the brand guide; a check that failed without it stays failed in the past.
+      if (brandAdded) p.run.brandAt = Math.max(p.clock ?? 0, p.run.brandAt ?? 0)
       this.rebuild(p)
+      // Added on the Designer's page while it was asking for it: that's the answer.
+      if (brandAdded && !this.viewerAnswers[BRAND_ASK] && pendingAsk(p.events, p.clock ?? 0, this.viewerAnswers) === BRAND_ASK) this.answer(BRAND_ASK, BRAND_FIX)
     } else if (p?.approved && this.isDone(p)) this.say('Saved for the next run. This one is finished.')
     this.notify()
   }

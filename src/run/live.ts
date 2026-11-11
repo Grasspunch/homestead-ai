@@ -1,6 +1,6 @@
 // Browser client for the live agents at /api/agent (a server route on Lovable, or the Vite dev API locally).
-// There is no recorded fallback for 'plan': a recorded plan can't match an arbitrary goal,
-// so a failed call throws and the caller shows the error.
+// A failed call throws and the caller shows the error. For the demo goals only, a live plan kept from an earlier
+// call stands in (see recorded.ts): a recorded plan can't match an arbitrary goal.
 
 import type { AgentTask, PlanOut, ReshapeOut, RouteInput, RouteOut, Source } from '../agent/agents'
 import type { Ctx as ReshapeCtx } from './reshape'

@@ -11,7 +11,13 @@ import type { Estimate, FarmerId, FarmerSetup, PlanTask, Screen } from './types'
 export interface Side { position: string; why: string; option: string; tool: string; check: string; shot: 'ok' | 'alt' }
 export interface Script {
   screen: Screen
+  // A small change runs clean: no money ask, no failed check, no release bug. Those moments fit real features.
+  quiet?: boolean
+  // It ships straight to everyone once you merge, with no 10% stage: a line of copy doesn't need a canary.
+  direct?: boolean
   refactor: { what: string; line: string }
+  // A brand guide the plan leaves out of the Designer's context, so its screens come out off-brand until you add it.
+  brand?: string
   dispute: { topic: string; failNote: string; impact: string; designer: Side; builder: Side }
   rollout: { peak: number; bug: string; cause: string; fix: string; check: string; file: string; tests: string[] }
 }
@@ -24,16 +30,24 @@ interface Draft {
   why?: Partial<Record<FarmerId, string>>
   script: Script
   matched: boolean
+  // The crew this goal needs by default, when it isn't everyone with a task plus the Tester and Planner.
+  // Anyone left off can be added back in the crew picker; their tasks fall to the Builder until then.
+  crew?: FarmerId[]
+  // The Tester's own check, when a full end-to-end run is more than the goal needs.
+  check?: { name: string; doneWhen: string; mins: number; usd: number }
+  // What each handoff costs, in the same small units as the tasks. A small change hands off a line, not a summary.
+  handoff?: number
 }
 
 const SUPPORT: Script = {
   screen: 'chat',
+  brand: 'docs/brand.md',
   refactor: { what: 'move how answers are routed into one module', line: 'Moved answer routing into one module' },
   dispute: {
     topic: 'how the sources fit in the chat panel',
     failNote: 'The sources cover the reply box',
     impact: 'People get either a tidy panel with one click to see sources, or every source at once in smaller text.',
-    designer: { position: 'Fold the sources into one click-to-open chip', why: 'In the 380 px chat panel the three sources take 180 px and cover the reply box. A chip keeps the box clear, and the done-when asks for the sources without getting in the way. The cost is one extra click for people who want them.', option: 'Fold into a chip', tool: 'Folded the sources into a chip', check: 'The sources fold into a chip, and the reply box is clear', shot: 'ok' },
+    designer: { position: 'Fold the sources into one click-to-open chip', why: 'In the 380 px chat panel the three sources take 180 px and cover the reply box. A chip keeps the box clear, and the task’s goal asks for the sources without getting in the way. The cost is one extra click for people who want them.', option: 'Fold into a chip', tool: 'Folded the sources into a chip', check: 'The sources fold into a chip, and the reply box is clear', shot: 'ok' },
     builder: { position: 'List them under the answer in smaller text', why: 'Support answers are only trusted when the source is visible, and a chip hides it. Listing the sources at 12 px under the answer clears the reply box. It is a two-line change with no new component to test.', option: 'Smaller text', tool: 'Listed the sources under the answer at 12 px', check: 'Every source shows under the answer, and the reply box is clear', shot: 'alt' },
   },
   rollout: { peak: 0.031, bug: 'the timeout bug', cause: 'long questions time out after 10 s', fix: 'Shortened long questions before answering, added a timeout fallback', check: 'Long questions answer in under 4 s', file: 'tests/long-questions.test.ts', tests: ['a 2,000-word question answers in under 4 s', 'a timeout falls back to a person', 'short questions are unchanged', 'the fallback keeps the chat', 'no answer is cut mid-sentence'] },
@@ -78,6 +92,28 @@ const GENERIC: Script = {
   rollout: { peak: 0.029, bug: 'the timeout under load', cause: 'requests time out under load after 10 s', fix: 'Added a timeout fallback and paged the slow query', check: 'Every request answers in under 1 s under load', file: 'tests/load.test.ts', tests: ['a busy minute answers in under 1 s', 'a timeout falls back cleanly', 'paging returns every row once', 'a restart keeps the data', 'an empty list shows a clear message'] },
 }
 
+const SMALL: Script = { ...GENERIC, quiet: true, direct: true }
+
+// A small change: one line of copy, a label, a colour, a typo, a config value. It needs the Builder to make it and
+// run the existing tests, and you to look at the pull request. Not a Tester, a Designer, a Planner or a staged rollout. Short goals only, that say what to change
+// and name something small, or quote the new text.
+const SMALL_VERB = /^(please |can you |could you )?(change|update|fix|rename|replace|reword|edit|tweak|correct|swap|set|make|bump|remove|delete|recolou?r|capitali[sz]e|lowercase|uppercase)\b/
+const SMALL_THING = /\b(text|copy|wording|words?|typos?|spelling|labels?|titles?|headings?|headlines?|subtitles?|captions?|tooltips?|placeholders?|strings?|links?|urls?|colou?rs?|fonts?|icons?|emojis?|year|dates?|version|email address|phone number|footer|tagline|slogan|greeting|sentence|line|button text|error message|(red|orange|yellow|green|blue|purple|pink|black|white|grey|gray)\b)/
+const ONE_LINER = /\b(one[- ]?liner|one[- ]line|single[- ]line|tiny change|small change|quick fix)\b/
+const QUOTED = /["“‘'][^"”’']{1,60}["”’']/
+// Work that is never small, however short the goal.
+const NOT_SMALL = /\b(build|create|integrate|migrat\w*|database|schema|api|endpoint|auth\w*|log ?in|sign ?up flow|redesign|rewrite|refactor|new (page|feature|screen|flow|app)|pages|screens|every (page|screen)|everywhere|across the (app|site))\b/
+
+export function isSmallChange(goal: string): boolean {
+  const g = goal.trim().toLowerCase()
+  if (!g || g.split(/\s+/).length > 25 || NOT_SMALL.test(g)) return false
+  if (ONE_LINER.test(g)) return true
+  return SMALL_VERB.test(g) && (/^(please |can you |could you )?(rename|reword|retitle|recolou?r)\b/.test(g) || SMALL_THING.test(g) || QUOTED.test(goal))
+}
+
+// Whether the goal touches what people see, so a Designer has real work.
+const UI = /\b(screens?|pages?|ui|ux|layout|design|buttons?|forms?|modals?|dialogs?|menus?|nav\w*|sidebar|widget|onboarding|dark mode|theme|mobile|responsive|landing|homepage|dashboard|look|style|css|copy|flows?)\b/
+
 // Which template a goal runs, and whether it really matched one.
 export function scenario(goal: string): { script: Script; matched: boolean; name: string } {
   const d = draft(goal)
@@ -102,6 +138,30 @@ const SHIP = { id: 'ship', name: 'Ship to users', farmer: 'deployer' as FarmerId
 
 function draft(goal: string): Draft {
   const g = goal.toLowerCase()
+  const short = goal.replace(/[.!?]+$/, '').split(/\s+/).slice(0, 4).join(' ')
+  const title = short.charAt(0).toUpperCase() + short.slice(1)
+  // Small first: "Fix the typo on the checkout page" is a typo, not a checkout.
+  if (isSmallChange(goal))
+    return {
+      name: title,
+      tasks: [
+        { id: 'change', name: 'Make the change', farmer: 'builder', doneWhen: 'The change shows as asked, and the existing tests still pass', mins: 1, usd: 0.04 },
+        // The release is still the Deployer's when you add it back; until then the Builder ships, after you merge.
+        { ...SHIP, name: 'Ship it', doneWhen: 'Merged by you and live for everyone', mins: 0.7, usd: 0.02 },
+      ],
+      script: SMALL,
+      matched: false,
+      // The Builder alone. Your look at the pull request is the review; add a Tester if you want a second pair of eyes.
+      crew: ['builder'],
+      check: { name: 'Check the change', doneWhen: 'The change shows as asked, and the existing tests still pass', mins: 0.7, usd: 0.02 },
+      handoff: 0.02,
+      context: { builder: ['src/'], tester: ['tests/'] },
+      why: {
+        builder: 'Makes the change, runs the existing tests and ships it once you merge.',
+        tester: 'Looks at the change once, so the Builder never grades its own work.',
+        deployer: 'Ships it once you merge.',
+      },
+    }
   if (/\b(support|assistant|chat ?bots?|help ?desk|answers?)\b/.test(g))
     return {
       name: 'Support assistant',
@@ -114,7 +174,7 @@ function draft(goal: string): Draft {
       ],
       script: SUPPORT,
       matched: true,
-      context: { builder: ['src/', 'docs/help/', 'eval/questions.jsonl'], designer: ['src/widget/', 'docs/brand.md'], tester: ['tests/', 'eval/questions.jsonl'] },
+      context: { builder: ['src/', 'docs/help/', 'eval/questions.jsonl'], designer: ['src/widget/', 'docs/help/'], tester: ['tests/', 'eval/questions.jsonl'] },
       why: {
         planner: "Keeps the answers and the widget in step, and passes your notes on.",
         builder: "Indexes the help docs, answers from them and hands off when unsure.",
@@ -140,7 +200,7 @@ function draft(goal: string): Draft {
         planner: "Keeps prices, payments and screens reading from one plan config.",
         builder: "Prices, the checkout API and webhooks are one chain of money code.",
         designer: "Buyers leave at confusing errors, so it owns the checkout screens and their copy. It works from the brand guide.",
-        tester: "Runs test-card purchases and refunds against every done-when, so nobody is charged wrong.",
+        tester: "Runs test-card purchases and refunds against every task’s goal, so nobody is charged wrong.",
         deployer: "Payments can't be half broken, so 10% of buyers first, rolled back at the first failed payment.",
       },
     }
@@ -165,13 +225,13 @@ function draft(goal: string): Draft {
         deployer: "Ships to 10% first and rolls back if the API slows down or errors.",
       },
     }
-  const short = goal.replace(/[.!?]+$/, '').split(/\s+/).slice(0, 4).join(' ')
+  // Anything else: a feature. The Designer joins only when the goal touches what people see.
   return {
-    name: short.charAt(0).toUpperCase() + short.slice(1),
+    name: title,
     tasks: [
       { id: 'core', name: 'Build the core', farmer: 'builder', doneWhen: 'The main flow works end to end in a test', mins: 15, usd: 1.2 },
       { id: 'data', name: 'Store the data', farmer: 'builder', doneWhen: 'Data survives a restart, with a migration test', mins: 9, usd: 0.6, after: ['core'] },
-      { id: 'screens', name: 'Design the screens', farmer: 'designer', doneWhen: 'Every screen works, with nothing covering its main button', mins: 12, usd: 0.8 },
+      ...(UI.test(g) ? [{ id: 'screens', name: 'Design the screens', farmer: 'designer' as FarmerId, doneWhen: 'Every screen works, with nothing covering its main button', mins: 12, usd: 0.8 }] : []),
       SHIP,
     ],
     script: GENERIC,
@@ -186,16 +246,16 @@ const WHY: Record<FarmerId, string> = {
   planner: 'Splits the work, prices it and passes your messages on.',
   builder: 'Writes most of the code.',
   designer: 'Owns the screens and copy, from the brand guide.',
-  tester: 'Checks the others against each done-when, so nobody grades its own work.',
+  tester: 'Checks the others’ work against each task’s goal, so nobody grades its own work.',
   deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own.',
 }
 
-function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boolean): FarmerSetup {
+function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boolean, ships = false): FarmerSetup {
   const label = CREW[id].label
   const model = solo ? 'Claude Opus 5.5' : MODEL_OF[id]
   const base: Record<FarmerId, { context: string[]; constraints: string[] }> = {
     planner: { context: ['docs/', 'README.md'], constraints: ['Read only', 'May not deploy'] },
-    builder: { context: d.context.builder ?? ['src/'], constraints: solo ? ['Waits for you before shipping', 'No network calls to production'] : ['May not deploy', 'No network calls to production'] },
+    builder: { context: d.context.builder ?? ['src/'], constraints: solo || ships ? ['Waits for you before shipping', 'No network calls to production'] : ['May not deploy', 'No network calls to production'] },
     designer: { context: d.context.designer ?? ['src/ui/'], constraints: ['Changes only its own screens', 'May not deploy'] },
     tester: { context: d.context.tester ?? ['tests/'], constraints: ['May not change src/', 'Runs tests only'] },
     deployer: { context: ['deploy/', '.env.example'], constraints: ['Ships to 10% first', 'Rolls back if errors pass 2%'] },
@@ -214,20 +274,23 @@ function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boole
 
 export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): PlanOut {
   const d = draft(goal)
-  // Default crew: everyone with work, plus the Tester and Planner who check it.
-  const wanted = new Set<FarmerId>(['builder', 'tester', 'planner', ...d.tasks.map((t) => t.farmer)])
+  // Default crew, sized to the goal: everyone with work, plus the Tester and Planner who check it. A small change
+  // is the Builder and the Tester alone. You can add anyone back in the crew picker.
+  const wanted = new Set<FarmerId>(d.crew ?? ['builder', 'tester', 'planner', ...d.tasks.map((t) => t.farmer)])
   let crew = PRIORITY.filter((id) => wanted.has(id))
   if (Array.isArray(crewSize)) crew = PRIORITY.filter((id) => id === 'builder' || crewSize.includes(id))
   else if (crewSize !== undefined) crew = PRIORITY.slice(0, Math.max(1, Math.min(5, Math.round(crewSize))))
-  const solo = crew.length === 1
+  // One agent you chose is the general agent doing everything. The Builder alone on a small change is just the Builder.
+  const solo = crew.length === 1 && crewSize !== undefined
   const fallback = (f: FarmerId): FarmerId => (crew.includes(f) ? f : 'builder')
 
   // Drafts price each task in small units; scaled, this is what the task costs on Opus.
   const tasks = d.tasks.map((t) => ({ ...t, mins: t.mins * MIN_SCALE, usd: t.usd * USD_SCALE, farmer: fallback(t.farmer), gate: !!t.gate }))
-  // A Tester on the crew gets its own task: the end-to-end check before shipping.
+  // A Tester on the crew gets its own task before shipping: the end-to-end check, or a light one for a small change.
   if (crew.includes('tester')) {
     const i = tasks.findIndex((t) => t.gate)
-    tasks.splice(i < 0 ? tasks.length : i, 0, { id: 'e2e-check', name: 'Check it end to end', farmer: 'tester', doneWhen: 'Every done-when passes in one end-to-end run', gate: false, mins: 7 * MIN_SCALE, usd: 0.4 * USD_SCALE, after: tasks.filter((t) => !t.gate).map((t) => t.id) })
+    const c = d.check ?? { name: 'Check it end to end', doneWhen: 'Every task’s goal holds in one end-to-end run', mins: 7, usd: 0.4 }
+    tasks.splice(i < 0 ? tasks.length : i, 0, { id: 'e2e-check', name: c.name, farmer: 'tester', doneWhen: c.doneWhen, gate: false, mins: c.mins * MIN_SCALE, usd: c.usd * USD_SCALE, after: tasks.filter((t) => !t.gate).map((t) => t.id) })
   }
 
   // Crew time: the longest chain, since farmers work in parallel. One agent: everything in a row.
@@ -242,7 +305,7 @@ export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): Plan
   const sum = (k: 'mins' | 'usd') => tasks.reduce((s, t) => s + t[k], 0)
   // Task prices are in Opus terms; each farmer pays its own model's rate.
   const rate = (f: FarmerId) => (solo ? 1 : rateOf(MODEL_OF[f]))
-  const crewUsd = tasks.reduce((s, t) => s + t.usd * rate(t.farmer), 0) + HANDOFF * USD_SCALE * (crew.length - 1)
+  const crewUsd = tasks.reduce((s, t) => s + t.usd * rate(t.farmer), 0) + (d.handoff ?? HANDOFF) * USD_SCALE * (crew.length - 1)
   // The single agent does the work, not the checks: the end-to-end check is the Tester's, so it's left out.
   const work = tasks.filter((t) => t.id !== 'e2e-check')
   const workSum = (k: 'mins' | 'usd') => work.reduce((n, t) => n + t[k], 0)
@@ -253,7 +316,7 @@ export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): Plan
 
   const farmers = crew.map((id) => {
     const mine = tasks.filter((t) => t.farmer === id)
-    return setup(id, d, Math.max(5, mine.reduce((s, t) => s + t.usd * rate(t.farmer), 0) || 5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo)
+    return setup(id, d, Math.max(d.script.quiet ? 1 : 5, mine.reduce((s, t) => s + t.usd * rate(t.farmer), 0) || 5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo, id === 'builder' && !crew.includes('deployer'))
   })
   return {
     name: d.name,

@@ -4,14 +4,14 @@ import { CREW } from '../agent/agents'
 import { clip, store, type Project } from '../run/store'
 import type { Autonomy, AutonomyLevel, FarmerId, Moment, RunState, TaskState } from '../run/types'
 import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
-import { Ico, Mark, Portrait, Swatch, cents, mins, usd } from './bits'
+import { Ico, Mark, Portrait, Quiet, Swatch, cents, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 import { BY_YOU } from '../run/rollback'
 import { agentName } from '../run/kit'
 
 const STATUS: Record<TaskState['status'], string> = {
   waiting: 'Not started',
-  growing: 'Growing',
+  growing: 'In progress',
   checking: 'Being checked',
   wilted: 'Failed a check',
   ripe: 'Done and checked',
@@ -182,13 +182,13 @@ export function FarmerPanel({ s, id, p }: { s: RunState; id: FarmerId; p: Projec
   const agent = agentName(f.agent)
   const words = { idle: 'Waiting for its next task', working: f.lastTool ?? 'Working', stuck: 'Fixing a failed check', needs: 'Waiting for you', done: 'Finished' }[f.state]
   return (
-    <Panel label={`Farmer: ${f.label}`}>
+    <Panel label={`AI agent: ${f.label}`}>
       <div className="farmer-head">
         <div className="portrait sm">
           <Portrait farmer={id} size={72} />
         </div>
         <div>
-          <h3>Farmer</h3>
+          <h3>AI agent</h3>
           <h2>{f.label}</h2>
           <div className="meta">
             <span>{f.model} on {agent}</span>
@@ -270,39 +270,45 @@ export function InboxPanel({ s }: { s: RunState }) {
           ))}
         </div>
       )}
-      <div>
-        <h3>Fixed without you</h3>
-        <div className="list">
-          {fixed.map((x) => (
-            <button key={x.t} onClick={() => x.task && store.setDrawer({ kind: 'task', id: x.task })}>
-              <Ico name="check" size={16} tone="green" />
-              <span className="grow">
-                {x.what}
-                <span className="sub">{ago(s, x.t)}{supersededBy(s, x)}</span>
-              </span>
-            </button>
-          ))}
-          {!fixed.length && <div className="sub">Nothing yet.</div>}
+      {/* Empty sections stay out of the way: one quiet line when there is nothing at all. */}
+      {!open.length && !fixed.length && !decided.length && (
+        <Quiet icon="check" title="Nothing yet.">Questions, fixes and your decisions land here as the run goes.</Quiet>
+      )}
+      {fixed.length > 0 && (
+        <div>
+          <h3>Fixed without you</h3>
+          <div className="list">
+            {fixed.map((x) => (
+              <button key={x.t} onClick={() => x.task && store.setDrawer({ kind: 'task', id: x.task })}>
+                <Ico name="check" size={16} tone="green" />
+                <span className="grow">
+                  {x.what}
+                  <span className="sub">{ago(s, x.t)}{supersededBy(s, x)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      <div>
-        <h3>You decided</h3>
-        <div className="list">
-          {decided.map((a) => (
-            <button key={a.id} onClick={() => a.task && store.setDrawer({ kind: 'task', id: a.task })}>
-              <Swatch farmer={a.farmer} />
-              <span className="grow">
-                {a.answer!.choice}
-                <span className="sub">{store.project()?.notes?.[a.id] ? `In your words: “${clip(store.project()!.notes![a.id])}”. ` : ''}{a.question}</span>
-              </span>
-            </button>
-          ))}
-          {!decided.length && <div className="sub">Nothing yet.</div>}
+      )}
+      {decided.length > 0 && (
+        <div>
+          <h3>You decided</h3>
+          <div className="list">
+            {decided.map((a) => (
+              <button key={a.id} onClick={() => a.task && store.setDrawer({ kind: 'task', id: a.task })}>
+                <Swatch farmer={a.farmer} />
+                <span className="grow">
+                  {a.answer!.choice}
+                  <span className="sub">{store.project()?.notes?.[a.id] ? `In your words: “${clip(store.project()!.notes![a.id])}”. ` : ''}{a.question}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      <button className="btn tan sm" onClick={() => store.setDrawer({ kind: 'control' })}>
-        <Ico name="gear" size={20} />
-        How often the crew stops for you
+      )}
+      <button className="btn tan sm long inbox-control" onClick={() => store.setDrawer({ kind: 'control' })}>
+        <Ico name="gear" size={16} />
+        How often the agents check with you
       </button>
     </Panel>
   )
@@ -406,7 +412,7 @@ export function outcome(s: RunState): { line: string; value: string } | null {
   const cost = Math.abs(gap) < 0.5 ? 'cost the same' : gap > 0 ? `cost ${usd(gap)} less` : `cost ${usd(-gap)} more`
   const sooner = s.soloActual.minutes - s.done.minutes
   // The time rests on an assumption, so it says so: one agent's steps run about a third slower.
-  const time = sooner > 0 ? ` and take about ${mins(sooner)} longer, assuming it runs a third slower` : ''
+  const time = sooner > 0 ? ` and, assuming one agent runs a third slower, take ${mins(sooner)} longer` : ''
   const spent = s.checkUsd !== undefined ? `${usd(s.checkUsd)} of checks` : 'A separate checker'
   return {
     line: `${spent} caught ${checks} problem${checks === 1 ? '' : 's'} before merge. One agent has nobody to catch them.`,
@@ -427,7 +433,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
   const out = outcome(s)
   return (
     <div className="vs">
-      <h3>{done ? 'Crew vs one agent, this run' : 'Crew vs one agent, planned'}</h3>
+      <h3>{done ? 'This team vs one agent, this run' : 'This team vs one agent, planned'}</h3>
       <p className="vs-gap">
         {sooner > 0 ? (
           <>
@@ -441,10 +447,10 @@ export function CrewVsAlone({ s }: { s: RunState }) {
         {less > 0.5 ? <>, <b>{usd(less)}</b> less</> : less < -0.5 ? <>, <b>{usd(-less)}</b> more</> : null}
       </p>
       {out && <p className="vs-out">{out.line}</p>}
-      <p className="vs-note">One agent holds every file in context, so each step is about a third slower and 10% dearer.</p>
+      <p className="vs-note">Assuming one agent runs a third slower and 10% dearer, since it holds every file in context.</p>
       <div className="vs-grid" role="table">
         <span role="columnheader" />
-        <span role="columnheader">This crew</span>
+        <span role="columnheader">This team</span>
         <span role="columnheader">One Sonnet 5 agent</span>
         <span>Time</span>
         <b>{mins(crew.minutes)}</b>
@@ -495,7 +501,7 @@ export function UsagePanel({ s }: { s: RunState }) {
         )}
       </div>
       <div>
-        <h3>By farmer</h3>
+        <h3>By agent</h3>
         <div className="crew-spend">
           {ids.map((id) => {
             const f = s.farmers[id]!
@@ -513,7 +519,7 @@ export function UsagePanel({ s }: { s: RunState }) {
                   <span className="of">of {usd(f.limits.usd)}</span>
                 </button>
                 <span className="bar thin">
-                  <i style={{ width: `${(f.usd / max) * 100}%`, background: spike ? 'var(--honey)' : '#c9a27a' }} />
+                  <i style={{ width: `${(f.usd / max) * 100}%`, background: spike ? 'var(--honey)' : 'var(--edge)' }} />
                 </span>
                 {spike && <span className="returned"><b className="over">Over its limit by {usd(over)}</b></span>}
                 {fix && <ApplyFix fix={fix} />}
@@ -525,13 +531,13 @@ export function UsagePanel({ s }: { s: RunState }) {
       <div>
         <h3>On what</h3>
         <div className="bar tall">
-          <i style={{ width: `${(kinds.read.usd / total) * 100}%`, background: '#98c2dc' }} title="Reading" />
-          <i style={{ width: `${(kinds.write.usd / total) * 100}%`, background: '#a9cf86' }} title="Writing" />
+          <i style={{ width: `${(kinds.read.usd / total) * 100}%`, background: 'var(--k-read)' }} title="Reading" />
+          <i style={{ width: `${(kinds.write.usd / total) * 100}%`, background: 'var(--k-write)' }} title="Writing" />
           <i style={{ width: `${(kinds.retry.usd / total) * 100}%`, background: 'var(--honey)' }} title="Fixing" />
         </div>
         <div className="meta" style={{ marginTop: 6 }}>
-          <span className="chip"><span className="sw" style={{ background: '#98c2dc' }} />Reading {usd(kinds.read.usd)}</span>
-          <span className="chip"><span className="sw" style={{ background: '#a9cf86' }} />Writing {usd(kinds.write.usd)}</span>
+          <span className="chip"><span className="sw" style={{ background: 'var(--k-read)' }} />Reading {usd(kinds.read.usd)}</span>
+          <span className="chip"><span className="sw" style={{ background: 'var(--k-write)' }} />Writing {usd(kinds.write.usd)}</span>
           <span className="chip"><span className="sw" style={{ background: 'var(--honey)' }} />Fixing {usd(kinds.retry.usd)}</span>
         </div>
       </div>
@@ -541,8 +547,8 @@ export function UsagePanel({ s }: { s: RunState }) {
 
 export const MOMENTS: { key: Moment | 'rollback'; label: string; auto: string }[] = [
   { key: 'cost', label: 'A task goes over its limit', auto: 'The Planner splits or trims it' },
-  { key: 'disagree', label: 'Two farmers disagree', auto: 'The Planner picks, using the done-when' },
-  { key: 'failed', label: 'A check fails', auto: 'The farmer fixes it and checks again' },
+  { key: 'disagree', label: 'Two agents disagree', auto: 'The Planner picks whichever fits the task’s goal' },
+  { key: 'failed', label: 'A check fails', auto: 'The agent fixes it and checks again' },
   { key: 'big', label: 'A big change across many files', auto: 'Lands it as one commit, with every test run before and after' },
   { key: 'ship', label: 'Merging the pull request', auto: 'Merges when every check passes, then ships to 10% first' },
   { key: 'reship', label: 'Shipping again after a rollback', auto: 'Ships to 10% again once fixed' },
@@ -630,13 +636,13 @@ export function AskMe({ level, onPick, up = false }: { level: AutonomyLevel | 'c
         className="field-box select"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Ask me: ${current?.label ?? 'Custom'}`}
+        aria-label={`Check with me: ${current?.label ?? 'Custom'}`}
         onClick={() => (open ? setOpen(false) : show())}
       >
-        <span className="ask-label">Ask me:</span> <b>{current?.label ?? 'Custom'}</b>
+        <span className="ask-label">Check with me:</span> <b>{current?.label ?? 'Custom'}</b>
       </button>
       {open && (
-        <ul className="ask-menu paper" role="listbox" aria-label="How often the crew stops for you" aria-activedescendant={`ask-${LEVELS[at].key}`} tabIndex={-1}>
+        <ul className="ask-menu paper" role="listbox" aria-label="How often the agents check with you" aria-activedescendant={`ask-${LEVELS[at].key}`} tabIndex={-1}>
           {LEVELS.map((l, i) => (
             <li
               key={l.key}
@@ -667,10 +673,10 @@ export function setMoment(p: Project, k: Moment, v: 'ask' | 'auto') {
 export function ControlPanel({ p }: { p: Project }) {
   const set = (k: Moment, v: 'ask' | 'auto') => setMoment(p, k, v)
   return (
-    <Panel label="How often the crew stops for you">
+    <Panel label="How often the agents check with you">
       <div>
         <h3>Control</h3>
-        <h2>How often should the crew stop for you?</h2>
+        <h2>How often should the agents check with you?</h2>
       </div>
       <LevelPicker p={p} />
       <div className="moments">
@@ -683,7 +689,7 @@ export function ControlPanel({ p }: { p: Project }) {
                 {m.label}
                 <span className="sub">
                   {v === 'ask' ? 'Asks you first, with a suggested answer' : m.auto}
-                  {m.key === 'ship' && v === 'ask' ? `. Clean runs in a row: ${Math.min(3, p.cleanRuns ?? 0)} of 3${p.everSentBack ? '. Not offered: you sent work back on this farm' : store.kit[p.id]?.deployer?.rules.deploy === false ? '. Not offered while May deploy is off' : ''}` : ''}
+                  {m.key === 'ship' && v === 'ask' ? `. Clean runs in a row: ${Math.min(3, p.cleanRuns ?? 0)} of 3${p.everSentBack ? '. Not offered: you sent work back on this project' : store.kit[p.id]?.deployer?.rules.deploy === false ? '. Not offered while May deploy is off' : ''}` : ''}
                 </span>
               </span>
               <div className="seg" role="radiogroup" aria-label={m.label}>

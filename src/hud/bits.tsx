@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react'
 import { draw, frame, loadAtlas } from '../map/atlas'
 import { SWATCH, TINT } from '../run/crew'
-import type { FarmerId } from '../run/types'
+import type { AskReason, FarmerId } from '../run/types'
 
 // Icons from the Sprout Lands icon sheet (16 px cells). Names map to [column, row] in one colour set.
 const ICONS = {
@@ -87,6 +87,16 @@ export function Swatch({ farmer }: { farmer: FarmerId }) {
   return <span className="sw" style={{ background: t.body, boxShadow: `inset 0 0 0 2px ${t.shade}` }} aria-hidden />
 }
 
+// Why an agent stopped for you, in words someone new can read: "Designer needs you: two agents disagree".
+export const ASK_WHY: Record<AskReason, string> = {
+  anomaly: 'a check failed',
+  cost: 'going over budget',
+  big: 'a big change to approve',
+  irreversible: 'ready to reach real users',
+  risk: 'ship again?',
+  disagree: 'two agents disagree',
+}
+
 export const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`
 // A task's own cost, to the cent: the same number the ask about it used.
 export const cents = (n: number) => `$${n.toFixed(2)}`
@@ -129,3 +139,25 @@ export function Ticks({ used, total, n = 20 }: { used: number; total: number; n?
 
 // The pack's check and cross, for pass and fail.
 export const Mark = ({ pass }: { pass: boolean }) => <span className={`mark ${pass ? 'yes' : 'no'}`} aria-label={pass ? 'passed' : 'failed'} />
+
+// The one tag for anything not real: "Simulated sample", "Simulated run", "Simulated team", "Simulated", "Projection".
+// Same class and colour everywhere, so a simulated thing always looks the same.
+export const SimTag = ({ children = 'Simulated', title }: { children?: React.ReactNode; title?: string }) => (
+  <span className="tag sim" title={title}>
+    {children}
+  </span>
+)
+
+// A quiet state: nothing here yet, nothing stands out, a call that failed, a run you paused.
+// One line in body ink and at most one meta line under it, on the flat tint. Berry only for a failure.
+export function Quiet({ icon, tone, title, children }: { icon?: IconName; tone?: 'bad'; title: React.ReactNode; children?: React.ReactNode }) {
+  return (
+    <div className={`quiet${tone ? ` ${tone}` : ''}`} role={tone === 'bad' ? 'alert' : undefined}>
+      {icon && <Ico name={icon} />}
+      <span>
+        <b>{title}</b>
+        {children && <span className="quiet-sub">{children}</span>}
+      </span>
+    </div>
+  )
+}

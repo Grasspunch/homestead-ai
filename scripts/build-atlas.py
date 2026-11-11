@@ -64,10 +64,10 @@ def main():
     def tile(name, rel, cx, cy, size=16, pack=sp):
         return add(name, rel, cx * size, cy * size, size, size, pack)
 
-    # Characters: 48x48 frames, 8 per row; rows are down, up, left, right.
+    # Characters: 48x48 frames, 8 per row; rows are down, up, right, left (the third row faces right).
     char = 'Characters/Premium Charakter Spritesheet.png'
     anims = {'idle': 0, 'walk': 4, 'till': 12, 'chop': 16, 'water': 20}
-    dirs = ['down', 'up', 'left', 'right']
+    dirs = ['down', 'up', 'right', 'left']
     counts = {}
     for anim, row0 in anims.items():
         for di, d in enumerate(dirs):

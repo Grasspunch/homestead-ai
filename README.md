@@ -6,9 +6,17 @@ Homestead is a control room for a crew of coding agents, drawn as a farm. You gi
 
 An engineer or tech lead who hands a feature to several coding agents and stays responsible for what ships. Their job: get it merged and live without reading every diff, while catching the few moments that need judgment.
 
+## Why it matters, and why a pull request and Slack aren't enough
+
+Agent spend is easy to miss: each agent bills by the token, and nobody sees the total until the invoice. Agent work is also hard to undo once it has spread across files, merged and shipped. A pull request shows the finished diff and Slack carries the chatter, but neither gives each agent a budget, picks out the few runs that need a person (a cost spike, the same work done twice, two agents that disagree), or lets an agent earn more freedom as its runs come in clean. Homestead gives each agent a spend limit and each project a budget, stops you only at the moments that need a person, and offers to merge by itself after three clean runs.
+
+## For a lead: the team view
+
+Home has a Mine / Team switch. Team shows who runs how many agents on which project, each project's spend against its area's budget, and outliers only: a cost spike, two projects doing the same work, two agents that disagree, each with Open to jump to that moment. It shows spend and outliers, not what anyone is doing. Each area has a budget per project that you can edit; a new project starts with its area's budget as its spend limit, and projects still on the old budget follow a change. The teammates and their projects are simulated with the same engine as the sample and tagged "Simulated team".
+
 ## The problem
 
-One agent on a whole feature works in a row and grades its own work. Several agents are faster, but today that means watching terminals and guessing when to step in. In the support sample, "Index the help docs" has used $9.37 of its $10.80 at about half done and is heading for $30. Splitting it keeps that part at $10.80 and gives the hard cases their own $6.38, about $13 less, and the pull request shows those two numbers. To keep that promise, the simulation rescales the split's own steps after the fact so the first part ends exactly on its budget and the hard cases on their share; nothing else is rescaled. A separate checker then catches two problems before the merge: two tests crashing on empty input, and sources covering the reply box. One agent grading its own work has nobody to catch them. As a safety net, the release goes to 10% first: in the sample, and on a new farm's first run, a timeout bug gets that far and rolls back by itself once errors pass 2% (3.1% in the sample).
+One agent on a whole feature works in a row and grades its own work. Several agents are faster, but today that means watching terminals and guessing when to step in. In the support sample, "Index the help docs" has used $9.37 of its $10.80 at about half done and is heading for $30. Splitting it keeps that part at $10.80 and gives the hard cases their own $6.38, about $13 less, and the pull request shows those two numbers. To keep that promise, the simulation sizes the split's steps at the moment it splits: the steps left on the first part are priced to end on its budget, and the hard cases' steps on their share, check included. The numbers come from the run as it plays; nothing is rescaled afterwards. A separate checker then catches two problems before the merge: two tests crashing on empty input, and sources covering the reply box. One agent grading its own work has nobody to catch them. As a safety net, the release goes to 10% first: in the sample, and on a new farm's first run, a timeout bug gets that far and rolls back by itself once errors pass 2% (3.1% in the sample).
 
 ## Three interaction choices
 
@@ -29,6 +37,8 @@ Runs are simulated, and the top bar says so. A change mid-run (a model, a limit)
 A real crew takes hours and real money. The simulation is deterministic, priced from list prices per token. Three samples (support assistant, checkout, metrics dashboard) have their own scripts; every farm is tagged "Simulated" in the top bar, and the sample "Simulated sample".
 
 With Live mode on, every live call, Claude or OpenAI, goes through Lovable's AI gateway with the server's `LOVABLE_API_KEY`, paid with workspace credits, and Settings says "Live: Lovable AI (uses workspace credits)". Out of credits, a call falls back to your own `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for that model's maker, when set; otherwise, rate limited or a wrong model id, it is simulated, and the screen says which source answered ("Lovable AI", "your Anthropic key", "your OpenAI key" or "Simulated (out of credits)"). Locally `/api/agent` is served by the dev server; the Lovable mirror has its own route at `src/routes/api/agent.ts`.
+
+The live plan is the one real AI moment: the Planner reads your goal and proposes the crew, limits and done-whens in one call, and everything after it is simulated, which the plan and the title say. For the sample's goal and the starters on Home, a live plan is kept (in the browser, and in `src/run/recorded-plans.json` after `node scripts/record-plans.mjs <url of /api/agent>`), so if the live call fails on the day the farm shows that real plan, tagged "Planned live earlier" with its date, instead of a simulated one.
 
 ```
 npm install && npm run dev

@@ -5,20 +5,20 @@ import '../fonts'
 import './kit.css'
 import './hud.css'
 import './panel.css'
-import { Ico, LimitField, Mark, Portrait, Sign, Swatch, Ticks } from './bits'
+import { Ico, LimitField, Mark, Portrait, Quiet, Sign, SimTag, Swatch, Ticks } from './bits'
 import { AskMe } from './Side'
 import type { AutonomyLevel } from '../run/types'
 
 const PAGE = `
-body { overflow: auto !important; background: #8fc77a; }
+body { overflow: auto !important; background: var(--grass); }
 .kp { padding: 24px; display: flex; flex-direction: column; gap: 24px; max-width: 1040px; }
 .kp-sec { padding: 6px 10px 12px; display: flex; flex-direction: column; gap: 14px; }
-.kp-sec h2 { margin: 0; font: 400 24px/1 px7; color: var(--bark); }
+.kp-sec h2 { margin: 0; font: 400 var(--px-title)/1 px7; color: var(--bark); }
 .kp-note { margin: 0; font-size: var(--t-meta); color: var(--bark-3); max-width: 640px; line-height: 1.45; }
 .kp-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
 .kp-col { display: flex; flex-direction: column; gap: 8px; }
 .kp-cap { font-size: var(--t-meta); color: var(--bark-3); }
-.kp-stage { background: #8fc77a; padding: 32px; display: flex; gap: 40px; align-items: center; flex-wrap: wrap; }
+.kp-stage { background: var(--grass); padding: 32px; display: flex; gap: 40px; align-items: center; flex-wrap: wrap; }
 .kp-bub { width: 260px; padding: 6px 10px; font-size: var(--t-body); }
 .kp-ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .kp-ask { display: flex; gap: 14px; align-items: flex-start; }
@@ -26,6 +26,10 @@ body { overflow: auto !important; background: #8fc77a; }
 .kp-askbody p { margin: 0; font-size: var(--t-lead); }
 .kp-ctl input[type=range] { width: 200px; accent-color: var(--leaf); }
 .kp-top.top { position: static; pointer-events: auto; flex-wrap: wrap; }
+.kp-type { align-items: baseline; gap: 24px; color: var(--bark); }
+.kp-sw { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-meta); color: var(--bark-2); }
+.kp-sw i { width: 22px; height: 22px; box-shadow: inset 0 0 0 1px var(--rule); }
+.kp-done.dlg { position: static; transform: none; width: 100%; max-width: 860px; }
 `
 
 function Sec({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
@@ -46,6 +50,7 @@ export function Kit() {
   const [limit, setLimit] = useState(23)
   const [on, setOn] = useState(true)
   const [level, setLevel] = useState('matters')
+  const [budget, setBudget] = useState(60)
   useEffect(() => {
     // Tell an embedding page how tall this is, so it can size its frame.
     const post = () => window.parent?.postMessage({ kitHeight: document.documentElement.scrollHeight }, '*')
@@ -57,6 +62,45 @@ export function Kit() {
   return (
     <main className="kp">
       <style>{PAGE}</style>
+
+      <Sec title="Tokens" note="One set for type, colour and corners, defined once in hud.css. Reading text has three sizes; the pixel font has its own steps for tags, buttons, names and titles.">
+        <div className="kp-row kp-type">
+          <span style={{ fontSize: 'var(--t-meta)' }}>Meta 13</span>
+          <span style={{ fontSize: 'var(--t-body)' }}>Body 15</span>
+          <span style={{ fontSize: 'var(--t-lead)' }}>Lead 17</span>
+          <span className="px" style={{ fontSize: 'var(--t-big)' }}>34</span>
+          <span className="px" style={{ fontSize: 'var(--t-hero)' }}>40</span>
+        </div>
+        <div className="kp-row kp-type">
+          {(['tag', 'xs', 'sm', 'btn', 'name', 'title'] as const).map((k) => (
+            <span key={k} className={k === 'tag' ? 'px-s' : 'px'} style={{ fontSize: `var(--px-${k})` }}>
+              {k}
+            </span>
+          ))}
+        </div>
+        <div className="kp-row">
+          {['bark', 'bark-2', 'bark-3', 'bark-4', 'leaf', 'berry', 'sky', 'honey', 'honey-deep', 'cream', 'paper', 'field-ink'].map((c) => (
+            <span key={c} className="kp-sw">
+              <i style={{ background: `var(--${c})` }} />
+              {c}
+            </span>
+          ))}
+        </div>
+        <div className="kp-row">
+          {['rule', 'tint', 'track'].map((c) => (
+            <span key={c} className="kp-sw">
+              <i style={{ background: `var(--${c})` }} />
+              {c}
+            </span>
+          ))}
+          {['r-s', 'r', 'r-m'].map((r) => (
+            <span key={r} className="kp-sw">
+              <i style={{ background: 'var(--bark-4)', borderRadius: `var(--${r})` }} />
+              {r}
+            </span>
+          ))}
+        </div>
+      </Sec>
 
       <Sec title="Paper and bubbles" note="Paper is the one surface, with straight edges. A bubble is paper with a tail, and only when someone speaks: the tail points at the speaker. Panels, the inbox and cards have no speaker, so they have no tail.">
         <div className="kp-ctl">
@@ -180,6 +224,10 @@ export function Kit() {
           <span className="tag green">Done</span>
           <span className="tag sky">Live</span>
           <span className="tag red">Rolled back</span>
+          <span className="tag paused">
+            <i aria-hidden />
+            Paused
+          </span>
           <span className="urgency red">
             <Ico name="alert" tone="light" />
             Failed check
@@ -305,6 +353,112 @@ export function Kit() {
             Incident mode
             <button aria-label="Turn off Incident mode">×</button>
           </span>
+        </div>
+      </Sec>
+
+      <Sec title="Team view" note="Home's Team side: spend against each area's budget and the few projects worth a look, never what anyone is doing. Simulated data carries the Simulated team tag. An outlier row is its urgency tag, the project and whose it is, one line, and Open. The budget is a soft well; a new project in the area starts with it as its spend limit.">
+        <div className="kp-row">
+          <span className="view-switch" role="group" aria-label="Show" style={{ marginLeft: 0 }}>
+            <button className="btn xs" aria-pressed>
+              Mine
+            </button>
+            <button className="btn xs tan" aria-pressed={false}>
+              Team
+            </button>
+          </span>
+          <SimTag>Simulated team</SimTag>
+        </div>
+        <ul className="outliers" style={{ maxWidth: 720 }}>
+          <li className="outlier">
+            <span className="urgency honey">
+              <Ico name="coin" tone="light" />
+              Cost spike
+            </span>
+            <div className="what">
+              <b>Help-center bot</b> <span className="who-ran">(Maya)</span>
+              <p>Index the help docs is over plan: $8.50 of its $9.80 spent, about half done.</p>
+            </div>
+            <button className="btn tan xs">Open</button>
+          </li>
+        </ul>
+        <div className="budgets" role="table" style={{ maxWidth: 720 }}>
+          <div className="area-row" role="row">
+            <b role="rowheader">Help center</b>
+            <span className="team-meta" role="cell">
+              Budget per project
+            </span>
+            <span role="cell">
+              <LimitField value={budget} unit="$" label="Help center: budget per project" onChange={setBudget} />
+            </span>
+          </div>
+          <div className="farm-row" role="row">
+            <button className="farm-name" role="cell">
+              Help-center bot
+            </button>
+            <span className="team-meta" role="cell">
+              Maya, 5 agents
+            </span>
+            <span role="cell" className="spend">
+              <Ticks used={13} total={budget} n={12} />
+              <span>
+                <b>$13</b> of ${budget}
+              </span>
+            </span>
+          </div>
+        </div>
+      </Sec>
+
+      <Sec title="Simulated" note="One tag for anything not real, in the open on the title, the plan and Done: the same class (SimTag) and the same deep honey, whatever it says.">
+        <div className="kp-row">
+          <SimTag>Simulated sample</SimTag>
+          <SimTag>Simulated run</SimTag>
+          <SimTag>Simulated team</SimTag>
+          <SimTag />
+          <SimTag>Projection</SimTag>
+        </div>
+      </Sec>
+
+      <Sec title="Quiet states" note="Empty, nothing to flag, a call that failed: one bold line and at most one meta line on the flat tint, an icon first. Berry only for a failure. A paused run drains the farm's colour a little and the title carries the Paused tag.">
+        <div className="kp-col" style={{ maxWidth: 520 }}>
+          <Quiet icon="check" title="Nothing yet.">
+            Questions, fixes and your decisions land here as the run goes.
+          </Quiet>
+          <Quiet icon="check" title="Nothing stands out.">
+            No cost spikes, repeated work or disagreements across the team.
+          </Quiet>
+          <Quiet tone="bad" icon="cross" title="The live call failed, so this plan is simulated.">
+            Lovable AI answered 500: upstream timeout after 30 s
+          </Quiet>
+        </div>
+      </Sec>
+
+      <Sec title="Done" note="One calm block: the lead, the gain in leaf, the learned line, the projection under its tag, then one row of actions. The downloads sit at the end of that row as a quiet group.">
+        <div className="dlg done kp-done">
+          <div className="body paper">
+            <div className="who">
+              <b>Planner</b>
+              <span className="tag green">Done</span>
+            </div>
+            <div className="done-text">
+              <p>All 7 tasks are in and live for everyone. $54 in 1 h 39 min.</p>
+              <p className="impact gain-line">$1.67 of checks caught 3 problems before merge.</p>
+              <p className="impact scale-line">
+                <SimTag>Projection</SimTag> 10 people × 2 crews a day, at this run’s rates: $1,083 a day.
+              </p>
+            </div>
+            <div className="row">
+              <button className="btn">
+                <Ico name="star" />
+                See the pull request
+              </button>
+              <button className="btn tan">Spend</button>
+              <span className="export-group" role="group" aria-label="Download">
+                <span className="export-label">Download</span>
+                <button className="btn tan xs long">PR</button>
+                <button className="btn tan xs long">Run report</button>
+              </span>
+            </div>
+          </div>
         </div>
       </Sec>
 

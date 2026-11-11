@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { simulatePlan, simulateRoute } from '../simPlan'
-import { simulateRun } from '../simulate'
+import { BRAND_ASK, simulateRun } from '../simulate'
 import { duration, pendingAsk, reduce } from '../reduce'
 import { AUTONOMY_PRESETS } from '../types'
 
@@ -63,8 +63,8 @@ describe('simulated run', () => {
 describe('the moments in a run', () => {
   const plan = simulatePlan(GOAL)
   const run = (level: 'often' | 'matters' | 'undoable') => simulateRun({ goal: GOAL, ...plan, autonomy: AUTONOMY_PRESETS[level] })
-  // Spend-limit asks come at every level, so they're left out of the comparison.
-  const asks = (ev: ReturnType<typeof run>) => ev.filter((e) => e.type === 'ask' && !e.limitFor).map((e) => (e.type === 'ask' ? e.reason : ''))
+  // Spend-limit asks and the missing brand guide come at every level, so they're left out of the comparison.
+  const asks = (ev: ReturnType<typeof run>) => ev.filter((e) => e.type === 'ask' && !e.limitFor && e.id !== BRAND_ASK).map((e) => (e.type === 'ask' ? e.reason : ''))
 
   it('splits the pricey task with a replan, and rolls back a bad rollout by itself', () => {
     const ev = run('matters')
@@ -130,7 +130,7 @@ describe('your answers branch the run', () => {
   })
 
   it('leaves a stopped failing task out of the pull request', () => {
-    const fail = asksOf(run()).find((a) => a.type === 'ask' && a.reason === 'anomaly')
+    const fail = asksOf(run()).find((a) => a.type === 'ask' && a.reason === 'anomaly' && a.id !== BRAND_ASK)
     if (!fail || fail.type !== 'ask') throw new Error('no failed-check ask')
     const ev = run({ [fail.id]: 'Stop this task' })
     const s = reduce(ev, Number.MAX_SAFE_INTEGER)
@@ -179,7 +179,7 @@ describe('one pull request review', () => {
 
   it('still asks to merge when a task was stopped', () => {
     const often = { ...base, autonomy: { ...AUTONOMY_PRESETS.often, ship: 'auto' as const } }
-    const fail = simulateRun(often).find((e) => e.type === 'ask' && e.reason === 'anomaly')
+    const fail = simulateRun(often).find((e) => e.type === 'ask' && e.reason === 'anomaly' && e.id !== BRAND_ASK)
     if (!fail || fail.type !== 'ask') throw new Error('no failed-check ask')
     expect(shipAsk(simulateRun({ ...often, choices: { [fail.id]: 'Stop this task' } }))).toBeTruthy()
   })

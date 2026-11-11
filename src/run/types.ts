@@ -45,7 +45,7 @@ export interface TestResult {
   ms: number
   error?: string
 }
-export type Shot = { device: 'phone' | 'desktop'; state: 'ok' | 'overlap' | 'alt' }
+export type Shot = { device: 'phone' | 'desktop'; state: 'ok' | 'overlap' | 'alt' | 'offbrand' }
 // Which captured screen a screenshot shows: the support widget, a checkout form, or a metrics board.
 export type Screen = 'chat' | 'app' | 'dash'
 export interface Proof {

@@ -76,6 +76,7 @@ const CHORES: { x: number; y: number; anim: string; dir: Dir }[] = [
 
 export interface FarmViewProps {
   state: RunState
+  run?: string // which run this is: a new one shows every proof pop again
   planning: boolean
   side: boolean // the panel is open on the right
   selected?: { kind: 'task' | 'farmer'; id: string } | null
@@ -105,6 +106,9 @@ const SLIDE_MS = 400
 const poofs: { x: number; y: number; w: number; h: number; at: number }[] = []
 let slide: { from: Map<string, { x: number; y: number }>; at: number } | null = null
 const still = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+// When the farm went quiet: while a farmer is asking you (or the viewer asked for reduced motion), everything
+// decorative holds the frame it had at that moment, so the asking farmer and its bubble are the only things moving.
+let calmAt: number | null = null
 
 // The plots where they are drawn now: partway along a slide, eased.
 function sliding(layout: Layout, now: number): Layout {
@@ -197,12 +201,14 @@ export function FarmView(p: FarmViewProps) {
   // When each proof pop first showed, in wall-clock time, so it settles after a few seconds even while the run waits on you.
   const popSeen = useRef(new Map<string, number>())
   const failHold = useRef<{ key: string; at: number; id: string; c: TaskState['checks'][number] } | null>(null)
-  // A new run (the clock going back to the start) shows every proof again.
+  // A new run shows every proof again: a run of its own (Run again), or the clock going back to the start.
   const lastT = useRef(0)
-  if (p.state.t < lastT.current - 1000) {
+  const lastRun = useRef(p.run)
+  if (p.run !== lastRun.current || p.state.t < lastT.current - 1000) {
     popSeen.current.clear()
     failHold.current = null
   }
+  lastRun.current = p.run
   lastT.current = p.state.t
   const [, setPopTick] = useState(0)
   const layout = useMemo(() => {
@@ -290,15 +296,24 @@ export function FarmView(p: FarmViewProps) {
       if (docked || !box) return null
       const free = freeSize()
       const S = scale * PX
-      if ((box.x1 - box.x0) * S <= free.w && (box.y1 - box.y0) * S <= free.h) return { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 }
+      // Each axis on its own: the whole farm (house and yard included) when it fits, else every plot, else the
+      // plots being worked on now, so the active work is never under the top bar or the dialogue, and on a wide
+      // screen neither side is left empty.
+      const all = { x0: 0.5, x1: box.x1, y0: Math.min(box.y0, 1), y1: Math.max(box.y1, 13.5) }
       // A popped proof comes first: its plot and the pop above it, about 190 px tall.
       const popped = layout.plots.find((q) => q.id === popNow)
       const ps = popped ? [popped] : layout.plots.filter((q) => activeIds.includes(q.id))
-      if (!ps.length) return null
       const up = 190 / S
-      const x0 = Math.min(...ps.map((q) => q.x)), x1 = Math.max(...ps.map((q) => q.x + q.w))
-      const y0 = Math.min(...ps.map((q) => q.y - (q === popped ? up : 1))), y1 = Math.max(...ps.map((q) => q.y + q.h + 2))
-      return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }
+      const now = ps.length
+        ? { x0: Math.min(...ps.map((q) => q.x)), x1: Math.max(...ps.map((q) => q.x + q.w)), y0: Math.min(...ps.map((q) => q.y - (q === popped ? up : 1))), y1: Math.max(...ps.map((q) => q.y + q.h + 2)) }
+        : null
+      const axis = (lo: 'x0' | 'y0', hi: 'x1' | 'y1', room: number) => {
+        for (const r of [all, box, now]) if (r && (r[hi] - r[lo]) * S <= room) return (r[lo] + r[hi]) / 2
+        return now ? (now[lo] + now[hi]) / 2 : null
+      }
+      const x = axis('x0', 'x1', free.w)
+      const y = axis('y0', 'y1', free.h)
+      return x === null || y === null ? null : { x, y }
     })()
     const tgt = !pl ? plots ?? idle ?? home : asking ? { x: pl.x + pl.w / 2, y: pl.y + pl.h / 2 } : { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) }
     c.tx = tgt.x
@@ -462,6 +477,25 @@ export function FarmView(p: FarmViewProps) {
             />
           )
         })}
+      {/* The two yard objects that open something get a quiet caption in plain words, under each. */}
+      {!p.hide?.plotLabels &&
+        ([
+          ['Inbox', MAILBOX.x + 0.5, MAILBOX.y + 0.2, p.onMail],
+          ['Pull request', CHEST.x + 0.5, CHEST.y + 14 / 16, p.onChest],
+        ] as [string, number, number, () => void][]).map(([name, x, y, open]) => (
+          <button
+            key={name}
+            className="yard-label"
+            style={{ left: x * T, top: y * T + 2, fontSize: LABEL_PX[Math.max(0, (p.size?.plotLabels ?? 0) - 1)] }}
+            onClick={(e) => {
+              e.stopPropagation()
+              open()
+            }}
+            onPointerUp={(e) => e.stopPropagation()}
+          >
+            {name}
+          </button>
+        ))}
       {layout.plots.map((pl) => {
         const t = p.state.tasks.find((x) => x.id === pl.id)
         if (!t || p.hide?.plotLabels) return null
@@ -639,7 +673,7 @@ function charAt(g: CanvasRenderingContext2D, fx: number, fy: number, anim: strin
 }
 
 // Where each farmer is and what it is doing, from the run state.
-function poseOf(id: FarmerId, s: RunState, layout: Layout, planning: boolean, openAsk: FarmViewProps['openAsk'], idx: number) {
+function poseOf(id: FarmerId, s: RunState, layout: Layout, planning: boolean, openAsk: FarmViewProps['openAsk'], idx: number, t: number) {
   const f = s.farmers[id]!
   const plotOf = (task?: string) => layout.plots.find((x) => x.id === task)
   const side = (pl: Plot) => ({ x: pl.x + pl.w + 1.4, y: pl.y + 2.3 })
@@ -661,7 +695,7 @@ function poseOf(id: FarmerId, s: RunState, layout: Layout, planning: boolean, op
   const task = s.tasks.find((t) => t.id === f.task)
   const pl = plotOf(f.task)
   if (pl && task && (task.status === 'growing') && f.state === 'working') {
-    const sway = (Math.sin(performance.now() / 2600 + idx) + 1) / 2
+    const sway = (Math.sin(t / 2600 + idx) + 1) / 2
     return { x: pl.x + 0.5 + sway * (pl.w - 1), y: pl.y + 1.7, anim: id === 'designer' ? 'water' : 'till', dir: 'down' as Dir, emote: 'notes' as Emote }
   }
   if (pl && task && (task.status === 'wilted' || task.status === 'checking')) return { ...side(pl), anim: 'idle', dir: 'left' as Dir }
@@ -707,6 +741,10 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
 
   const s = p.state
   const W_ = layout.w
+  // Decorative motion runs on its own clock, which stops while an ask is open and starts again when it closes.
+  if (p.openAsk || still()) calmAt ??= now
+  else calmAt = null
+  const amb = calmAt ?? now
   // Scenery around the yard and the edge.
   for (const [n, x, y] of [
     ['tree_big', 0, 0],
@@ -728,12 +766,12 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
   spr(g, 'house_2', 2, 2)
   spr(g, 'well', 2, 8)
   spr(g, 'workstation', 5, 9.4)
-  // Chickens stand still and peck now and then; a clicked one floats a heart.
+  // Chickens stand still and peck now and then; a clicked one floats a heart. Both hold still while an ask is open.
   if (!p.hide?.chickens) CHICKENS.forEach((c, i) => {
-    const pecking = Math.floor(now / 500 + i * 3) % 7 === 0
+    const pecking = Math.floor(amb / 500 + i * 3) % 7 === 0
     spr(g, `chicken_${pecking ? 1 : 0}`, c.x, c.y, { flip: c.flip })
     const at = hearts.get(i)
-    if (at !== undefined && now - at < 1400) heart(g, c.x, c.y, now - at)
+    if (at !== undefined && amb - at >= 0 && amb - at < 1400) heart(g, c.x, c.y, amb - at)
   })
 
   // Mailbox: a letter when a farmer has a question for you.
@@ -783,7 +821,7 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
     // One emote per plot when no farmer speaks for it.
     const rolledBack = pl.gate && lastDeploy?.stage === 'rollback' && t.status !== 'ripe' && t.status !== 'accepted'
     const plotEmote: Emote | null = t.status === 'wilted' || rolledBack ? 'x' : t.status === 'ripe' || (t.status === 'accepted' && !lastDeploy) ? 'check' : t.status === 'checking' ? 'read' : null
-    if (plotEmote && !p.hide?.bubbles) emote(g, pl.x + pl.w / 2, pl.y + 1.3, plotEmote, now, p.size?.bubbles)
+    if (plotEmote && !p.hide?.bubbles) emote(g, pl.x + pl.w / 2, pl.y + 1.3, plotEmote, amb, p.size?.bubbles)
   }
   // A big change: every plot whose code it reaches glows with it, in time with its own plot.
   if (p.openAsk?.touches?.length) {
@@ -808,7 +846,7 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
   const ids = FARMER_ORDER.filter((id) => s.farmers[id])
   const drawList: { y: number; fn: () => void }[] = []
   ids.forEach((id, idx) => {
-    const pose = poseOf(id, s, layout, p.planning, p.openAsk, idx)
+    const pose = poseOf(id, s, layout, p.planning, p.openAsk, idx, amb)
     let w = walkers.get(id)
     if (!w) {
       w = { x: pose.x, y: pose.y, dir: pose.dir }
@@ -824,6 +862,8 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
     const fx = w.x
     const fy = w.y
     const selected = p.selected?.kind === 'farmer' && p.selected.id === id
+    // The farmer asking you keeps moving, and so does anyone walking somewhere; everyone else holds still with the farm.
+    const t = walked || p.openAsk?.farmer === id ? now : amb
     drawList.push({
       y: fy,
       fn: () => {
@@ -833,8 +873,8 @@ function paint(c: HTMLCanvasElement, p: FarmViewProps, layout: Layout, cam: Cam,
           g.ellipse(fx * PX, fy * PX - 1, 8, 3.5, 0, 0, Math.PI * 2)
           g.fill()
         }
-        charAt(g, fx, fy, anim, dir, now, idx, { tint: TINT[id], alpha: 'alpha' in pose ? pose.alpha : 1 })
-        if ('emote' in pose && pose.emote && anim !== 'walk' && !p.hide?.bubbles) emote(g, fx, fy, pose.emote, now, p.size?.bubbles)
+        charAt(g, fx, fy, anim, dir, t, idx, { tint: TINT[id], alpha: 'alpha' in pose ? pose.alpha : 1 })
+        if ('emote' in pose && pose.emote && anim !== 'walk' && !p.hide?.bubbles) emote(g, fx, fy, pose.emote, t, p.size?.bubbles)
       },
     })
   })
