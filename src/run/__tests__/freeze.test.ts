@@ -164,6 +164,23 @@ describe('checkpoint 18, step by step', () => {
     expect(FARMER_ORDER.map((f) => spentBy(p, f, p.clock!).toFixed(3))).toEqual(before)
   })
 
+  it('a task raise lifts its farmer’s limit, and a model change later keeps that lift', () => {
+    const p = farm(SAMPLE_GOAL)
+    const a = nextAsk(p)!
+    p.clock = a.t
+    const raise = a.alternatives!.find((o) => /^raise/i.test(o))!
+    store.answer(a.id, raise)
+    const lift = p.events.find((e) => e.type === 'auto_fix' && /limit went up/.test(e.what))
+    expect(lift).toBeDefined()
+    p.clock = lift!.t + 60_000
+    const before = pastOf(p)
+    store.editKit(p.id, 'designer', (e) => void (e.model = 'Claude Sonnet 5'))
+    expect(pastOf(p)).toBe(before)
+    finish(p)
+    expect(p.events.some((e) => e.type === 'ask' && e.limitFor === 'builder')).toBe(false)
+    expect(spentBy(p, 'builder')).toBeLessThanOrEqual(store.state(p)!.farmers.builder!.limits.usd + 0.01)
+  })
+
   it('High 3: an approved raise is never rewritten, and passing it asks again', () => {
     const { p, a } = toLimitAsk()
     store.answer(a.id, a.suggested)

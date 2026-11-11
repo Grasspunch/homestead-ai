@@ -1,7 +1,7 @@
 // App state: which screen, the live plan being edited, and the replay of a recorded run.
 import { useSyncExternalStore } from 'react'
 import { duration, pendingAsk, reduce } from './reduce'
-import { SEND_BACK, fitLimits, simulateRun } from './simulate'
+import { LIMIT_RAISED, SEND_BACK, fitLimits, simulateRun } from './simulate'
 import { liveStage, rollBack } from './rollback'
 import { simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
@@ -764,7 +764,7 @@ class Store {
         }
         // A raise the lead made by itself.
         if (e.type === 'auto_fix') {
-          const m = /^The (\w+) reached its .* raised it to \$(\d+)/.exec(e.what)
+          const m = /^The (\w+) reached its .* raised it to \$(\d+)/.exec(e.what) ?? LIMIT_RAISED.exec(e.what)
           const f = m ? built.farmers.find((x) => x.label === m[1]) : undefined
           if (f && m) past.limit[f.id] = Number(m[2])
         }

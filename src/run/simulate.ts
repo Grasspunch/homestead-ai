@@ -193,6 +193,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
   // A split keeps its promise: the first part ends on its budget and the hard cases on their own share.
   type Split = { task: string; after: number; budget: number; rest: string; rest$: number }
   let split = null as Split | null
+  // A task limit you raised raises its farmer's limit by as much, so the same money is never asked about twice.
+  const bumps: { f: FarmerId; t: number; by: number }[] = []
 
   const usage = (min: number, f: FarmerId, task: string, usd0: number, kind: 'read' | 'write' | 'retry') => {
     const from = input.modelFrom?.[f]
@@ -342,6 +344,11 @@ export function simulateRun(input: SimInput): RunEvent[] {
           at(at$ + 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `Kept going under a ${money(projected)} limit` })
           usage(at$ + 0.2, f, task.id, Math.max(0, projected - spent - usdPer(f) * 0.5), 'write')
           extra += 5
+          // What keeping it whole costs over splitting it, which the farmer's limit was planned on.
+          const by = Math.max(1, Math.ceil(projected - budget - rest$))
+          const base = input.past?.limit[f] ?? farmers.find((x) => x.id === f)?.limits.usd ?? 0
+          bumps.push({ f, t: Math.round((at$ + 0.05) * MIN), by })
+          at(at$ + 0.05, { type: 'auto_fix', task: task.id, what: limitRaised(label(f), by, base + by) })
         } else {
           // Stopped at about half: what is built ships, the hard cases are left out.
           cutAt = i
@@ -727,6 +734,12 @@ export function simulateRun(input: SimInput): RunEvent[] {
     ev.sort((a, b) => a.t - b.t)
     // Raises before a stop are asked again, the same way, so the stop's ask keeps its place in the count.
     for (const e of [...ev]) {
+      const bump = e.type === 'auto_fix' && e.t > pastT ? bumps.find((b) => b.t === e.t) : undefined
+      if (bump) {
+        const f = farmers.find((x) => x.id === bump.f)
+        if (f) limit[f.id] = (limit[f.id] ?? f.limits.usd) + bump.by
+        continue
+      }
       if (e.type !== 'usage' || e.t <= pastT) continue
       const f = farmers.find((x) => x.id === e.farmer)
       const before = spent[e.farmer] ?? 0
@@ -737,7 +750,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const tm = e.t / MIN - 0.015
       const whole = haltTotals[f.id] ?? total[f.id]!
       // Over by a few cents in all: the lead raises it to the next dollar and says so.
-      if (whole - lim < Math.max(0.5, lim * 0.05)) {
+      if (whole - lim < Math.max(1, lim * 0.05)) {
         const to = Math.ceil(whole + 0.01)
         at(tm, { type: 'auto_fix', task: e.task, what: `The ${f.label} reached its ${fmtFor(whole)(lim)} limit with ${fmtFor(whole)(whole - before)} of work left, so the ${label(lead)} raised it to $${to}.` })
         limit[f.id] = to
@@ -761,6 +774,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
   ev.push({ t: last + 30_000, type: 'done', usd: +usd.toFixed(2), minutes: Math.round(last / MIN), asks: askN, autoFixes: ev.filter((e) => e.type === 'auto_fix').length, actions })
   return ev
 }
+
+// A farmer's limit raised along with a task's: said the same way here, in the replay and in a rebuild.
+export const limitRaised = (who: string, by: number, to: number) => `You raised the task, so the ${who}'s limit went up by $${by} with it, to $${to}.`
+export const LIMIT_RAISED = /so the (\w+)'s limit went up by \$\d+ with it, to \$(\d+)\./
 
 function cents(n: number) {
   return `$${n.toFixed(2)}`
