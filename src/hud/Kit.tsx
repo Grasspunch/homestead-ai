@@ -50,7 +50,6 @@ export function Kit() {
   const [limit, setLimit] = useState(23)
   const [on, setOn] = useState(true)
   const [level, setLevel] = useState('matters')
-  const [budget, setBudget] = useState(60)
   useEffect(() => {
     // Tell an embedding page how tall this is, so it can size its frame.
     const post = () => window.parent?.postMessage({ kitHeight: document.documentElement.scrollHeight }, '*')
@@ -356,57 +355,6 @@ export function Kit() {
         </div>
       </Sec>
 
-      <Sec title="Team view" note="Home's Team side: spend against each area's budget and the few projects worth a look, never what anyone is doing. An outlier row is its urgency tag, the project and whose it is, one line, and Open. The budget is a soft well; a new project in the area starts with it as its spend limit.">
-        <div className="kp-row">
-          <span className="view-switch" role="group" aria-label="Show" style={{ marginLeft: 0 }}>
-            <button className="btn xs" aria-pressed>
-              Mine
-            </button>
-            <button className="btn xs tan" aria-pressed={false}>
-              Team
-            </button>
-          </span>
-        </div>
-        <ul className="outliers" style={{ maxWidth: 720 }}>
-          <li className="outlier">
-            <span className="urgency honey">
-              <Ico name="coin" tone="light" />
-              Cost spike
-            </span>
-            <div className="what">
-              <b>Help-center bot</b> <span className="who-ran">(Maya)</span>
-              <p>Index the help docs is over plan: $8.50 of its $9.80 spent, about half done.</p>
-            </div>
-            <button className="btn tan xs">Open</button>
-          </li>
-        </ul>
-        <div className="budgets" role="table" style={{ maxWidth: 720 }}>
-          <div className="area-row" role="row">
-            <b role="rowheader">Help center</b>
-            <span className="team-meta" role="cell">
-              Budget per project
-            </span>
-            <span role="cell">
-              <LimitField value={budget} unit="$" label="Help center: budget per project" onChange={setBudget} />
-            </span>
-          </div>
-          <div className="farm-row" role="row">
-            <button className="farm-name" role="cell">
-              Help-center bot
-            </button>
-            <span className="team-meta" role="cell">
-              Maya, 5 agents
-            </span>
-            <span role="cell" className="spend">
-              <Ticks used={13} total={budget} n={12} />
-              <span>
-                <b>$13</b> of ${budget}
-              </span>
-            </span>
-          </div>
-        </div>
-      </Sec>
-
       <Sec title="Projection" note="The deep honey tag marks a number that is projected, not measured. No screen says Simulated: the run's speed already says it.">
         <div className="kp-row">
           <SimTag>Projection</SimTag>
@@ -435,7 +383,7 @@ export function Kit() {
               <p>All 7 tasks are in and live for everyone. $54 in 1 h 39 min.</p>
               <p className="impact gain-line">$1.67 of checks caught 3 problems before merge.</p>
               <p className="impact scale-line">
-                <SimTag>Projection</SimTag> 10 people × 2 crews a day, at this run’s rates: $1,083 a day.
+                <SimTag>Projection</SimTag> 2 features a week for a month, at this run’s rates: $433 in all.
               </p>
             </div>
             <div className="row">

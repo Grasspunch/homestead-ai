@@ -2,10 +2,10 @@
 // Done does and carry the learned line and "assuming", and a failed test never leads with a raw TypeError.
 import { beforeAll, describe, expect, it } from 'vitest'
 import { simulatePlan } from '../simPlan'
-import { duration, reduce, pendingAsk } from '../reduce'
+import { duration, reduce } from '../reduce'
 import { doneLead } from '../done'
 import { prMarkdown, runReport, soloLine } from '../export'
-import { BUDGET, MATES, buildTeam, clampBudget, spentOf } from '../team'
+import { BUDGET, buildTeam, clampBudget, spentOf } from '../team'
 import { simulateRun } from '../simulate'
 import { prOf } from '../files'
 import { SAMPLE_GOAL, store, type Project } from '../store'
@@ -95,33 +95,6 @@ describe('exports match Done', () => {
     const p = farm(SAMPLE_GOAL)
     playOut(p)
     expect(prMarkdown(p, stateOf(p))).toContain('The plan was simulated.')
-  })
-})
-
-describe('a teammate’s farm is view only', () => {
-  it('opens as theirs, and their ask cannot be answered from your seat', () => {
-    const maya = MATES.find((m) => m.owner === 'Maya')!
-    store.openTeam(maya.id)
-    const p = store.project()!
-    expect(p.owner).toBe('Maya')
-    expect(store.viewOnly()).toBe(true)
-    const open = pendingAsk(p.events, p.clock ?? 0, store.viewerAnswers)
-    expect(open).toBeTruthy()
-    const ask = p.events.find((e) => e.type === 'ask' && e.id === open)!
-    const before = JSON.stringify([p.answers, p.events.length, p.clock])
-    store.answer(open!, ask.type === 'ask' ? ask.suggested : '')
-    expect(store.answerInWords(open!, 'yes').kind).toBe('none')
-    store.sendBack(open!, 'x', 'note')
-    store.talkOn(open!, 'why?', [])
-    expect(store.reopen(open!)).toBe('This one is Maya’s to answer.')
-    expect(JSON.stringify([p.answers, p.events.length, p.clock])).toBe(before)
-    expect(pendingAsk(p.events, p.clock ?? 0, store.viewerAnswers)).toBe(open)
-    expect(p.talks?.[open!]).toBeUndefined()
-  })
-
-  it('your own project stays yours to answer', () => {
-    const p = farm(SAMPLE_GOAL)
-    expect(store.viewOnly(p)).toBe(false)
   })
 })
 

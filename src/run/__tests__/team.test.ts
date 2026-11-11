@@ -65,13 +65,4 @@ describe('budgets per area', () => {
     const t = buildTeam(store.projects.map((x) => (x.id === p.id ? { ...x, events: sample().events } : x)), store.budgets)
     expect(t.areas.find((a) => a.id === 'checkout')!.farms.find((f) => f.id === p.id)!.limit).toBe(90)
   })
-
-  it('opens a teammate’s project at the moment the team view points to', () => {
-    store.openTeam('team-dev-1')
-    const p = store.project('team-dev-1')!
-    expect(p.owner).toBe('Dev')
-    const ask = pendingAsk(p.events, p.clock!, p.answers!)
-    expect(p.events.find((e) => e.type === 'ask' && e.id === ask)).toMatchObject({ reason: 'disagree' })
-    store.pause()
-  })
 })

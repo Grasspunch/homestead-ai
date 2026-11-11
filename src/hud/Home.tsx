@@ -9,7 +9,6 @@ import { liveStage } from '../run/rollback'
 import { store, useStore, type Project } from '../run/store'
 import type { FarmerId, RunState } from '../run/types'
 import { ASK_WHY, Ico, Portrait, atlasLoaded } from './bits'
-import { TeamPanel } from './Team'
 import { CELL, PX, fitLayout, type Layout } from './homeLayout'
 
 
@@ -74,9 +73,7 @@ export function Home() {
   const side = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const [L, setL] = useState<Layout>({ s: 3, cols: 3, x: 0, y: 0 })
-  const team = st.homeView === 'team'
-  // A teammate's project you opened from the team view stays theirs: it isn't one of yours here.
-  const list = minis(mine(st.projects), L.cols)
+  const list = minis(st.projects, L.cols)
   const needs = list.filter((m) => m.emote === 'alert').length
 
   useEffect(() => {
@@ -97,7 +94,7 @@ export function Home() {
           const H = c.clientHeight
           // The farms take the room right of the Planner, centred in it.
           const left = (side.current?.getBoundingClientRect().right ?? 0) + 24
-          const farms = mine(store.projects)
+          const farms = store.projects
           const pad = Math.max(24, (W - 1680) / 2) // as --home-pad
           const lay = fitLayout({ x: left, y: 24, w: W - left - pad, h: H - 48 }, farms.length)
           const k = JSON.stringify(lay)
@@ -119,8 +116,7 @@ export function Home() {
               const n = Math.abs(Math.sin(x * 12.9 + y * 78.2) * 43758) % 1
               if (n < 0.12) draw(g, `grass_deco_${Math.floor(n * 100) % 12}`, x * PX, y * PX)
             }
-          // The team view sits on the grass; the farms are yours alone.
-          if (store.homeView !== 'team') {
+          {
             const slots = farms.length + 1
             const right = Math.min(lay.cols, slots) * CELL.w
             const rows = Math.ceil(slots / lay.cols)
@@ -193,8 +189,7 @@ export function Home() {
       <div className="home-side" ref={side}>
         <header className="home-intro paper">
           <div className="home-title">
-            <h1 className="homehead">{team ? 'Your team' : 'Your projects'}</h1>
-            <ViewSwitch team={team} />
+            <h1 className="homehead">Your projects</h1>
           </div>
           <p className="home-who">For an engineer handing a feature to a team of AI agents: you stay in charge of cost and risk without watching every step.</p>
           <p className="home-why">
@@ -255,12 +250,7 @@ export function Home() {
           </div>
         </section>
       </div>
-      {team ? (
-        <div className="team-room">
-          <TeamPanel />
-        </div>
-      ) : (
-        <>
+      <>
           {list.map((m) => (
             <button key={m.p.id} className="farm-hit" style={{ ...at(m), width: 9 * T, height: 5.6 * T }} onClick={() => store.open(m.p.id)} aria-label={`${m.p.name}, ${m.words}`}>
               <span className="farm-tag" style={{ left: 4.6 * T, top: 4.85 * T }}>
@@ -275,24 +265,8 @@ export function Home() {
               {!list.length && <span className="farm-words">Tell the Planner what to build</span>}
             </span>
           </button>
-        </>
-      )}
+      </>
     </>
   )
 }
 
-const mine = (projects: Project[]) => projects.filter((p) => !p.owner)
-
-// Your projects, or the team's: a choice of two, the chosen one on cream.
-function ViewSwitch({ team }: { team: boolean }) {
-  return (
-    <div className="view-switch" role="group" aria-label="Show">
-      <button className={`btn xs${team ? ' tan' : ''}`} aria-pressed={!team} onClick={() => store.setHomeView('mine')}>
-        Mine
-      </button>
-      <button className={`btn xs${team ? '' : ' tan'}`} aria-pressed={team} onClick={() => store.setHomeView('team')}>
-        Team
-      </button>
-    </div>
-  )
-}

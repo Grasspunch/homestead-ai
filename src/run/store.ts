@@ -12,7 +12,7 @@ import { OWN, confirmOwn, isOwnWay, ownText, ownWayOf, type TalkLine } from './d
 import { SKILLS, applyEdit, emptyEdit, type KitEdit } from './kit'
 import { CAN_DO, key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope, type Suggestion } from './reshape'
 import { isUi, propOf, uiLookOf, type UiId, type UiLook } from './ui'
-import { AREAS, MATES, areaFor, clampBudget, mateEvents, snapAt } from './team'
+import { AREAS, areaFor, clampBudget } from './team'
 import type { ChatIn, DecidedAsk } from './talk'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from a shop’s help pages, and hands off to a person when it is not sure'
@@ -61,10 +61,9 @@ export interface Project {
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
-  // The team view: the area a project belongs to, and its spend limit, which starts as the area's budget.
+  // The area a project belongs to, and its spend limit, which starts as the area's budget.
   area?: string
   spendLimit?: number
-  owner?: string // a teammate's simulated project you opened from the team view
   lesson?: Lesson // what the last run that ran over taught the Planner: the next run plans that task in two
 }
 
@@ -214,7 +213,6 @@ interface Saved {
   paused?: boolean
   flow?: FlowItem[] // changes for every farm, which new farms start with
   budgets?: Record<string, number> // each area's budget per project
-  homeView?: 'mine' | 'team'
 }
 
 // Saved farms as they were written, or null when anything in them can't be read.
@@ -242,7 +240,7 @@ function valid(d: unknown): Saved | null {
   const screen = sc && (sc.kind === 'home' || (sc.kind === 'farm' && typeof sc.project === 'string')) ? sc : undefined
   const flow = Array.isArray(x.flow) ? (x.flow as FlowItem[]).filter((f) => !!f && typeof f.id === 'string' && typeof f.label === 'string' && !!f.change && typeof f.change.kind === 'string') : []
   const budgets = Object.fromEntries(Object.entries(o(x.budgets)).filter(([, v]) => typeof v === 'number' && v > 0).map(([k, v]) => [k, clampBudget(v as number)])) as Record<string, number>
-  return { v: 1, projects: x.projects as Project[], kit: o(x.kit), kitAt: o(x.kitAt), chat: o(x.chat), crewNotes: o(x.crewNotes), crewSize: o(x.crewSize), seen, screen, paused: x.paused === true, flow, budgets, homeView: x.homeView === 'team' ? 'team' : 'mine' }
+  return { v: 1, projects: (x.projects as (Project & { owner?: string })[]).filter((p) => !p.owner), kit: o(x.kit), kitAt: o(x.kitAt), chat: o(x.chat), crewNotes: o(x.crewNotes), crewSize: o(x.crewSize), seen, screen, paused: x.paused === true, flow, budgets }
 }
 
 class Store {
@@ -258,7 +256,6 @@ class Store {
   settingsOpen = false
   flow: FlowItem[] = [] // Your flow: changes for every farm
   budgets: Record<string, number> = Object.fromEntries(AREAS.map((a) => [a.id, a.budget])) // each area's budget per project
-  homeView: 'mine' | 'team' = 'mine'
   fresh: { id: string; until: number } | null = null // a change just applied: its chip shows Undo until then
   static FRESH_MS = 8000
   notifications = false
@@ -379,7 +376,6 @@ class Store {
         paused: this.screen.kind === 'farm' && !this.playing,
         flow: this.flow,
         budgets: this.budgets,
-        homeView: this.homeView,
       }
       localStorage.setItem(Store.KEY, JSON.stringify(data))
     } catch {
@@ -445,7 +441,6 @@ class Store {
     this.seen = new Set(d.seen)
     this.flow = d.flow ?? []
     this.budgets = { ...this.budgets, ...d.budgets }
-    this.homeView = d.homeView ?? 'mine'
     this.sampleLoading = false
     const screen = d.screen
     if (screen?.kind === 'farm' && this.projects.some((p) => p.id === screen.project)) {
@@ -649,7 +644,6 @@ class Store {
   }
 
   answer(askId: string, choice: string) {
-    if (this.viewOnly()) return
     this.viewerAnswers = { ...this.viewerAnswers, [askId]: choice }
     const p = this.project()
     // Adding the brand guide is a change to the Designer's context, the same as adding it on its page.
@@ -707,7 +701,6 @@ class Store {
   reopen(askId: string, choice?: string): string {
     const p = this.project()
     if (!p) return 'Open a project first.'
-    if (p.owner) return `This one is ${p.owner}’s to answer.`
     const why = this.lockedWhy(p, askId)
     if (why) return why
     const ask = p.events.find((e) => e.type === 'ask' && e.id === askId)!
@@ -760,7 +753,6 @@ class Store {
   // option, take that one. The Planner says how it read you. Returns the option, or null when it can't tell.
   // Free text only ever picks one of the ask's options. Something hard to undo is confirmed first.
   answerInWords(askId: string, text: string): InWords {
-    if (this.viewOnly()) return { kind: 'none', why: 'unclear' }
     const p = this.project()
     const ask = p?.events.find((e) => e.type === 'ask' && e.id === askId)
     if (!p || !ask || ask.type !== 'ask') return { kind: 'none', why: 'unclear' }
@@ -791,7 +783,6 @@ class Store {
 
   // A question about a disagreement and the sides' answers, kept with the ask so it reads as a short chat.
   talkOn(askId: string, text: string, lines: TalkLine[]) {
-    if (this.viewOnly()) return
     const p = this.project()
     if (!p) return
     p.talks = { ...p.talks, [askId]: [...(p.talks?.[askId] ?? []), { from: 'you', text: clip(text) }, ...lines] }
@@ -810,7 +801,6 @@ class Store {
 
   // Work sent back from the pull request because of what you said in words, once you said yes to it.
   sendBackInWords(askId: string, text: string, task: string, note: string) {
-    if (this.viewOnly()) return
     const p = this.project()
     if (!p) return
     const name = this.state(p)?.tasks.find((t) => t.id === task)?.name ?? task
@@ -821,7 +811,6 @@ class Store {
   }
 
   confirmInWords(askId: string, text: string, choice: string) {
-    if (this.viewOnly()) return
     const p = this.project()
     if (!p) return
     this.chatTo(p.id, { from: 'you', text: clip(text) })
@@ -1021,7 +1010,6 @@ class Store {
   // The pull request review: send one task back with what should change. Its farmer changes it,
   // a different farmer checks it, and the pull request comes back to you with one more commit.
   sendBack(askId: string, task: string, note: string) {
-    if (this.viewOnly()) return
     const p = this.project()
     if (!p) return
     p.sendBacks = { ...p.sendBacks, [askId]: { task, note } }
@@ -1292,33 +1280,6 @@ class Store {
     this.budgets = { ...this.budgets, [area]: usd }
     for (const p of this.projects) if ((p.area ?? areaFor(p.goal)) === area && (p.spendLimit === undefined || p.spendLimit === was)) p.spendLimit = usd
     this.notify()
-  }
-
-  setHomeView(v: 'mine' | 'team') {
-    this.homeView = v
-    this.notify()
-  }
-
-  // A teammate's project opened from Team is theirs: you can watch it, but its asks are theirs to answer.
-  viewOnly(p = this.project()) {
-    return !!p?.owner
-  }
-
-  // Open a teammate's simulated project where it stands: at the moment the team view points to.
-  openTeam(id: string) {
-    const m = MATES.find((x) => x.id === id)
-    if (!m) return this.open(id)
-    let p = this.project(id)
-    if (!p) {
-      const events = structuredClone(mateEvents(m))
-      p = { id, name: m.name, goal: m.goal, kind: 'sample', owner: m.owner, area: m.area, spendLimit: this.budgets[m.area], events, approved: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters } }
-      this.projects = [...this.projects, p]
-      this.startRun(p)
-      const snap = snapAt(p.events, m.at)
-      p.clock = snap.t
-      p.answers = snap.answers
-    }
-    this.open(id)
   }
 
   setPlan(id: string, name: string, farmers: FarmerSetup[], tasks: PlanTask[], estimate: Estimate, singleAgentEstimate?: Estimate) {

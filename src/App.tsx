@@ -133,7 +133,7 @@ function Farm() {
         // The Planner, reached while a question waits: closing it brings the question back.
         <PlannerDialogue p={p} s={s} side={side} onClose={() => store.setDrawer(null)} />
       ) : ask ? (
-        <AskDialogue key={ask.id} s={s} ask={ask} side={side} owner={p.owner} />
+        <AskDialogue key={ask.id} s={s} ask={ask} side={side} />
       ) : rolled ? (
         <RollbackDialogue key={rolled.t} s={s} side={side} t={rolled.t} />
       ) : trust ? (
@@ -279,7 +279,6 @@ function Top({ p, s }: { p: Project; s: RunState }) {
         )}
         {/* No "Simulated" label on screen: the speed says it, and the demo reads cleaner without it. */}
         {/* A teammate's project you opened from Team: always says whose, since you can look but not answer. */}
-        {p.owner && <span className="tag grey owner-tag">{p.owner}’s project</span>}
       </div>
       <div className="spacer" />
       {!prRight && runAgain}
@@ -684,36 +683,7 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
   )
 }
 
-// A teammate's ask, opened from Team: the question and its options to read, nothing to press. It is theirs to answer.
-function ViewOnlyAsk({ s, ask, side, owner }: { s: RunState; ask: Ask; side: boolean; owner: string }) {
-  const r = isShipAsk(ask) ? { ...REASON.irreversible, label: 'Review the pull request' } : ask.reason === 'cost' && !/has passed/.test(ask.question) ? { ...REASON.cost, label: 'Heading over budget' } : REASON[ask.reason]
-  const options = [ask.suggested, ...ask.alternatives].filter((o) => !/^show me/i.test(o))
-  return (
-    <Dialogue farmer={ask.farmer} side={side} className="view-only">
-      <div className="who">
-        <b>{s.farmers[ask.farmer]?.label ?? 'An agent'} asks {owner}</b>
-        <span className={`urgency ${r.urgency}`}>
-          <Ico name={r.icon} tone="light" />
-          {r.label}
-        </span>
-      </div>
-      <p>{ask.question}</p>
-      {ask.impact && <p className="impact">{ask.impact}</p>}
-      <ul className="ask-options" aria-label="Options">
-        {options.map((o) => (
-          <li key={o} className={o === ask.suggested ? 'suggested' : ''}>
-            {o}
-            {o === ask.suggested && <span className="sub"> Suggested</span>}
-          </li>
-        ))}
-      </ul>
-      <p className="fine view-only-note">This one is {owner}’s to answer.</p>
-    </Dialogue>
-  )
-}
-
-function AskDialogue({ s, ask, side, owner }: { s: RunState; ask: Ask; side: boolean; owner?: string }) {
-  if (owner) return <ViewOnlyAsk s={s} ask={ask} side={side} owner={owner} />
+function AskDialogue({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
   return <OwnAsk s={s} ask={ask} side={side} />
 }
 

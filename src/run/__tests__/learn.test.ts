@@ -94,14 +94,14 @@ describe('learning across runs', () => {
 })
 
 describe('the scale line', () => {
-  it('multiplies this run’s own numbers out across a team, and says it is a projection', () => {
+  it('multiplies this run’s own numbers out over a month of your runs, and says it is a projection', () => {
     const p = farm(SAMPLE_GOAL)
     playOut(p)
     const s = reduce(p.events, Number.MAX_SAFE_INTEGER, p.answers ?? {})
     const line = scaleLine(s)!
-    expect(line).toMatch(/^10 people × 2 crews a day, at this run’s rates: /)
-    const checks = s.tasks.reduce((n, t) => n + t.checks.filter((c) => !c.pass).length, 0)
-    expect(line).toContain(`${checks * 20} problems caught before merge`)
-    expect(line).toContain(`$${Math.round(s.done!.usd * 20).toLocaleString('en-US')} a day`)
+    expect(line).toMatch(/^2 features a week for a month, at this run’s rates: /)
+    const checks = s.tasks.reduce((n, t) => n + t.checks.filter((c) => !c.pass && !c.yours).length, 0)
+    expect(line).toContain(`${checks * 8} problems caught before merge`)
+    expect(line).toContain(`$${Math.round(s.done!.usd * 8).toLocaleString('en-US')} in all`)
   })
 })

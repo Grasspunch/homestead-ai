@@ -4,15 +4,11 @@ Homestead is a control room for a crew of coding agents, drawn as a farm. You gi
 
 ## Who it is for
 
-An engineer or tech lead who hands a feature to several coding agents and stays responsible for what ships. Their job: get it merged and live without reading every diff, while catching the few moments that need judgment.
+One engineer who hands a feature to several coding agents and stays responsible for what ships. Homestead is built for that one person; there is no team or lead view. Their job: get it merged and live without reading every diff, while catching the few moments that need judgment.
 
 ## Why it matters, and why a pull request and Slack aren't enough
 
 Agent spend is easy to miss: each agent bills by the token, and nobody sees the total until the invoice. Agent work is also hard to undo once it has spread across files, merged and shipped. A pull request shows the finished diff and Slack carries the chatter, but neither gives each agent a budget, picks out the few runs that need a person (a cost spike, the same work done twice, two agents that disagree), or lets an agent earn more freedom as its runs come in clean. Homestead gives each agent a spend limit and each project a budget, stops you only at the moments that need a person, and offers to merge by itself after three clean runs.
-
-## For a lead: the team view
-
-Home has a Mine / Team switch. Team shows who runs how many agents on which project, each project's spend against its area's budget, and outliers only: a cost spike, two projects doing the same work, two agents that disagree, each with Open to jump to that moment. It shows spend and outliers, not what anyone is doing. Each area has a budget per project that you can edit; a new project starts with its area's budget as its spend limit, and projects still on the old budget follow a change. The teammates and their projects are simulated with the same engine as the sample and tagged "Simulated team".
 
 ## The problem
 
@@ -32,7 +28,7 @@ The comparison is one Claude Sonnet 5 agent doing the same work in a row, with n
 
 ## Learning, export and projection
 
-A farm learns from its own runs. After run 1, the task that ran over is planned in two from the start: run 2 says "Last time 'Index the help docs' ran over, so I split it from the start", needs no ask about it, and costs $3.51 less, $48 in all. Done offers the pull request as Markdown and a run report to download, both opening with what was simulated and matching Done's numbers. Done also shows a projection, tagged as one: the run's own rates scaled to 10 people running 2 crews a day.
+A farm learns from its own runs. After run 1, the task that ran over is planned in two from the start: run 2 says "Last time 'Index the help docs' ran over, so I split it from the start", needs no ask about it, and costs $3.51 less, $48 in all. Done offers the pull request as Markdown and a run report to download, both opening with what was simulated and matching Done's numbers. Done also shows a projection, tagged as one: the run's own rates over a month of handing off 2 features a week.
 
 ## What is simulated
 
