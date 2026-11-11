@@ -206,3 +206,38 @@ describe('checkpoint 21: one count of caught problems everywhere', () => {
     expect(scaleLine(s)).toContain(`${n * PACE.perWeek * PACE.weeks} problems caught before merge`)
   })
 })
+
+describe('checkpoint 22: one Raise says so once, and the limit shown is the one you approved', () => {
+  for (const goal of GOALS)
+    for (const frac of [0.2, 0.5, 0.8])
+      for (const model of ['Claude Opus 5.5', 'GPT-6 Luna'])
+        it(`${goal.slice(0, 24)}: Raise, then the Builder to ${model} at ${frac * 100}%`, () => {
+          const p = farm(goal)
+          const end0 = doneT(p)!
+          let raised = false
+          let changed = false
+          for (let i = 0; i < 40; i++) {
+            const a = nextAsk(p)
+            if (!changed && raised && (!a || a.t > end0 * frac)) {
+              p.clock = Math.max(p.clock!, end0 * frac)
+              changed = true
+              store.editKit(p.id, 'builder', (e) => void (e.model = model))
+              continue
+            }
+            if (!a) break
+            p.clock = Math.max(p.clock!, a.t)
+            const r = !raised ? [a.suggested, ...(a.alternatives ?? [])].find((o) => /^raise/i.test(o)) : undefined
+            if (r) raised = true
+            store.answer(a.id, r ?? a.suggested)
+          }
+          p.clock = doneT(p)!
+          const s = store.state(p)!
+          expect(s.autoFixes.filter((f) => /limit went up by/.test(f.what)).length).toBe(1)
+          const b = s.farmers.builder!
+          expect(b.usd).toBeLessThanOrEqual(b.limits.usd + 0.01)
+          // The limit shown is the last one said: the raise's note, or the limit you approved after it.
+          const lastAsk = [...p.events].reverse().find((e) => e.type === 'ask' && e.limitFor === 'builder')
+          const said = lastAsk && lastAsk.type === 'ask' ? Number(/\$(\d+)/.exec(p.answers![lastAsk.id])![1]) : Number(/to \$(\d+)\./.exec(s.autoFixes.find((f) => /limit went up/.test(f.what))!.what)![1])
+          expect(b.limits.usd).toBe(said)
+        })
+})

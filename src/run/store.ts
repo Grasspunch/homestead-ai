@@ -871,7 +871,7 @@ class Store {
     // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
     const t0 = p.clock ?? 0
     if (t0 > 0) {
-      const past = { t: t0, spent: {} as Partial<Record<FarmerId, number>>, limit: {} as Partial<Record<FarmerId, number>>, asked: {} as Partial<Record<FarmerId, number>> }
+      const past = { t: t0, spent: {} as Partial<Record<FarmerId, number>>, limit: {} as Partial<Record<FarmerId, number>>, asked: {} as Partial<Record<FarmerId, number>>, raised: [] as string[] }
       for (const e of p.events) {
         if (e.t > t0) continue
         if (e.type === 'usage') past.spent[e.farmer] = (past.spent[e.farmer] ?? 0) + e.usd
@@ -893,6 +893,7 @@ class Store {
           const m = /^The (\w+) reached its .* raised it to \$(\d+)/.exec(e.what) ?? LIMIT_RAISED.exec(e.what)
           const f = m ? built.farmers.find((x) => x.label === m[1]) : undefined
           if (f && m) past.limit[f.id] = Number(m[2])
+          if (e.task && LIMIT_RAISED.test(e.what)) past.raised.push(e.task)
         }
       }
       // An ask open now is asked again by the new run, in its own place: it isn't counted as had.

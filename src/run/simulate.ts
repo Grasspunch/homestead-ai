@@ -110,7 +110,8 @@ export interface SimInput {
   modelFrom?: Partial<Record<FarmerId, number>>
   // The run you've watched so far, up to t (ms): what each farmer has really spent, its limit now and how many
   // limit asks it has had. Spend limits count from these, so a change mid-run never re-asks or recounts the past.
-  past?: { t: number; spent: Partial<Record<FarmerId, number>>; limit: Partial<Record<FarmerId, number>>; asked: Partial<Record<FarmerId, number>> }
+  // raised: tasks whose raise already moved their farmer's limit in the run you watched, and said so.
+  past?: { t: number; spent: Partial<Record<FarmerId, number>>; limit: Partial<Record<FarmerId, number>>; asked: Partial<Record<FarmerId, number>>; raised?: string[] }
   // Farmers you stopped at their spend limit, and the run minute they reached it. Set by the run itself:
   // a stop re-runs the simulation so nothing after it involves that farmer.
   halts?: Partial<Record<FarmerId, number>>
@@ -424,11 +425,14 @@ export function simulateRun(input: SimInput): RunEvent[] {
           at(at$ + 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `Kept going under a ${money(approved)} limit` })
           usage(at$ + 0.2, f, task.id, Math.max(0, projected - spent - usdPer(f) * 0.5), 'write')
           extra += 5
-          // What keeping it whole costs over splitting it, which the farmer's limit was planned on.
-          const by = Math.max(1, Math.ceil(approved - budget - rest$))
-          const base = input.past?.limit[f] ?? farmers.find((x) => x.id === f)?.limits.usd ?? 0
-          bumps.push({ f, t: Math.round((at$ + 0.05) * MIN), by })
-          at(at$ + 0.05, { type: 'auto_fix', task: task.id, what: limitRaised(label(f), by, base + by) })
+          // What keeping it whole costs over splitting it, which the farmer's limit was planned on. Said once, at
+          // the moment of the raise: a later change (a model, say) never re-prices it or says it again.
+          if (!input.past?.raised?.includes(task.id)) {
+            const by = Math.max(1, Math.ceil(approved - budget - rest$))
+            const base = input.past?.limit[f] ?? farmers.find((x) => x.id === f)?.limits.usd ?? 0
+            bumps.push({ f, t: Math.round((at$ + 0.05) * MIN), by })
+            at(at$ + 0.05, { type: 'auto_fix', task: task.id, what: limitRaised(label(f), by, base + by) })
+          }
         } else {
           // Stopped at about half: what is built ships, the hard cases are left out.
           cutAt = i
