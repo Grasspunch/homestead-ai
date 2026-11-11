@@ -4,7 +4,7 @@ import { CREW } from '../agent/agents'
 import { clip, store, type Project } from '../run/store'
 import type { Autonomy, AutonomyLevel, FarmerId, Moment, RunState, TaskState } from '../run/types'
 import { AUTONOMY_PRESETS, FARMER_ORDER } from '../run/types'
-import { Ico, Mark, Portrait, Swatch, cents, mins, usd } from './bits'
+import { Ico, Mark, Portrait, Quiet, Swatch, cents, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 import { BY_YOU } from '../run/rollback'
 import { isOwnWay } from '../run/discuss'
@@ -271,38 +271,44 @@ export function InboxPanel({ s }: { s: RunState }) {
           ))}
         </div>
       )}
-      <div>
-        <h3>Fixed without you</h3>
-        <div className="list">
-          {fixed.map((x) => (
-            <button key={x.t} onClick={() => x.task && store.setDrawer({ kind: 'task', id: x.task })}>
-              <Ico name="check" size={16} tone="green" />
-              <span className="grow">
-                {x.what}
-                <span className="sub">{ago(s, x.t)}{supersededBy(s, x)}</span>
-              </span>
-            </button>
-          ))}
-          {!fixed.length && <div className="sub">Nothing yet.</div>}
+      {/* Empty sections stay out of the way: one quiet line when there is nothing at all. */}
+      {!open.length && !fixed.length && !decided.length && (
+        <Quiet icon="check" title="Nothing yet.">Questions, fixes and your decisions land here as the run goes.</Quiet>
+      )}
+      {fixed.length > 0 && (
+        <div>
+          <h3>Fixed without you</h3>
+          <div className="list">
+            {fixed.map((x) => (
+              <button key={x.t} onClick={() => x.task && store.setDrawer({ kind: 'task', id: x.task })}>
+                <Ico name="check" size={16} tone="green" />
+                <span className="grow">
+                  {x.what}
+                  <span className="sub">{ago(s, x.t)}{supersededBy(s, x)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      <div>
-        <h3>You decided</h3>
-        <div className="list">
-          {decided.map((a) => (
-            <button key={a.id} onClick={() => a.task && store.setDrawer({ kind: 'task', id: a.task })}>
-              <Swatch farmer={a.farmer} />
-              <span className="grow">
-                {a.answer!.choice}
-                <span className="sub">{store.project()?.notes?.[a.id] ? `In your words: “${clip(store.project()!.notes![a.id])}”. ` : ''}{a.question}</span>
-              </span>
-            </button>
-          ))}
-          {!decided.length && <div className="sub">Nothing yet.</div>}
+      )}
+      {decided.length > 0 && (
+        <div>
+          <h3>You decided</h3>
+          <div className="list">
+            {decided.map((a) => (
+              <button key={a.id} onClick={() => a.task && store.setDrawer({ kind: 'task', id: a.task })}>
+                <Swatch farmer={a.farmer} />
+                <span className="grow">
+                  {a.answer!.choice}
+                  <span className="sub">{store.project()?.notes?.[a.id] ? `In your words: “${clip(store.project()!.notes![a.id])}”. ` : ''}{a.question}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      <button className="btn tan sm" onClick={() => store.setDrawer({ kind: 'control' })}>
-        <Ico name="gear" size={20} />
+      )}
+      <button className="btn tan sm long inbox-control" onClick={() => store.setDrawer({ kind: 'control' })}>
+        <Ico name="gear" size={16} />
         How often the agents check with you
       </button>
     </Panel>
@@ -514,7 +520,7 @@ export function UsagePanel({ s }: { s: RunState }) {
                   <span className="of">of {usd(f.limits.usd)}</span>
                 </button>
                 <span className="bar thin">
-                  <i style={{ width: `${(f.usd / max) * 100}%`, background: spike ? 'var(--honey)' : '#c9a27a' }} />
+                  <i style={{ width: `${(f.usd / max) * 100}%`, background: spike ? 'var(--honey)' : 'var(--edge)' }} />
                 </span>
                 {spike && <span className="returned"><b className="over">Over its limit by {usd(over)}</b></span>}
                 {fix && <ApplyFix fix={fix} />}
@@ -526,13 +532,13 @@ export function UsagePanel({ s }: { s: RunState }) {
       <div>
         <h3>On what</h3>
         <div className="bar tall">
-          <i style={{ width: `${(kinds.read.usd / total) * 100}%`, background: '#98c2dc' }} title="Reading" />
-          <i style={{ width: `${(kinds.write.usd / total) * 100}%`, background: '#a9cf86' }} title="Writing" />
+          <i style={{ width: `${(kinds.read.usd / total) * 100}%`, background: 'var(--k-read)' }} title="Reading" />
+          <i style={{ width: `${(kinds.write.usd / total) * 100}%`, background: 'var(--k-write)' }} title="Writing" />
           <i style={{ width: `${(kinds.retry.usd / total) * 100}%`, background: 'var(--honey)' }} title="Fixing" />
         </div>
         <div className="meta" style={{ marginTop: 6 }}>
-          <span className="chip"><span className="sw" style={{ background: '#98c2dc' }} />Reading {usd(kinds.read.usd)}</span>
-          <span className="chip"><span className="sw" style={{ background: '#a9cf86' }} />Writing {usd(kinds.write.usd)}</span>
+          <span className="chip"><span className="sw" style={{ background: 'var(--k-read)' }} />Reading {usd(kinds.read.usd)}</span>
+          <span className="chip"><span className="sw" style={{ background: 'var(--k-write)' }} />Writing {usd(kinds.write.usd)}</span>
           <span className="chip"><span className="sw" style={{ background: 'var(--honey)' }} />Fixing {usd(kinds.retry.usd)}</span>
         </div>
       </div>

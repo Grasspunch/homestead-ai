@@ -5,7 +5,7 @@ import './hud/panel.css'
 import { useEffect, useRef, useState } from 'react'
 import { FarmView, cropOf } from './farm/FarmView'
 import { Home } from './hud/Home'
-import { Ico, LimitField, Mark, Portrait, Sign, Swatch, mins, usd, type IconName } from './hud/bits'
+import { Ico, LimitField, Mark, Portrait, Quiet, Sign, SimTag, Swatch, mins, usd, type IconName } from './hud/bits'
 import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
@@ -22,6 +22,7 @@ import { SEND_BACK } from './run/simulate'
 import { BY_YOU } from './run/rollback'
 import { lessonLine } from './run/learn'
 import { scaleLine } from './run/scale'
+import { doneLead } from './run/done'
 import type { Ask, FarmerId, RunState } from './run/types'
 import { FARMER_ORDER } from './run/types'
 import { MODELS, MODEL_GROUPS, applyEdit } from './run/kit'
@@ -231,7 +232,12 @@ function Top({ p, s }: { p: Project; s: RunState }) {
       <div className="title paper">
         <b>{p.name}</b>
         {!look.hidden.includes('progress') && <span>{sub}</span>}
-        {p.approved && !s.done && !st.playing && !pendingAsk(p.events, st.clock, st.viewerAnswers) && !st.openRollback(p) && <span className="tag grey">Paused</span>}
+        {p.approved && !s.done && !st.playing && !pendingAsk(p.events, st.clock, st.viewerAnswers) && !st.openRollback(p) && (
+          <span className="tag paused" title="You paused the run. Play carries on.">
+            <i aria-hidden />
+            Paused
+          </span>
+        )}
         {p.approved && !!p.reshapes?.length && !look.hidden.includes('chips') && (
           <div className="reshapes">
             {/* A screen-only change shows its chip only while it carries Undo: the screen itself shows it. */}
@@ -252,21 +258,13 @@ function Top({ p, s }: { p: Project; s: RunState }) {
           </div>
         )}
         {look.hidden.includes('sampleTag') ? null : p.owner ? (
-          <span className="tag gold" title={`A teammate's project in the simulated team: ${p.owner}'s`}>
-            Simulated team
-          </span>
+          <SimTag title={`A teammate's project in the simulated team: ${p.owner}'s`}>Simulated team</SimTag>
         ) : p.kind === 'sample' ? (
-          <span className="tag gold" title="No real AI calls: a scripted sample that plays out the same way every time">
-            Simulated sample
-          </span>
+          <SimTag title="No real AI calls: a scripted sample that plays out the same way every time">Simulated sample</SimTag>
+        ) : p.plannedLive ? (
+          <SimTag title="The plan came from a live call; the run itself is simulated">Simulated run</SimTag>
         ) : (
-          p.plannedLive ? (
-            <span className="tag gold" title="The plan came from a live call; the run itself is simulated">
-              Simulated run
-            </span>
-          ) : (
-            <DemoTag goal={p.goal} />
-          )
+          <DemoTag goal={p.goal} />
         )}
       </div>
       <div className="spacer" />
@@ -283,9 +281,9 @@ const ICO_SIZE = [16, 16, 32, 32, 48]
 const long = (label: string) => (label.trim().split(/\s+/).length > 3 ? ' long' : '')
 
 // dock: the plan stands on the left, full height, so the whole farm shows beside it. The Planner sits above it.
-function Dialogue({ farmer, side, dock = false, children }: { farmer: FarmerId; side: boolean; dock?: boolean; children: React.ReactNode }) {
+function Dialogue({ farmer, side, dock = false, className = '', children }: { farmer: FarmerId; side: boolean; dock?: boolean; className?: string; children: React.ReactNode }) {
   return (
-    <section className={`dlg${side && !dock ? ' with-side' : ''}${dock ? ' dock' : ''}`}>
+    <section className={`dlg${side && !dock ? ' with-side' : ''}${dock ? ' dock' : ''}${className ? ` ${className}` : ''}`}>
       <div className="portrait">
         <Portrait farmer={farmer} size={dock ? 48 : 108} />
       </div>
@@ -300,9 +298,7 @@ function Dialogue({ farmer, side, dock = false, children }: { farmer: FarmerId; 
 function DemoTag({ goal }: { goal: string }) {
   const sc = scenario(goal)
   return (
-    <span className="tag gold" title={sc.matched ? `No real AI calls: a scripted ${sc.name.toLowerCase()} run` : 'No real AI calls: no script matches your goal, so the agents build a generic app'}>
-      Simulated
-    </span>
+    <SimTag title={sc.matched ? `No real AI calls: a scripted ${sc.name.toLowerCase()} run` : 'No real AI calls: no script matches your goal, so the agents build a generic app'} />
   )
 }
 
@@ -329,7 +325,10 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           <b>Planner</b>
           <span className="tag red">Couldn’t plan</span>
         </div>
-        <p>{p.error}</p>
+        <Quiet tone="bad" icon="cross" title="The Planner couldn’t split this goal into tasks.">
+          {p.error}
+        </Quiet>
+        <p className="impact">{p.goal}</p>
         <div className="row">
           <button className="btn" onClick={() => planInto(p)}>
             Try again
@@ -364,11 +363,15 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
             Planned live earlier
           </span>
         )}
-        {!p.plannedLive && noKey && <span className="tag gold">{p.liveNote}</span>}
+        {!p.plannedLive && noKey && <SimTag>{p.liveNote}</SimTag>}
         {!p.plannedLive && p.liveNote && !noKey && <span className="tag red">Live call failed</span>}
         {!p.plannedLive && !p.liveNote && <DemoTag goal={p.goal} />}
       </div>
-      {!p.plannedLive && p.liveNote && !noKey && <p className="impact">This plan is simulated, because the live call failed: {p.liveNote}</p>}
+      {!p.plannedLive && p.liveNote && !noKey && (
+        <Quiet tone="bad" icon="cross" title="The live call failed, so this plan is simulated.">
+          {p.liveNote}
+        </Quiet>
+      )}
       {p.plannedLive && (
         <p className="plan-live">
           {p.plannedEarlier ? `Live call failed: this is the live plan from ${shortDate(p.plannedEarlier)}. ` : 'Live: the crew, limits and done-whens. '}
@@ -899,18 +902,6 @@ function skippedLine(s: RunState) {
   return [out.length ? `Skipped, as you asked: ${list}.` : '', r.synthetics ? 'The rollout was judged by synthetic tests.' : ''].filter(Boolean).join(' ')
 }
 
-// What shipped and where it is now: every task or only some, and live, at 10%, rolled back or not shipped.
-function doneLead(s: RunState) {
-  const work = s.tasks.filter((t) => !t.gate)
-  const shipped = work.filter((t) => t.status === 'accepted').length
-  const last = s.deploy[s.deploy.length - 1]?.stage
-  const where = last === '100%' ? 'live for everyone' : last === '10%' ? 'live for 10% of users' : last === 'rollback' ? 'rolled back, so nothing is live' : 'not shipped yet'
-  // A task you stopped part way is in, but not all of it.
-  const cut = work.filter((t) => t.stopped && t.status === 'accepted').length
-  if (shipped < work.length) return `${shipped} of ${work.length} tasks shipped, ${where}.`
-  return cut ? `All ${work.length} tasks are in, ${cut} of them cut short by you, and ${where}.` : `All ${work.length} tasks are in and ${where}.`
-}
-
 // Your request, read into changes: one row each, all on, and you take off any you want kept as it is.
 function ChangeCard({ side }: { side: boolean }) {
   const st = useStore()
@@ -1001,24 +992,26 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
     if (r.error) store.say(r.error)
   }
   return (
-    <Dialogue farmer="planner" side={side}>
+    <Dialogue farmer="planner" side={side} className={s.done ? 'done' : ''}>
       <div className="who">
         <b>Planner</b>
         {s.done ? <span className="tag green">Done</span> : <span className="tag grey">Message the agents</span>}
       </div>
       {s.done ? (
-        <p>
-          {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caughtLine(s)}, and you made {s.asks.filter((a) => a.answer).length} call{s.asks.filter((a) => a.answer).length === 1 ? '' : 's'}.
-        </p>
+        <div className="done-text">
+          <p>
+            {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caughtLine(s)}, and you made {s.asks.filter((a) => a.answer).length} call{s.asks.filter((a) => a.answer).length === 1 ? '' : 's'}.
+          </p>
+          {skippedLine(s) && <p className="impact">{skippedLine(s)}</p>}
+          {outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
+          {p.run?.lesson && <p className="impact learned-line">{lessonLine(p.run.lesson, p.events, true)}</p>}
+          {scaleLine(s) && (
+            <p className="impact scale-line">
+              <SimTag>Projection</SimTag> {scaleLine(s)}
+            </p>
+          )}
+        </div>
       ) : null}
-      {s.done && skippedLine(s) && <p className="impact">{skippedLine(s)}</p>}
-      {s.done && outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
-      {s.done && p.run?.lesson && <p className="impact learned-line">{lessonLine(p.run.lesson, p.events, true)}</p>}
-      {s.done && scaleLine(s) && (
-        <p className="impact scale-line">
-          <span className="tag grey">Projection</span> {scaleLine(s)}
-        </p>
-      )}
       {!s.done && (
         lines.length > 0 && (
           <div className="said talk">
@@ -1053,6 +1046,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
             <button className="btn tan" onClick={() => store.runAgain()}>
               Run again
             </button>
+            <ExportButtons p={p} s={s} />
           </>
         ) : (
           <form
@@ -1072,7 +1066,6 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
           </form>
         )}
       </div>
-      {s.done && <ExportButtons p={p} s={s} />}
     </Dialogue>
   )
 }

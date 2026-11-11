@@ -270,8 +270,9 @@ export function Home() {
             </button>
           ))}
           <button className="farm-hit" style={{ ...at(newSpot), width: 9 * T, height: 5 * T }} onClick={() => input.current?.focus()} aria-label="New project">
-            <span className="farm-tag ghost" style={{ left: 5 * T, top: 4.85 * T }}>
-              + New project
+            <span className="farm-tag ghost" style={{ left: 5.9 * T, top: 4.85 * T }}>
+              {list.length ? '+ New project' : '+ Your first project'}
+              {!list.length && <span className="farm-words">Tell the Planner what to build</span>}
             </span>
           </button>
         </>

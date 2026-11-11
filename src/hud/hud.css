@@ -362,3 +362,36 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .team-room { position: absolute; left: calc(var(--home-pad) + var(--home-side) + 24px); right: var(--home-pad); top: 16px; bottom: 16px; display: flex; align-items: center; justify-content: center; z-index: 5; pointer-events: none; }
 .team-room > * { pointer-events: auto; }
 
+/* ---- one simulated tag ----
+   Everything not real wears the same tag: Simulated, Simulated sample, Simulated run, Simulated team, Projection. */
+.tag.sim, .tag.gold { background: var(--honey-deep); }
+
+/* ---- quiet states: empty, nothing stands out, a failed call ----
+   One bold line and at most one meta line on the flat tint, an icon first. Berry only for a failure. */
+.quiet { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: var(--tint); font-size: var(--t-body); color: var(--bark); line-height: 1.35; }
+.quiet > .ico { margin-top: 2px; opacity: .7; }
+.quiet b { display: block; font-weight: 700; }
+.quiet .quiet-sub { display: block; margin-top: 2px; font-size: var(--t-meta); color: var(--bark-3); }
+.quiet.bad { background: var(--berry-wash); }
+.quiet.bad b { color: var(--berry); }
+.quiet.bad .quiet-sub { color: var(--bark-2); font-family: var(--mono); overflow-wrap: anywhere; }
+
+/* ---- paused: the tag carries a pause glyph, and the farm's colour drains a little until you press Play ---- */
+.tag.paused { display: inline-flex; align-items: center; gap: 5px; background: var(--bark-2); }
+.tag.paused i { width: 7px; height: 8px; margin-top: -1px; border-left: 2px solid var(--cream); border-right: 2px solid var(--cream); }
+.stage .map-layer canvas { transition: filter 400ms ease-out; }
+.stage:has(.top .tag.paused) .map-layer canvas { filter: saturate(.55) brightness(1.03); }
+@media (prefers-reduced-motion: reduce) { .stage .map-layer canvas { transition: none; } }
+
+/* ---- Done: one calm block. The lead, then the supporting lines close under it, then one row of actions
+   with the downloads as a quiet group at its end. ---- */
+.dlg.done .body { gap: 8px; }
+.dlg.done .done-text { display: flex; flex-direction: column; gap: 4px; }
+.dlg.done .done-text p.impact { line-height: 1.4; }
+.dlg.done .done-text p.scale-line { margin-top: 2px; }
+.dlg.done .row { flex-wrap: nowrap; }
+.export-group { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.export-label { font-size: var(--t-meta); color: var(--bark-3); margin-right: 2px; }
+.export-group .btn.xs { font: 700 var(--t-meta)/1 var(--ui); letter-spacing: 0; }
+.side .inbox-control { align-self: flex-start; }
+.top .title > .tag { padding: 3px 6px 2px; }
