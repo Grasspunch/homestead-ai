@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { draw, frame, hasFrame } from '../map/atlas'
-import { atlasLoaded, Ico } from '../hud/bits'
+import { atlasLoaded } from '../hud/bits'
 import { TINT } from '../run/crew'
 import { ProofPop } from '../hud/Proof'
 import { stepWalker, type Dir, type Walker } from './walk'
@@ -98,7 +98,7 @@ interface Cam {
   oy: number
 }
 
-// Zoom: the wheel, a trackpad pinch, two fingers, or the + and - buttons. The scale moves in quarter steps
+// Zoom: the wheel, a trackpad pinch or two fingers. The scale moves in quarter steps
 // between these, so the pixel art stays even.
 const MIN_SCALE = 1.5
 const MAX_SCALE = 5
@@ -275,8 +275,6 @@ export function FarmView(p: FarmViewProps) {
   const base = narrow ? 2 : docked ? ([3, 2.5, 2].find(fits) ?? 2) : size.h < 760 ? 2.5 : 3
   // Your zoom, as a factor on the scale that fits the screen, so it carries across planning, the run and a resize.
   const [zoom, setZoom] = useState(1)
-  // You've moved the camera yourself (dragged or zoomed about the pointer): Fit shows, to hand it back.
-  const [moved, setMoved] = useState(false)
   const zoomRef = useRef(1)
   const baseRef = useRef(base)
   baseRef.current = base
@@ -388,7 +386,6 @@ export function FarmView(p: FarmViewProps) {
     const follow = [focusId, !!p.openAsk, docked]
     if (follow.some((v, i) => v !== followed.current[i])) {
       c.manual = false
-      setMoved(c.back)
     }
     followed.current = follow
     if (!c.cx) {
@@ -399,14 +396,14 @@ export function FarmView(p: FarmViewProps) {
   function freeRect() {
     if (docked) {
       const w = size.w - DOCK - (p.side ? 470 : 0)
-      return { cx: DOCK + w / 2, cy: 80 + (size.h - 96) / 2, w: w - 16, h: size.h - 96, right: size.w - DOCK - w, bottom: 16 }
+      return { cx: DOCK + w / 2, cy: 80 + (size.h - 96) / 2, w: w - 16, h: size.h - 96 }
     }
     const w = size.w - (p.side && !narrow ? 470 : 0)
     // The free space starts under the top bar and ends where the dialogue starts, both measured, so neither the
     // top bar's buttons nor a tall plan or review ever covers what the camera turned to show you.
     const { top, bottom } = hudInsets()
     const h = Math.max(0, size.h - top - bottom)
-    return { cx: w / 2, cy: top + h / 2, w: w - 32, h, right: size.w - w, bottom }
+    return { cx: w / 2, cy: top + h / 2, w: w - 32, h }
   }
 
   // A plot that left the plan goes up in a poof, and the rest slide to their new places.
@@ -461,10 +458,6 @@ export function FarmView(p: FarmViewProps) {
         k.cx += (gx - k.cx) * g
         k.cy += (gy - k.cy) * g
       }
-      if (zoomBox.current) {
-        zoomBox.current.style.right = `${fr.right + 16}px`
-        zoomBox.current.style.bottom = `${fr.bottom + 4}px`
-      }
       k.ox = Math.round(k.fx - k.cx * PX * k.s)
       k.oy = Math.round(k.fy - k.cy * PX * k.s)
       if (labels.current) labels.current.style.transform = `translate(${k.ox}px, ${k.oy}px)`
@@ -481,7 +474,6 @@ export function FarmView(p: FarmViewProps) {
 
   // Zoom by a factor, about a point on screen (the pointer, or the middle of two fingers) or about the middle
   // of the free space. Zooming about a point keeps what's under it in place, like dragging does.
-  const zoomBox = useRef<HTMLDivElement>(null)
   const zoomBy = (f: number, at?: { x: number; y: number }) => {
     const b = baseRef.current
     const z = Math.min(MAX_SCALE / b, Math.max(MIN_SCALE / b, zoomRef.current * f))
@@ -498,7 +490,6 @@ export function FarmView(p: FarmViewProps) {
       k.cy = Math.max(0, Math.min(layout.h, ty + (k.fy - my) / (PX * s)))
       k.manual = true
       k.back = false
-      setMoved(true)
     }
     if (s !== k.s) {
       k.s = s
@@ -513,7 +504,6 @@ export function FarmView(p: FarmViewProps) {
     setZoom(z)
   }
   const zoomEase = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const zoomTo = (z: number) => zoomBy(z / zoomRef.current)
   const zoomByRef = useRef(zoomBy)
   zoomByRef.current = zoomBy
   // The wheel and a trackpad pinch (which the browser sends as a wheel with ctrl held) zoom the farm, never the page.
@@ -586,7 +576,6 @@ export function FarmView(p: FarmViewProps) {
       if (d.moved || Math.hypot(dx, dy) > 5) {
         d.moved = true
         const k = camRef.current
-        if (!k.manual) setMoved(true)
         k.manual = true
         k.back = false
         k.cx = Math.max(0, Math.min(layout.w, d.cx - dx / (PX * k.s)))
@@ -640,32 +629,6 @@ export function FarmView(p: FarmViewProps) {
   return (
     <div ref={wrap} className="map-layer" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onClick} onPointerCancel={lift} onPointerLeave={(e) => (lift(e), (hover.current = null), nameTip(null))} style={{ touchAction: 'none' }}>
       <canvas ref={canvas} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} aria-label="The farm" role="img" />
-      <div ref={zoomBox} className="farm-zoom" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
-        <button className="btn white" onClick={() => zoomBy(1.25)} disabled={scale >= MAX_SCALE} aria-label="Zoom in" title="Zoom in">
-          <Ico name="plus" />
-        </button>
-        <button className="btn white" onClick={() => zoomBy(1 / 1.25)} disabled={scale <= MIN_SCALE} aria-label="Zoom out" title="Zoom out">
-          <Ico name="minus" />
-        </button>
-        {(zoom !== 1 || scale !== base || moved) && (
-          <button
-            className="btn white fit"
-            onClick={() => {
-              const k = camRef.current
-              k.manual = false
-              k.back = false
-              k.saved = null
-              followed.current = []
-              setMoved(false)
-              zoomTo(1)
-            }}
-            aria-label="Back to the whole view"
-            title="Back to the whole view"
-          >
-            Fit
-          </button>
-        )}
-      </div>
       <span ref={tip} className="farmer-tip paper" hidden aria-hidden>
         <b />
         <span />

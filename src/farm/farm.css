@@ -1,8 +1,2 @@
-/* Zoom buttons, at the bottom right of the part of the farm the HUD leaves free (placed by the camera each frame). */
-.farm-zoom { position: absolute; right: 16px; bottom: 16px; z-index: 4; display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
-.farm-zoom .btn { height: 42px; min-width: 42px; padding: 0; border-width: 10px; justify-content: center; }
-.farm-zoom .btn.fit { padding: 0 4px; font-size: var(--px-xs); }
 /* While you zoom, the labels move with the farm at once instead of easing after it. */
 .plot-labels.zooming .plot-label { transition: none; }
-.farm-zoom .btn:disabled { opacity: 1; filter: saturate(.4) brightness(.92); }
-.farm-zoom .btn:disabled .ico { opacity: .45; }
