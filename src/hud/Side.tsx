@@ -407,7 +407,7 @@ export function outcome(s: RunState): { line: string; value: string } | null {
   const cost = Math.abs(gap) < 0.5 ? 'cost the same' : gap > 0 ? `cost ${usd(gap)} less` : `cost ${usd(-gap)} more`
   const sooner = s.soloActual.minutes - s.done.minutes
   // The time rests on an assumption, so it says so: one agent's steps run about a third slower.
-  const time = sooner > 0 ? ` and take about ${mins(sooner)} longer, assuming it runs a third slower` : ''
+  const time = sooner > 0 ? ` and, assuming one agent runs a third slower, take ${mins(sooner)} longer` : ''
   const spent = s.checkUsd !== undefined ? `${usd(s.checkUsd)} of checks` : 'A separate checker'
   return {
     line: `${spent} caught ${checks} problem${checks === 1 ? '' : 's'} before merge. One agent has nobody to catch them.`,
@@ -442,7 +442,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
         {less > 0.5 ? <>, <b>{usd(less)}</b> less</> : less < -0.5 ? <>, <b>{usd(-less)}</b> more</> : null}
       </p>
       {out && <p className="vs-out">{out.line}</p>}
-      <p className="vs-note">One agent holds every file in context, so each step is about a third slower and 10% dearer.</p>
+      <p className="vs-note">Assuming one agent runs a third slower and 10% dearer, since it holds every file in context.</p>
       <div className="vs-grid" role="table">
         <span role="columnheader" />
         <span role="columnheader">This team</span>

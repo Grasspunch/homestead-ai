@@ -76,6 +76,7 @@ const CHORES: { x: number; y: number; anim: string; dir: Dir }[] = [
 
 export interface FarmViewProps {
   state: RunState
+  run?: string // which run this is: a new one shows every proof pop again
   planning: boolean
   side: boolean // the panel is open on the right
   selected?: { kind: 'task' | 'farmer'; id: string } | null
@@ -200,12 +201,14 @@ export function FarmView(p: FarmViewProps) {
   // When each proof pop first showed, in wall-clock time, so it settles after a few seconds even while the run waits on you.
   const popSeen = useRef(new Map<string, number>())
   const failHold = useRef<{ key: string; at: number; id: string; c: TaskState['checks'][number] } | null>(null)
-  // A new run (the clock going back to the start) shows every proof again.
+  // A new run shows every proof again: a run of its own (Run again), or the clock going back to the start.
   const lastT = useRef(0)
-  if (p.state.t < lastT.current - 1000) {
+  const lastRun = useRef(p.run)
+  if (p.run !== lastRun.current || p.state.t < lastT.current - 1000) {
     popSeen.current.clear()
     failHold.current = null
   }
+  lastRun.current = p.run
   lastT.current = p.state.t
   const [, setPopTick] = useState(0)
   const layout = useMemo(() => {
