@@ -56,7 +56,7 @@ export interface Project {
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   talks?: Record<string, (TalkLine | { from: 'you'; text: string })[]> // talking a disagreement through, by ask id
-  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; brandAt?: number; addedAt?: Record<string, number> } // seq: which run of this farm, from 1
+  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; brandAt?: number; addedAt?: Record<string, number>; removedAt?: Record<string, number> } // seq: which run of this farm, from 1
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
@@ -872,6 +872,7 @@ class Store {
     if (!built) return
     if (run.brandAt !== undefined) (built.input as SimInput).brandAt = run.brandAt
     if (run.addedAt) (built.input as SimInput).addedAt = run.addedAt
+    if (run.removedAt) (built.input as SimInput).removedAt = run.removedAt
     // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
     const t0 = p.clock ?? 0
     if (t0 > 0) {
@@ -1404,7 +1405,9 @@ class Store {
     const sawBrand = sees(brand)
     const before = new Set(this.kitKeys(id, farmer, e))
     fn(e)
-    const back = this.kitKeys(id, farmer, e).filter((k) => !before.has(k))
+    const after = new Set(this.kitKeys(id, farmer, e))
+    const back = [...after].filter((k) => !before.has(k))
+    const gone = [...before].filter((k) => !after.has(k))
     const brandAdded = !sawBrand && sees(brand)
     this.kit = { ...this.kit, [id]: { ...k } }
     // On a running farm the change applies from now: the run is simulated again with it, and what was already spent stays.
@@ -1418,6 +1421,8 @@ class Store {
       if (brandAdded) p.run.brandAt = Math.max(p.clock ?? 0, p.run.brandAt ?? 0)
       // So does any other file or skill you turned back on.
       for (const k of back) p.run.addedAt = { ...p.run.addedAt, [k]: Math.max(p.clock ?? 0, p.run.addedAt?.[k] ?? 0) }
+      // A file or skill you took away from now on: a check that already passed stays passed.
+      for (const k of gone) p.run.removedAt = { ...p.run.removedAt, [k]: Math.max(p.clock ?? 0, p.run.removedAt?.[k] ?? 0) }
       this.rebuild(p)
       // Added on the Designer's page while it was asking for it: that's the answer.
       if (brandAdded && !this.viewerAnswers[BRAND_ASK] && pendingAsk(p.events, p.clock ?? 0, this.viewerAnswers) === BRAND_ASK) this.answer(BRAND_ASK, BRAND_FIX)

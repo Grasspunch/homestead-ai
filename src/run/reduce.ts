@@ -115,7 +115,7 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
       case 'check': {
         const k = task(e.task)
         if (k) {
-          k.checks.push({ by: e.by, pass: e.pass, notes: e.notes, evidence: e.evidence ?? [], proof: e.proof, t: e.t })
+          k.checks.push({ by: e.by, pass: e.pass, notes: e.notes, evidence: e.evidence ?? [], proof: e.proof, t: e.t, ...(e.yours ? { yours: true } : {}) })
           if (!e.pass) {
             k.status = 'wilted'
             k.progress = Math.min(k.progress, 0.6)

@@ -121,6 +121,8 @@ export interface SimInput {
   brandAt?: number
   // When you gave a farmer back a file or skill a task failed without, by "farmer:path" or "farmer:skill" (ms).
   addedAt?: Record<string, number>
+  // When you took a file or skill away mid-run: checks before then had it.
+  removedAt?: Record<string, number>
   // Tasks an earlier run of this farm split mid-run, which this run plans in two from the start.
   presplit?: string[]
 }
@@ -222,6 +224,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     const x = setupOf(n.farmer)
     if (!x) return false
     const back = (input.addedAt?.[needKey(n)] ?? 0) > min * MIN
+    if ((input.removedAt?.[needKey(n)] ?? 0) > min * MIN) return false
     if (n.path) return (x.planContext ?? x.context).includes(n.path) && (!x.context.includes(n.path) || back)
     return !!x.skillsOff?.includes(n.skill!) || back
   }
@@ -372,6 +375,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         const suggested = 'Split it in two'
         const raise = `Raise its limit to ${money(projected)}`
         let c = suggested
+        let approved = projected
         let at$ = tt + 0.1
         if (asks('cost')) {
           const id = `ask-${++askN}`
@@ -386,9 +390,13 @@ export function simulateRun(input: SimInput): RunEvent[] {
             alternatives: [raise, 'Stop it here'],
           })
           c = choose(id, suggested)
-          // A raise you approved stays a raise when a model change moves the price it names: never a stop.
-          if (c !== raise && /^Raise its limit/.test(c)) c = raise
-          at(tt + 1.2, { type: 'answer', id, choice: c, by: 'human' })
+          // A raise you approved stays a raise, at the amount you approved, when a model change moves the price:
+          // never a stop, and never re-priced. Passing it asks again, as any limit does.
+          if (c !== raise && /^Raise its limit/.test(c)) {
+            approved = Number(/\$(\d+(\.\d+)?)/.exec(c)?.[1] ?? projected)
+            c = raise
+          }
+          at(tt + 1.2, { type: 'answer', id, choice: choose(id, suggested), by: 'human' })
           at$ = tt + 1.2
         } else {
           at(tt + 0.15, { type: 'auto_fix', task: task.id, what: `${task.name} was heading to ${money(projected)}, over its ${money(budget)}. The ${label(lead)} split it in two, which saves about ${money(projected - budget - rest$)}.` })
@@ -407,11 +415,11 @@ export function simulateRun(input: SimInput): RunEvent[] {
           if (left > 0) sized[task.id] = Math.max(0, budget - spent - asked - checkRead(task)) / left
         } else if (c === raise) {
           // Kept whole: it finishes, at the price it was heading for.
-          at(at$ + 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `Kept going under a ${money(projected)} limit` })
+          at(at$ + 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `Kept going under a ${money(approved)} limit` })
           usage(at$ + 0.2, f, task.id, Math.max(0, projected - spent - usdPer(f) * 0.5), 'write')
           extra += 5
           // What keeping it whole costs over splitting it, which the farmer's limit was planned on.
-          const by = Math.max(1, Math.ceil(projected - budget - rest$))
+          const by = Math.max(1, Math.ceil(approved - budget - rest$))
           const base = input.past?.limit[f] ?? farmers.find((x) => x.id === f)?.limits.usd ?? 0
           bumps.push({ f, t: Math.round((at$ + 0.05) * MIN), by })
           at(at$ + 0.05, { type: 'auto_fix', task: task.id, what: limitRaised(label(f), by, base + by) })
@@ -463,7 +471,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const what = n.path ? contextName(n.path)?.toLowerCase() : undefined
       const skill = n.skill ? SKILLS[n.farmer].find((i) => i.id === n.skill)?.name ?? n.skill : undefined
       const fix = n.path ? `Add ${what ? `the ${what}` : n.path}` : `Turn on ${skill}`
-      at(end + 0.4, { type: 'check', task: task.id, by: checkerOf(f), pass: false, notes: n.fail, evidence: n.farmer === 'designer' ? ['evidence/screen.png'] : ['tests/report.json'] })
+      at(end + 0.4, { type: 'check', task: task.id, by: checkerOf(f), pass: false, yours: true, notes: n.fail, evidence: n.farmer === 'designer' ? ['evidence/screen.png'] : ['tests/report.json'] })
       at(end + 0.5, {
         type: 'ask', id, farmer: n.farmer, task: task.id, reason: 'anomaly', confidence: 'high', basis: n.basis,
         question: n.path ? `${task.name} failed its check, because I can’t see ${what ? `the ${what}` : n.path}.` : `${task.name} failed its check, because ${skill} is off for me.`,
@@ -486,6 +494,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (!given) {
       stopped.add(task.id)
       free[f] = end
+      // The release waits for your answer: the pull request is asked about after the stop, never before it.
+      lastBuilt = Math.max(lastBuilt, end + 0.5)
       continue
     }
 

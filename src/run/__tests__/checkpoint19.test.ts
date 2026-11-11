@@ -80,3 +80,71 @@ describe('checkpoint 19: Run again never stacks tasks', () => {
     expect(counts[0]).toBe(counts[1])
   })
 })
+
+describe('checkpoint 20: an approved raise keeps its amount', () => {
+  it('Builder to Opus at the cost ask, then Raise to $23: the limit goes up by what you approved, and passing it asks again', () => {
+    const p = farm(SAMPLE_GOAL)
+    const a = nextAsk(p)!
+    p.clock = a.t
+    const raise = a.alternatives!.find((o) => /^Raise its limit/.test(o))!
+    store.editKit(p.id, 'builder', (e) => void (e.model = 'Claude Opus 5.5'))
+    store.answer(a.id, raise)
+    const lift = p.events.find((e) => e.type === 'auto_fix' && /limit went up/.test(e.what))
+    const plain = farm(SAMPLE_GOAL)
+    const b = nextAsk(plain)!
+    plain.clock = b.t
+    store.answer(b.id, raise)
+    const plainLift = plain.events.find((e) => e.type === 'auto_fix' && /limit went up/.test(e.what))
+    expect(lift).toBeDefined()
+    expect(plainLift).toBeDefined()
+    // The answer on record is the one you gave, at the price you approved.
+    expect(p.events.find((e) => e.type === 'answer' && e.id === a.id && e.type === 'answer' && e.choice === raise)).toBeDefined()
+    expect(p.events.some((e) => e.type === 'tool' && e.summary === `Kept going under a ${raise.replace('Raise its limit to ', '')} limit`)).toBe(true)
+    expect(p.events.some((e) => e.type === 'ask' && e.limitFor === 'builder')).toBe(true)
+  })
+})
+
+describe('checkpoint 20: taking a file away never fails a task that already passed', () => {
+  it('help docs off after "Index the help docs" passed: no failed check, no ask, the task stays in', () => {
+    const p = farm(SAMPLE_GOAL)
+    // Past the cost ask and every check of the first task.
+    for (let i = 0; i < 30; i++) {
+      const a = nextAsk(p)
+      if (!a) break
+      p.clock = Math.max(p.clock!, a.t)
+      store.answer(a.id, a.suggested)
+      const ok = p.events.find((e) => e.type === 'check' && e.task === 'docs-index' && e.pass)
+      if (ok && ok.t < p.clock!) break
+    }
+    const ok = p.events.find((e) => e.type === 'check' && e.task === 'docs-index' && e.pass)!
+    p.clock = Math.max(p.clock!, ok.t + 60_000)
+    store.editKit(p.id, 'builder', (e) => void (e.contextOff = [...(e.contextOff ?? []), 'docs/help/']))
+    expect(p.events.some((e) => e.type === 'check' && e.task === 'docs-index' && !e.pass && e.t > ok.t)).toBe(false)
+    expect(p.events.some((e) => e.type === 'ask' && e.need?.path === 'docs/help/')).toBe(false)
+    expect(p.events.some((e) => e.type === 'stop' && e.task === 'docs-index')).toBe(false)
+  })
+})
+
+describe('checkpoint 20: a check you stopped never holds the release', () => {
+  it('Tester without Drive a browser, Stop this task, then Merge: it ships, and your stop isn’t a caught problem', () => {
+    const p = store.newProject(SAMPLE_GOAL)
+    const plan = simulatePlan(SAMPLE_GOAL)
+    store.setPlan(p.id, plan.name, plan.farmers, plan.tasks, plan.estimate, plan.singleAgentEstimate)
+    store.editKit(p.id, 'tester', (e) => void (e.off = [...e.off, 'browser']))
+    store.approve(p.id)
+    store.pause()
+    let stopped = false
+    for (let i = 0; i < 30; i++) {
+      const a = nextAsk(p)
+      if (!a) break
+      p.clock = Math.max(p.clock!, a.t)
+      if (a.need) stopped = true
+      store.answer(a.id, a.need ? 'Stop this task' : a.suggested)
+    }
+    p.clock = doneT(p)!
+    const s = store.state(p)!
+    expect(stopped).toBe(true)
+    expect(s.deploy.some((d) => d.stage === '10%')).toBe(true)
+    expect(s.tasks.flatMap((t) => t.checks).some((c) => c.yours)).toBe(true)
+  })
+})

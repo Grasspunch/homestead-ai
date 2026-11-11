@@ -74,7 +74,7 @@ export type RunEvent =
   | { t: number; type: 'usage'; farmer: FarmerId; task?: string; tokensIn: number; tokensOut: number; usd: number; kind?: UsageKind }
   | { t: number; type: 'progress'; task: string; value: number }
   | { t: number; type: 'task_built'; task: string }
-  | { t: number; type: 'check'; task: string; by: FarmerId; pass: boolean; notes: string; evidence?: string[]; proof?: Proof }
+  | { t: number; type: 'check'; task: string; by: FarmerId; pass: boolean; notes: string; evidence?: string[]; proof?: Proof; yours?: boolean }
   | { t: number; type: 'auto_fix'; task?: string; what: string }
   | { t: number; type: 'disagree'; task: string; sides: { farmer: FarmerId; position: string; why?: string }[] }
   | { t: number; type: 'accept'; task: string; by: FarmerId }
@@ -119,7 +119,7 @@ export interface TaskState extends PlanTask {
   progress: number // 0..1
   usd: number
   tokens: number
-  checks: { by: FarmerId; pass: boolean; notes: string; evidence: string[]; proof?: Proof; t: number }[]
+  checks: { by: FarmerId; pass: boolean; notes: string; evidence: string[]; proof?: Proof; t: number; yours?: boolean }[]
   evidence: string[]
   summary?: string
   verified?: boolean

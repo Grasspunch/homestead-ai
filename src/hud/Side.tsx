@@ -402,7 +402,8 @@ function fixes(s: RunState): Fix[] {
 // stopped (10% of users did see that one). A rollback you made yourself isn't counted.
 export function caught(s: RunState): { where: string; what: string; kind: 'check' | 'canary' }[] {
   const out: { where: string; what: string; kind: 'check' | 'canary' }[] = []
-  for (const t of s.tasks) for (const c of t.checks) if (!c.pass) out.push({ where: t.name, what: c.notes, kind: 'check' })
+  // A check that failed because you took a file or skill away is yours, not a problem the checker caught.
+  for (const t of s.tasks) for (const c of t.checks) if (!c.pass && !c.yours) out.push({ where: t.name, what: c.notes, kind: 'check' })
   s.deploy.forEach((d, i) => {
     if (d.stage === 'rollback' && d.reason !== BY_YOU && s.deploy[i - 1]?.stage === '10%') out.push({ where: 'Rollout', what: d.reason ?? 'Errors passed 2% at 10%, so it rolled back on its own', kind: 'canary' })
   })
