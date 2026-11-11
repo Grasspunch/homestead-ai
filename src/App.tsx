@@ -347,6 +347,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
   const setupOf = (id: FarmerId) => applyEdit(s.farmers[id]!, edits[id])
   const fc = st.forecast(p)
   const est = fc?.crew
+  const guess = plannerCost(p)
   const one = fc?.solo
   const setCrew = (next: FarmerId[]) => planInto(p, next)
   const missing = FARMER_ORDER.filter((x) => !s.farmers[x])
@@ -371,7 +372,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
       <p className="plan-lead">
         {ids.length > 1 ? (
           <>
-            About <b>{est && mins(est.minutes)}</b> and <b>{est && usd(est.usd)}</b> with {ids.length} AI agents.
+            About <b>{est && mins(est.minutes)}</b> and <b>{guess !== undefined && usd(guess)}</b> with {ids.length} AI agents.
             {one && est && (
               <>
                 {' '}One Sonnet 5 agent alone would{' '}
@@ -383,7 +384,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
           </>
         ) : (
           <>
-            One agent, one task at a time: <b>{est && mins(est.minutes)}</b> for <b>{est && usd(est.usd)}</b>.
+            One agent, one task at a time: <b>{est && mins(est.minutes)}</b> for <b>{guess !== undefined && usd(guess)}</b>.
           </>
         )}
       </p>
@@ -465,7 +466,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         >
           <Ico name="play" />
           Approve
-          {est && <small>{usd(est.usd)}</small>}
+          {guess !== undefined && <small>{usd(guess)}</small>}
         </button>
       </div>
     </Dialogue>
@@ -983,10 +984,17 @@ const historyOf = (pid: string) => (store.chat[pid] ?? []).slice(-12).map((l) =>
 
 // What the plan said when you approved it, so the actual total reads against it, not as a constant.
 function plannedLine(p: Project, s: RunState) {
-  const f = p.run?.forecast?.crew
-  if (!f || !s.done) return ''
-  if (Math.abs(f.usd - s.done.usd) < 0.5 && Math.abs(f.minutes - s.done.minutes) < 1) return ', as planned'
-  return `, against ${usd(f.usd)} and ${mins(f.minutes)} planned`
+  const g = plannerCost(p)
+  if (g === undefined || !s.done) return ''
+  const gap = s.done.usd - g
+  if (Math.abs(gap) < 0.5) return `, the ${usd(g)} the Planner estimated`
+  return `, ${usd(Math.abs(gap))} ${gap > 0 ? 'over' : 'under'} the Planner’s ${usd(g)} estimate`
+}
+
+// The Planner's own cost estimate, made before anything ran. The plan shows it; Done reads the real total against it.
+function plannerCost(p: Project) {
+  const e = p.events.find((x) => x.type === 'plan')
+  return e && e.type === 'plan' ? (e.basis ?? e.estimate).usd : undefined
 }
 
 // Your request, read into changes: one row each, all on, and you take off any you want kept as it is.
