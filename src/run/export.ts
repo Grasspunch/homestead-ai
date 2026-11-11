@@ -7,7 +7,7 @@ import { FARMER_ORDER } from './types'
 import { BY_YOU as ROLLED_BY_YOU } from './rollback'
 import { prOf } from './files'
 import { caught as allCaught } from './scale'
-import { doneLead, plannerEstimate } from './done'
+import { budgetStopOf, doneLead, plannerEstimate } from './done'
 import { fixLineOf, lessonLine, type FixFarm, type Lesson } from './learn'
 
 // What the exports need from a farm. A Project fits it as it is.
@@ -110,14 +110,16 @@ function spendTable(s: RunState) {
 }
 
 function spendLines(p: ExportFarm, s: RunState) {
-  const plan = p.events ? plannerEstimate(p.events) : undefined
+  // A run you stopped at its budget isn't compared with the plan or with one agent: it didn't do the same work.
+  const stopped = !!budgetStopOf(s)
+  const plan = p.events && !stopped ? plannerEstimate(p.events) : undefined
   const total = s.done?.usd ?? s.usage.usd
   const k = s.usage.byKind
   const lines = [`- In all: ${cents(total)}${s.done ? ` over ${mins(s.done.minutes)}` : ''}`]
   if (plan) lines.push(`- The Planner's estimate: ${usd(plan.usd)}`)
   lines.push(`- Reading ${cents(k.read.usd)}, writing ${cents(k.write.usd)}, redoing work ${cents(k.retry.usd)}`)
   if (s.checkUsd !== undefined) lines.push(`- Checks: ${cents(s.checkUsd)}`)
-  if (s.soloActual) lines.push(`- ${soloLine(s).replace(/\.$/, '')}`)
+  if (s.soloActual && !stopped) lines.push(`- ${soloLine(s).replace(/\.$/, '')}`)
   return lines.join('\n')
 }
 
@@ -193,7 +195,7 @@ export function runReport(p: ExportFarm, s: RunState): string {
   })
   const outcome = [
     `- ${doneLead(s)}`,
-    s.done ? `- ${cents(s.done.usd)} over ${mins(s.done.minutes)}${plannerEstimate(p.events ?? []) ? `, against the Planner's ${usd(plannerEstimate(p.events ?? [])!.usd)} estimate` : ''}.` : '- The run has not finished.',
+    s.done ? `- ${cents(s.done.usd)} over ${mins(s.done.minutes)}${!budgetStopOf(s) && plannerEstimate(p.events ?? []) ? `, against the Planner's ${usd(plannerEstimate(p.events ?? [])!.usd)} estimate` : ''}.` : '- The run has not finished.',
     `- ${c.checks.length || 'No'} problem${c.checks.length === 1 ? '' : 's'} caught before merge${c.canary.length ? `, ${c.canary.length} bad release stopped at 10%` : ''}.`,
     `- ${s.asks.filter((a) => a.answer).length} decisions came to you; the crew handled ${s.autoFixes.length} by itself.`,
     ...(learned ? [`- ${learned}`] : []),

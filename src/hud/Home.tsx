@@ -11,6 +11,7 @@ import type { FarmerId, RunState } from '../run/types'
 import { ASK_WHY, Ico, Portrait, atlasLoaded } from './bits'
 import { CELL, PX, fitLayout, type Layout } from './homeLayout'
 import { spentOf } from '../run/team'
+import { budgetStopOf } from '../run/done'
 
 
 interface Mini {
@@ -67,6 +68,7 @@ function minis(projects: Project[], cols: number): Mini[] {
 
 // A finished farm: is its release live, rolled back, or never shipped?
 function doneWords(p: Project, s: RunState, t: number) {
+  if (budgetStopOf(s)) return liveStage(p.events, t) ? 'Stopped at its budget, partly live' : 'Stopped at its budget'
   if (liveStage(p.events, t)) return s.tasks.some((k) => k.stopped) ? 'Partly shipped and live' : 'Done and live'
   return s.deploy.some((d) => d.stage === 'rollback') ? 'Rolled back, nothing live' : 'Done, not shipped'
 }

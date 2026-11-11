@@ -8,7 +8,10 @@ export function doneLead(s: Pick<RunState, 'tasks' | 'deploy'> & Partial<Pick<Ru
   const stop = budgetStopOf(s)
   if (stop) {
     const done = all.filter((t) => t.status === 'accepted').length
-    return `You stopped the run at its ${stop} budget: ${done} of ${all.length} tasks done, nothing shipped.`
+    const last = s.deploy[s.deploy.length - 1]?.stage
+    // Stopped after the release went out: say where it stands, not "nothing shipped".
+    const where = last === '100%' ? 'live for everyone' : last === '10%' ? 'stopped after the 10% release, which stays live for 10% of users' : last === 'rollback' ? 'rolled back, so nothing is live' : 'nothing shipped'
+    return `You stopped the run at its ${stop} budget: ${done} of ${all.length} tasks done, ${where}.`
   }
   const done = all.filter((t) => t.status === 'accepted').length
   const last = s.deploy[s.deploy.length - 1]?.stage

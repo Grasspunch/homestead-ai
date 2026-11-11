@@ -1005,6 +1005,16 @@ class Store {
     // Done's total is what Spend adds up: every step at the rate it was paid.
     const usd = +events.reduce((n, e) => n + (e.type === 'usage' ? e.usd : 0), 0).toFixed(2)
     events = events.map((e) => (e.type === 'done' ? { ...e, usd } : e))
+    // An answer is never logged before its ask, and an answer you gave is logged as you gave it.
+    const askAt = new Map(events.filter((e) => e.type === 'ask').map((e) => [e.type === 'ask' ? e.id : '', e.t]))
+    events = events
+      .map((e) => {
+        if (e.type !== 'answer') return e
+        const t = Math.max(e.t, (askAt.get(e.id) ?? -1) + 1)
+        const choice = answers[e.id] ?? e.choice
+        return t === e.t && choice === e.choice ? e : { ...e, t, choice }
+      })
+      .sort((a, b) => a.t - b.t)
     p.events = events
     this.setSpeed(events)
   }
@@ -1317,8 +1327,23 @@ class Store {
     const p = this.project(id)
     if (!p || !Number.isFinite(typed) || !(typed > 0)) return
     p.spendLimit = clampBudget(typed)
-    // On a run under way, the new budget counts from now: the Planner asks before the run passes it.
-    if (p.approved && p.run && !this.isDone(p)) this.rebuild(p)
+    if (p.approved && p.run && !this.isDone(p)) {
+      // A budget ask on screen is answered by the new budget when it covers what's spent; otherwise it's
+      // withdrawn, and the Planner asks again with the new figure.
+      const now = p.clock ?? 0
+      const open = pendingAsk(p.events, now, this.viewerAnswers)
+      const ask = open ? p.events.find((e) => e.type === 'ask' && e.id === open) : undefined
+      if (ask && ask.type === 'ask' && ask.budgetFor) {
+        const spent = p.events.reduce((n, e) => n + (e.type === 'usage' && e.t <= now ? e.usd : 0), 0)
+        if (p.spendLimit > spent + 0.005) {
+          this.answer(ask.id, `Raise the budget to $${p.spendLimit}`)
+          return
+        }
+        p.events = p.events.filter((e) => !((e.type === 'ask' || e.type === 'answer') && e.id === ask.id))
+      }
+      // On a run under way, the new budget counts from now: the Planner asks before the run passes it.
+      this.rebuild(p)
+    }
     this.notify()
   }
 

@@ -611,7 +611,7 @@ function MergeBox({ s, p, state, failing, ask, live }: { s: RunState; p: Project
           <span className="grow">
             <b>Closed at the budget</b>
             <span className="sub">
-              You stopped the run at its {budgetStopOf(s)} budget, with {usd(s.done?.usd ?? s.usage.usd)} spent. {done.length} of {s.tasks.filter((t) => !t.gate).length} tasks were committed; nothing was merged or shipped.
+              You stopped the run at its {budgetStopOf(s)} budget, with {usd(s.done?.usd ?? s.usage.usd)} spent. {s.tasks.filter((t) => t.status === 'accepted').length} of {s.tasks.length} tasks done; nothing was merged or shipped.
             </span>
           </span>
         </div>
