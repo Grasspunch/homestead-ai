@@ -81,11 +81,11 @@ export function PrView({ s, p }: { s: RunState; p: Project }) {
               </>
             ) : commits ? (
               <>
-                <b>The crew</b> wants to merge {plural(commits, 'commit')} into <code>main</code> from <code>{branch}</code>
+                <b>The agents</b> want to merge {plural(commits, 'commit')} into <code>main</code> from <code>{branch}</code>
               </>
             ) : (
               <>
-                <b>The crew</b> is writing on <code>{branch}</code>. No commits yet.
+                <b>The agents</b> are writing on <code>{branch}</code>. No commits yet.
               </>
             )}
           </span>
@@ -217,7 +217,7 @@ function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: 
                   {shots ? `, ${plural(shots, 'screenshot')}` : ''}. Nobody checks their own work. {caughtLine(s)}.
                 </>
               ) : (
-                'Each task is checked by a different farmer before it is committed.'
+                'Each task is reviewed by a different agent before it is committed.'
               )}
             </p>
           </div>
@@ -317,7 +317,7 @@ function Stat({ add, del }: { add: number; del: number }) {
 
 function Commits({ s, pr, openFile }: { s: RunState; pr: Pr; openFile: (path: string) => void }) {
   const out = s.tasks.filter((t) => !t.gate && t.stopped && t.status !== 'accepted')
-  if (!pr.commits.length && !out.length) return <p className="prv-empty">No commits yet. A task is committed when another farmer's check passes.</p>
+  if (!pr.commits.length && !out.length) return <p className="prv-empty">No commits yet. A task is committed when another agent's review passes.</p>
   return (
     <div className="list prv-list">
       {pr.commits.map((c: Commit) => (
@@ -369,7 +369,7 @@ function Checks({ s }: { s: RunState }) {
 }
 
 function Files({ s, pr, path, setPath, ask }: { s: RunState; pr: Pr; path: string | null; setPath: (p: string) => void; ask?: Ask }) {
-  if (!pr.files.length) return <p className="prv-empty">No changes yet. Files show up here as the crew writes them.</p>
+  if (!pr.files.length) return <p className="prv-empty">No changes yet. Files show up here as the agents write them.</p>
   const file = pr.files.find((f) => f.path === path) ?? pr.files.find((f) => f.live) ?? pr.files[0]
   return (
     <div className="prv-files">
@@ -512,7 +512,7 @@ function FileDiff({ s, f, ask }: { s: RunState; f: PrFile; ask?: Ask }) {
   )
 }
 
-// The review loop, in the order it happened: commits, each farmer's review of another's work, your review,
+// The review loop, in the order it happened: commits, each agent's review of another's work, your review,
 // the changes that came back, and the merge.
 type Item = { t: number; key: string; tone: 'commit' | 'ok' | 'changes' | 'merged' | 'bad'; who: FarmerId | 'you'; text: string; quote?: string; commit?: Commit }
 
@@ -626,10 +626,10 @@ function MergeBox({ s, p, state, failing, ask, live }: { s: RunState; p: Project
 
   // Each gate on the way to main: the farmers' reviews, then yours.
   const agent: Gate = fixing.length
-    ? { tone: 'bad', title: `Changes requested on ${fixing.map((t) => t.name).join(', ')}`, sub: 'Its farmer is fixing it, then it is reviewed again' }
+    ? { tone: 'bad', title: `Changes requested on ${fixing.map((t) => t.name).join(', ')}`, sub: 'Its agent is fixing it, then it is reviewed again' }
     : done.length === work.length && done.length
-      ? { tone: 'ok', title: 'Approved by the crew', sub: `Every task was reviewed by a farmer that didn't write it` }
-      : { tone: 'wait', title: `${done.length} of ${work.length} tasks approved`, sub: 'Each task is reviewed by a farmer that didn’t write it' }
+      ? { tone: 'ok', title: 'Approved by the agents', sub: `Every task was reviewed by an agent that didn't write it` }
+      : { tone: 'wait', title: `${done.length} of ${work.length} tasks approved`, sub: 'Each task is reviewed by an agent that didn’t write it' }
   const you: Gate =
     p.autonomy.ship === 'auto'
       ? { tone: 'ok', title: 'Your review is not needed', sub: 'You let it merge by itself once every check passes' }
@@ -639,7 +639,7 @@ function MergeBox({ s, p, state, failing, ask, live }: { s: RunState; p: Project
           ? { tone: 'you', title: 'Waiting for your review', sub: 'Nothing merges until you approve it' }
           : lastSent && !reopened
             ? { tone: 'bad', title: 'You requested changes', sub: backTask ? `The ${label(s, s.tasks.find((t) => t.id === backTask.task)?.farmer)} is changing ${s.tasks.find((t) => t.id === backTask.task)?.name ?? 'it'}, then it comes back to you` : 'It comes back to you once changed' }
-            : { tone: 'wait', title: 'Your review comes next', sub: 'Once the crew approves every task' }
+            : { tone: 'wait', title: 'Your review comes next', sub: 'Once the agents approve every task' }
 
   const committed = done
   return (
