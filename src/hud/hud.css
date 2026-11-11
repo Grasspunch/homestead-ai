@@ -407,8 +407,21 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .dlg.done .done-text p.impact { line-height: 1.4; }
 .dlg.done .done-text p.scale-line { margin-top: 2px; }
 .dlg.done .row { flex-wrap: nowrap; }
+
+/* The Planner's box, folded down to its name and latest line: the farm gets the space back. */
+.who .fold { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.dlg.folded { width: min(720px, calc(100% - 32px)); }
+.dlg.folded.with-side { width: min(720px, calc(100% - 490px)); }
+.dlg.folded .portrait { width: 72px; height: 72px; border-width: 10px; border-image-width: 12px; align-self: flex-end; }
+.dlg.folded .portrait canvas { inset: 2px; width: 48px !important; height: 48px !important; } /* Portrait sizes itself inline */
+.dlg.folded .body { justify-content: center; }
+.dlg.folded .body > :not(.who) { display: none; }
+.dlg.folded .who { min-width: 0; }
+.dlg.folded .who .tag.grey { display: none; } /* room for the latest line */
+.who .fold-last { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-body); color: var(--bark-2); }
 .export-group { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
 .export-label { font-size: var(--t-meta); color: var(--bark-3); margin-right: 2px; }
 .export-group .btn.xs { font: 700 var(--t-meta)/1 var(--ui); letter-spacing: 0; }
 .side .inbox-control { align-self: flex-start; }
 .top .title > .tag { padding: 3px 6px 2px; }
+@media (max-width: 900px) { .dlg.folded, .dlg.folded.with-side { width: auto; } }

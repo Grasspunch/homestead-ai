@@ -1137,6 +1137,29 @@ function ChangeCard({ side }: { side: boolean }) {
   )
 }
 
+// Whether you folded the Planner's box down to its name. Kept across farms and reloads, since it's how you like the
+// screen, not something about one run.
+const FOLD_KEY = 'homestead:planner-folded'
+function usePlannerFolded(): [boolean, (v: boolean) => void] {
+  const [folded, setFolded] = useState(() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem(FOLD_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const set = (v: boolean) => {
+    setFolded(v)
+    try {
+      if (v) localStorage.setItem(FOLD_KEY, '1')
+      else localStorage.removeItem(FOLD_KEY)
+    } catch {
+      // Storage blocked: it still folds, it just opens again after a reload.
+    }
+  }
+  return [folded, set]
+}
+
 // The Planner's box: ask anything about the run, or change how it runs. A question gets an answer; a change is
 // said back or easy to undo; an earlier answer or change can be taken back in words. Reachable while a question
 // waits (onClose brings the question back), and after the run is done.
@@ -1152,6 +1175,16 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
   const lines = all ? chat : chat.slice(-SHOWN)
   const plannerModel = plannerModelOf(p, s)
   const input = useRef<HTMLInputElement>(null)
+  // Folded, the box is just the Planner's name, its latest line and a button to open it again. Reached on purpose
+  // while a question waits, it always opens; and it opens by itself once when the run is done, so you see how it went.
+  const [foldPref, setFold] = usePlannerFolded()
+  const folded = foldPref && !onClose
+  const wasDone = useRef(!!s.done)
+  useEffect(() => {
+    if (s.done && !wasDone.current && foldPref) setFold(false)
+    wasDone.current = !!s.done
+  }, [s.done])
+  const latest = chat[chat.length - 1]
   const you = (t: string) => store.chatTo(p.id, { from: 'you', text: clip(t) })
   const say = (t: string, to?: FarmerId) => store.chatTo(p.id, { from: 'planner', text: t, ...(to ? { to } : {}) })
   // Not something to change: a note to the agent it's about, and the reply says who has it.
@@ -1219,10 +1252,23 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
   // The release bug the last run rolled back on, fixed in this one, and how far this run counts toward merging by itself.
   const fixed = s.done ? fixLineOf(p, s.deploy.some((d) => d.stage === 'rollback')) : null
   return (
-    <Dialogue farmer="planner" side={side} className={s.done ? 'done' : ''}>
+    <Dialogue farmer="planner" side={side} className={`${s.done ? 'done' : ''}${folded ? ' folded' : ''}`}>
       <div className="who">
         <b>Planner</b>
         {s.done ? <span className="tag green">Done</span> : <span className="tag grey">Message the agents</span>}
+        {folded && latest && <span className="fold-last">{latest.from === 'you' ? `You: ${latest.text}` : latest.text}</span>}
+        {!onClose && (
+          <button
+            className="tag-btn fold"
+            onClick={() => setFold(!folded)}
+            aria-expanded={!folded}
+            aria-label={folded ? 'Open the Planner chat' : 'Fold the Planner chat away'}
+            title={folded ? 'Open the Planner chat' : 'Fold the Planner chat away'}
+          >
+            <Ico name={folded ? 'plus' : 'minus'} />
+            {folded ? 'Open' : 'Hide'}
+          </button>
+        )}
       </div>
       {s.done ? (
         <div className="done-text">
