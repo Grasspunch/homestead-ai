@@ -155,6 +155,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
   // With "May deploy" off, every release asks you: the merge, the ship again after a rollback, and 10% to everyone.
   const asks = (m: keyof Autonomy) => auto[m] === 'ask' || ((m === 'ship' || m === 'reship') && !!input.deployAsks)
   const sc = scenario(goal).script
+  // Straight to everyone: you asked for no 10% stage, or it's a small change that never had one.
+  const straight = !!rs?.everyone || !!sc.direct
+  // A small change takes a few steps, not a feature's worth.
+  const linesFor = (task: PlanTask, f: FarmerId) => (sc.quiet && f === 'builder' ? (task.gate ? ['Built the release'] : ['Found where it lives', 'Made the change', 'Ran the existing tests']) : steps(task, f))
   const choose = (id: string, suggested: string) => input.choices?.[id] ?? suggested
   // Never a farmer checking its own work: the Tester checks, and the Planner checks the Tester.
   const checkerOf = (f: FarmerId): FarmerId => (f !== checker ? checker : has('planner') && f !== 'planner' ? 'planner' : farmers.find((x) => x.id !== f)?.id ?? f)
@@ -179,7 +183,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const failing = sc.quiet ? undefined : builderTasks.find((t) => t !== pricey) ?? build.find((t) => t !== pricey && t !== disputed)
   // The task where the Builder wants a refactor that reaches the others' code.
   const sweeping = sc.quiet ? undefined : builderTasks.find((t) => t !== pricey && t !== failing) ?? (builderTasks.length > 1 ? builderTasks[builderTasks.length - 1] : undefined)
-  const perTask = Math.max(5, (basis.minutes * 0.6) / Math.max(1, plan.length))
+  const perTask = Math.max(sc.quiet ? 1.5 : 5, (basis.minutes * 0.6) / Math.max(1, plan.length))
   // Each step costs its farmer's model rate. The plan's estimate fixes the unit; a model you changed since moves its share.
   const rateOf = (model?: string) => MODELS.find((m) => m.model === model)?.rate ?? 1
   const modelOf = (f: FarmerId) => farmers.find((x) => x.id === f)?.model
@@ -224,7 +228,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       continue
     }
     at(start, { type: 'task_start', task: task.id, farmer: f })
-    const lines = steps(task, f)
+    const lines = linesFor(task, f)
     let spent = 0
     let extra = 0 // minutes this task runs past its plan
     let cutAt = -1 // the line where you stopped it, if you did
@@ -475,7 +479,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (asks('ship') || stopped.size > 0) {
       for (let round = 0; ; round++) {
         const id = `ask-${++askN}`
-        const suggested = isShip ? (rs?.everyone ? 'Merge and ship to everyone' : 'Merge and ship to 10%') : 'Go ahead'
+        const suggested = isShip ? (straight ? 'Merge and ship to everyone' : 'Merge and ship to 10%') : 'Go ahead'
         at(reviewAt + 0.3, {
           type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible',
           confidence: isShip && !stopped.size && input.bugFixed ? 'high' : 'medium',
@@ -484,7 +488,9 @@ export function simulateRun(input: SimInput): RunEvent[] {
               ? 'Every check passed, but stopped work is missing.'
               : input.bugFixed
                 ? `Every check passed, and the last release of this farm ran clean.`
-                : `Every check passed, but real users haven't seen this release yet, so 10% goes first.`
+                : sc.direct
+                  ? 'Every check passed, and it is a small change.'
+                  : `Every check passed, but real users haven't seen this release yet, so 10% goes first.`
             : 'It reaches real people and is hard to undo.',
           question: isShip
             ? stopped.size
@@ -492,12 +498,14 @@ export function simulateRun(input: SimInput): RunEvent[] {
               : `${round ? 'The pull request is ready again' : 'The pull request is ready'}: ${commits()} commits, and every check passed.`
             : `${task.name} reaches real people. Go ahead?`,
           impact: isShip
-            ? rs?.everyone
+            ? sc.direct && !rs?.everyone
+              ? 'Merging ships it to every user. It is a small change, so there is no 10% stage.'
+              : straight
               ? 'Merging puts it in front of every user at once. There is no 10% stage to roll back from.'
               : `Merging puts it in front of 10% of users first. ${rs?.synthetics ? 'If a synthetic test fails' : `If errors pass ${ERROR_LIMIT * 100}%`}, I roll back by myself.`
             : 'This one is hard to undo.',
           suggested,
-          alternatives: isShip ? (rs?.everyone ? [SEND_BACK, 'Not yet'] : [SEND_BACK, 'Ship to everyone', 'Not yet']) : ['Not yet'],
+          alternatives: isShip ? (straight ? [SEND_BACK, 'Not yet'] : [SEND_BACK, 'Ship to everyone', 'Not yet']) : ['Not yet'],
         })
         const c = choose(id, suggested)
         at(reviewAt + 1.5, { type: 'answer', id, choice: c, by: 'human' })
@@ -529,7 +537,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         break
       }
     } else if (isShip) {
-      const to = rs?.everyone ? 'shipped to everyone at once' : 'shipped to 10% first'
+      const to = straight ? 'shipped to everyone at once' : 'shipped to 10% first'
       at(start + 1.5, {
         type: 'auto_fix', task: task.id,
         what: rs?.noReview && rs.noDeployer
@@ -539,13 +547,13 @@ export function simulateRun(input: SimInput): RunEvent[] {
             : `Every check passed, so the ${label(f)} merged the pull request by itself (${commits()} commits) and ${to}.`,
       })
     }
-    if (rs?.everyone) everyone = true
+    if (straight) everyone = true
     const shipStart = reviewAt
     let t = shipStart + 1.7
     if (isShip) {
       at(t - 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: rs?.noDeployer && rs.noReview ? `Pushed straight to main (${commits()} commits)` : `Merged the pull request (${commits()} commits)` })
     }
-    for (const line of steps(task, f)) {
+    for (const line of linesFor(task, f)) {
       at(t, { type: 'tool', farmer: f, task: task.id, tool: 'run', summary: line })
       usage(t + 0.01, f, task.id, usdPer(f) * 0.15, 'write')
       t += 0.5
@@ -564,7 +572,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     const synth = !!rs?.synthetics
     const S = 12
     const mx = (errorRate: number, p95ms: number, answerScore: number, pass = S) => ({ errorRate, p95ms, answerScore, ...(synth ? { synth: { pass, total: S } } : {}) })
-    const direct = !!rs?.everyone
+    const direct = straight
     if (!input.bugFixed && !sc.quiet) {
     const first = everyone ? '100%' : '10%'
     at(t, { type: 'progress', task: task.id, value: 0.3 })

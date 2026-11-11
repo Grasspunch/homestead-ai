@@ -13,6 +13,8 @@ export interface Script {
   screen: Screen
   // A small change runs clean: no money ask, no failed check, no release bug. Those moments fit real features.
   quiet?: boolean
+  // It ships straight to everyone once you merge, with no 10% stage: a line of copy doesn't need a canary.
+  direct?: boolean
   refactor: { what: string; line: string }
   dispute: { topic: string; failNote: string; impact: string; designer: Side; builder: Side }
   rollout: { peak: number; bug: string; cause: string; fix: string; check: string; file: string; tests: string[] }
@@ -87,10 +89,10 @@ const GENERIC: Script = {
   rollout: { peak: 0.029, bug: 'the timeout under load', cause: 'requests time out under load after 10 s', fix: 'Added a timeout fallback and paged the slow query', check: 'Every request answers in under 1 s under load', file: 'tests/load.test.ts', tests: ['a busy minute answers in under 1 s', 'a timeout falls back cleanly', 'paging returns every row once', 'a restart keeps the data', 'an empty list shows a clear message'] },
 }
 
-const SMALL: Script = { ...GENERIC, quiet: true }
+const SMALL: Script = { ...GENERIC, quiet: true, direct: true }
 
 // A small change: one line of copy, a label, a colour, a typo, a config value. It needs the Builder to make it and
-// the Tester to look once, not a Designer, a Planner and a staged rollout. Short goals only, that say what to change
+// run the existing tests, and you to look at the pull request. Not a Tester, a Designer, a Planner or a staged rollout. Short goals only, that say what to change
 // and name something small, or quote the new text.
 const SMALL_VERB = /^(please |can you |could you )?(change|update|fix|rename|replace|reword|edit|tweak|correct|swap|set|make|bump|remove|delete|recolou?r|capitali[sz]e|lowercase|uppercase)\b/
 const SMALL_THING = /\b(text|copy|wording|words?|typos?|spelling|labels?|titles?|headings?|headlines?|subtitles?|captions?|tooltips?|placeholders?|strings?|links?|urls?|colou?rs?|fonts?|icons?|emojis?|year|dates?|version|email address|phone number|footer|tagline|slogan|greeting|sentence|line|button text|error message|(red|orange|yellow|green|blue|purple|pink|black|white|grey|gray)\b)/
@@ -140,20 +142,21 @@ function draft(goal: string): Draft {
     return {
       name: title,
       tasks: [
-        { id: 'change', name: 'Make the change', farmer: 'builder', doneWhen: 'The change shows where it should, and nothing else moved', mins: 3, usd: 0.2 },
-        // The release is still the Deployer's when you add it back; until then the Builder ships.
-        { ...SHIP, farmer: 'deployer', mins: 4, usd: 0.1 },
+        { id: 'change', name: 'Make the change', farmer: 'builder', doneWhen: 'The change shows as asked, and the existing tests still pass', mins: 1, usd: 0.04 },
+        // The release is still the Deployer's when you add it back; until then the Builder ships, after you merge.
+        { ...SHIP, name: 'Ship it', doneWhen: 'Merged by you and live for everyone', mins: 0.7, usd: 0.02 },
       ],
       script: SMALL,
       matched: false,
-      crew: ['builder', 'tester'],
-      check: { name: 'Check the change', doneWhen: 'The change shows as asked, and the existing tests still pass', mins: 2, usd: 0.1 },
+      // The Builder alone. Your look at the pull request is the review; add a Tester if you want a second pair of eyes.
+      crew: ['builder'],
+      check: { name: 'Check the change', doneWhen: 'The change shows as asked, and the existing tests still pass', mins: 0.7, usd: 0.02 },
       handoff: 0.02,
       context: { builder: ['src/'], tester: ['tests/'] },
       why: {
-        builder: 'Makes the one change, opens the pull request and ships it after you merge.',
-        tester: 'Looks at the change once and runs the existing tests, so nobody grades its own work.',
-        deployer: 'Ships it to 10% first and rolls back on its own.',
+        builder: 'Makes the change, runs the existing tests and ships it once you merge.',
+        tester: 'Looks at the change once, so the Builder never grades its own work.',
+        deployer: 'Ships it once you merge.',
       },
     }
   if (/\b(support|assistant|chat ?bots?|help ?desk|answers?)\b/.test(g))
@@ -244,12 +247,12 @@ const WHY: Record<FarmerId, string> = {
   deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own.',
 }
 
-function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boolean): FarmerSetup {
+function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boolean, ships = false): FarmerSetup {
   const label = CREW[id].label
   const model = solo ? 'Claude Opus 5.5' : MODEL_OF[id]
   const base: Record<FarmerId, { context: string[]; constraints: string[] }> = {
     planner: { context: ['docs/', 'README.md'], constraints: ['Read only', 'May not deploy'] },
-    builder: { context: d.context.builder ?? ['src/'], constraints: solo ? ['Waits for you before shipping', 'No network calls to production'] : ['May not deploy', 'No network calls to production'] },
+    builder: { context: d.context.builder ?? ['src/'], constraints: solo || ships ? ['Waits for you before shipping', 'No network calls to production'] : ['May not deploy', 'No network calls to production'] },
     designer: { context: d.context.designer ?? ['src/ui/'], constraints: ['Changes only its own screens', 'May not deploy'] },
     tester: { context: d.context.tester ?? ['tests/'], constraints: ['May not change src/', 'Runs tests only'] },
     deployer: { context: ['deploy/', '.env.example'], constraints: ['Ships to 10% first', 'Rolls back if errors pass 2%'] },
@@ -274,7 +277,8 @@ export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): Plan
   let crew = PRIORITY.filter((id) => wanted.has(id))
   if (Array.isArray(crewSize)) crew = PRIORITY.filter((id) => id === 'builder' || crewSize.includes(id))
   else if (crewSize !== undefined) crew = PRIORITY.slice(0, Math.max(1, Math.min(5, Math.round(crewSize))))
-  const solo = crew.length === 1
+  // One agent you chose is the general agent doing everything. The Builder alone on a small change is just the Builder.
+  const solo = crew.length === 1 && crewSize !== undefined
   const fallback = (f: FarmerId): FarmerId => (crew.includes(f) ? f : 'builder')
 
   // Drafts price each task in small units; scaled, this is what the task costs on Opus.
@@ -309,7 +313,7 @@ export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): Plan
 
   const farmers = crew.map((id) => {
     const mine = tasks.filter((t) => t.farmer === id)
-    return setup(id, d, Math.max(5, mine.reduce((s, t) => s + t.usd * rate(t.farmer), 0) || 5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo)
+    return setup(id, d, Math.max(d.script.quiet ? 1 : 5, mine.reduce((s, t) => s + t.usd * rate(t.farmer), 0) || 5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo, id === 'builder' && !crew.includes('deployer'))
   })
   return {
     name: d.name,
