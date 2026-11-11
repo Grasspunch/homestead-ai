@@ -62,6 +62,9 @@ export interface Project {
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
+  // The plan's tasks and farmers as you approved them. A run made with a change on (a task skipped, the Deployer
+  // off) shows a reshaped plan, so every run, and every change you turn off, starts again from these.
+  planHead?: RunEvent[]
   // The area a project belongs to, and its spend limit, which starts as the area's budget.
   area?: string
   spendLimit?: number
@@ -266,6 +269,13 @@ class Store {
   kit: Record<string, Partial<Record<FarmerId, KitEdit>>> = {} // your changes to each farmer, per project
   kitAt: Record<string, Partial<Record<FarmerId, number>>> = {} // when you first changed each farmer mid-run
   private lastAsk: string | null = null
+  // Farms you left paused: coming back to one keeps it paused, as a reload does.
+  private held = new Set<string>()
+  private leave() {
+    if (this.screen.kind !== 'farm') return
+    if (this.playing) this.held.delete(this.screen.project)
+    else this.held.add(this.screen.project)
+  }
   private listeners = new Set<() => void>()
 
   // How the screen looks after what you asked the Planner: hidden, moved, resized, renamed or recoloured parts.
@@ -504,6 +514,7 @@ class Store {
 
   // Open a farm where you left it. A farm whose run hasn't started yet starts it.
   open(project: string) {
+    this.leave()
     this.pause()
     this.screen = { kind: 'farm', project }
     this.drawer = null
@@ -513,7 +524,8 @@ class Store {
       if (p.clock === undefined || !p.run) this.startRun(p)
       else {
         this.setSpeed(p.events)
-        if (!this.isDone(p)) this.play()
+        // Paused when you left it, or its change card still waits on you: it stays paused.
+        if (!this.isDone(p) && !this.held.has(p.id) && this.pending?.pid !== p.id) this.play()
       }
     }
     this.notify()
@@ -532,6 +544,8 @@ class Store {
     for (const k of [...this.seen]) if (k.startsWith(`${p.id}:`)) this.seen.delete(k)
     // Changes you asked for last for the farm: from the start of this run, with nothing earlier to undo to.
     p.reshapes = (p.reshapes ?? []).map((r) => ({ ...r, at: 0, before: undefined }))
+    // Before any change reshapes it: the plan as you approved it.
+    p.planHead ??= structuredClone(p.events.filter((e) => e.type === 'goal' || e.type === 'plan' || e.type === 'farmer'))
     const bugFixed = this.nextBugFixed(p)
     const seq = (p.run?.seq ?? 0) + 1
     // The release bug that rolled the last run back is fixed in this one, and Done says it learned that.
@@ -554,6 +568,7 @@ class Store {
   }
 
   home() {
+    this.leave()
     this.pause()
     this.screen = { kind: 'home' }
     this.drawer = null
@@ -856,14 +871,17 @@ class Store {
   private inputFor(p: Project, kit: Partial<Record<FarmerId, KitEdit>>, autonomy: Autonomy, answers: Record<string, string>, sendBacks: Project['sendBacks'], bugFixed: boolean, modelFrom: Partial<Record<FarmerId, number>> = {}, lesson?: Lesson) {
     const plan = p.events.find((e) => e.type === 'plan')
     if (!plan || plan.type !== 'plan') return null
-    const planned = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => f)
+    const head = p.planHead ?? p.events
+    const hp = head.find((e) => e.type === 'plan')
+    const tasks = hp && hp.type === 'plan' ? hp.tasks : plan.tasks
+    const planned = head.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => f)
     const farmers = planned.map((f) => applyEdit(f, kit[f.id]))
     // Priced on the plan's models, however many times the run was rebuilt since a change.
     const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.plannedModel ?? f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
     const basis = plan.basis ?? plan.estimate
     // Each run starts from the plan you approved: a split from an earlier run never stacks up as an extra task.
-    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks.filter((t) => !t.id.endsWith('-rest')), estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []), presplit: lesson ? [lesson.task] : undefined } }
+    return { planned, farmers, input: { goal: p.goal, farmers, tasks: tasks.filter((t) => !t.id.endsWith('-rest')), estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []), presplit: lesson ? [lesson.task] : undefined } }
   }
 
   // What the plan will cost and take, by simulating it on its default path with your current farmers and rules,
@@ -950,6 +968,21 @@ class Store {
       if (oa && oa.type === 'ask' && oa.budgetFor && !answers[oa.id]) past.budgetAsked = Math.max(0, (past.budgetAsked ?? 1) - 1)
       ;(built.input as { past?: typeof past }).past = past
     }
+    // An ask still open on a task you have since taken out goes with it: never shown again, and never answered for
+    // another task.
+    const skip = built.input.reshape?.skip ?? []
+    const gone = new Set(p.events.flatMap((e) => (e.type === 'ask' && !answers[e.id] && !!e.task && skip.includes(e.task) ? [e.id] : [])))
+    if (gone.size) p.events = p.events.filter((e) => !((e.type === 'ask' || e.type === 'answer') && gone.has(e.id)))
+    // Each numbered ask you've seen or answered, by what it was about, so the new run keeps its id on that ask.
+    const askOf: Record<string, string> = {}
+    const nth: Record<string, number> = {}
+    for (const e of p.events) {
+      if (e.type !== 'ask' || !/^ask-\d/.test(e.id)) continue
+      const what = `${e.task}:${e.reason}`
+      nth[what] = (nth[what] ?? 0) + 1
+      if (answers[e.id] || e.t <= t0) askOf[e.id] = `${what}:${nth[what]}`
+    }
+    ;(built.input as SimInput).askOf = askOf
     let events = simulateRun(built.input)
     // An ask you've answered keeps the words you answered: a later change (a model, say) never rewrites it.
     // An ask already on screen keeps its numbers too, until you answer it.
@@ -1144,6 +1177,8 @@ class Store {
     const p = this.project(pid)
     if (!p) return false
     const ctx = this.reshapeCtx(p)
+    // Whether this farm was playing when you asked: the live reading takes a while, and you may open another meanwhile.
+    const playingThen = this.playing && this.project()?.id === pid
     let proposal: Proposal | null = null
     let note: string | undefined
     let liveReply: string | undefined
@@ -1165,8 +1200,10 @@ class Store {
       }
       proposal = { ...r.proposal, note }
     }
-    const wasPlaying = this.playing
-    this.pause()
+    // The card pauses the farm it is for, never another one you opened while it was being read.
+    const here = this.project()?.id === pid
+    const wasPlaying = here ? this.playing : playingThen
+    if (here) this.pause()
     this.pending = { pid, request: text, proposal, wasPlaying }
     this.chatTo(pid, { from: 'you', text: clip(text) })
     return 'card'
@@ -1184,10 +1221,16 @@ class Store {
     }
   }
 
+  // Plays on again after a change card closes: its own farm, and only when it is the one open.
+  private resume(pid: string) {
+    if (this.project()?.id === pid) this.play()
+    else this.held.delete(pid)
+  }
+
   cancelChanges() {
     const pd = this.pending
     this.pending = null
-    if (pd?.wasPlaying) this.play()
+    if (pd?.wasPlaying) this.resume(pd.pid)
     this.notify()
   }
 
@@ -1250,7 +1293,7 @@ class Store {
     // No toast: it would cover the plots. The new chip carries Undo for a few seconds instead.
     this.fresh = { id: r.id, until: Date.now() + Store.FRESH_MS }
     setTimeout(() => this.notify(), Store.FRESH_MS + 50)
-    if (pd.wasPlaying && !done) this.play()
+    if (pd.wasPlaying && !done) this.resume(pd.pid)
     this.notify()
     this.persist()
   }
@@ -1266,19 +1309,15 @@ class Store {
     // Undo takes back what it added to Your flow too.
     this.flow = this.flow.filter((f) => f.from !== id)
     if (i === list.length - 1 && r.before) {
-      const keep = new Set(r.before.events.filter((e) => e.type === 'ask').map((e) => (e.type === 'ask' ? e.id : '')))
-      const answers = { ...r.before.answers }
-      for (const [k, v] of Object.entries(p.answers ?? {})) if (keep.has(k)) answers[k] = v
-      p.events = r.before.events
-      p.answers = answers
-      p.run = r.before.run
-      // An answer you gave since, different from the old run's own, moves the run on from there as usual.
-      const differs = Object.entries(answers).some(([k, v]) => {
-        const rec = p.events.find((e) => e.type === 'answer' && e.id === k)
-        return rec && rec.type === 'answer' && rec.choice !== v
-      })
-      if (differs) this.rebuild(p)
-      this.setSpeed(p.events)
+      // The run made again from the moment it took effect, without it: every other change still on, and your
+      // farmers, rules and answers as they are now, so a model you changed since stays changed. Only that change goes.
+      const clock = p.clock
+      p.clock = r.at
+      this.rebuild(p)
+      p.clock = clock
+      // An answer to an ask only that change brought in goes with it.
+      const asks = new Set(p.events.flatMap((e) => (e.type === 'ask' ? [e.id] : [])))
+      p.answers = Object.fromEntries(Object.entries(p.answers ?? {}).filter(([k]) => asks.has(k)))
     } else if (p.approved && !this.isDone(p)) this.rebuild(p)
     if (this.fresh?.id === id) this.fresh = null
     // What the Planner said when you asked for it in words, or the plain line for the chip's Undo.
@@ -1394,6 +1433,7 @@ class Store {
     p.name = this.uniqueName(name, id)
     p.planning = false
     p.error = undefined
+    p.planHead = undefined
     // Limits at or above what each farmer spends on the plan's own path.
     const fitted = fitLimits({ goal: p.goal, farmers, tasks, estimate, singleAgentEstimate })
     p.events = [

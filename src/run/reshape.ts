@@ -172,12 +172,16 @@ export function readChanges(text: string, ctx: Ctx): Reading {
   const clauses = norm(work).split(/\b(?:but|and then|then|however|except|also)\b|[,;.]/).map((c) => ` ${c.trim()} `).filter((c) => c.trim())
   const want: Change[] = []
   const keep = { review: false, deployer: false, stage10: false, tasks: new Set<string>(), farmers: new Set<FarmerId>() }
-  // A task named by its own name, or by a long word of it: "skip the hard cases", "drop the widget".
-  const taskByWords = (c: string) =>
-    ctx.tasks.filter((k) => {
+  // A task named by its own name, or by a long word of it: "skip the hard cases", "drop the widget". The most
+  // specific match wins: "skip the metrics api" is Metrics API, not every task with "metrics" in its name.
+  const taskByWords = (c: string) => {
+    const hits = ctx.tasks.flatMap((k) => {
       const n = norm(k.name).trim()
-      return !k.gate && (c.includes(` ${n} `) || n.split(' ').some((w) => w.length > 4 && !['check', 'tests', 'users'].includes(w) && c.includes(` ${w} `)))
+      const words = k.gate ? [] : c.includes(` ${n} `) ? n.split(' ') : n.split(' ').filter((w) => w.length > 4 && !['check', 'tests', 'users'].includes(w) && c.includes(` ${w} `))
+      return words.length ? [{ k, words }] : []
     })
+    return hits.filter((h) => !hits.some((o) => o.words.length > h.words.length && h.words.every((w) => o.words.includes(w)))).map((h) => h.k)
+  }
   const named = (c: string, who: string) => new RegExp(`\\b${who}s?\\b`).test(c)
   const unnecessary = () => ctx.tasks.filter((k) => !k.gate && (k.id === 'e2e-check' || /-rest$/.test(k.id)) && k.status !== 'accepted')
   let incident = false
@@ -370,9 +374,11 @@ export function reshapedOf(list: { title: string; changes: Change[]; at: number 
   const all = list.flatMap((r) => r.changes)
   const doneWhen: Record<string, string> = {}
   for (const c of all) if (c.kind === 'setDoneWhen') doneWhen[c.task] = c.doneWhen
+  // A task taken out takes its hard cases with it, when it was split.
+  const skip = all.flatMap((c) => (c.kind === 'removeTask' ? [c.task, ...(/-rest$/.test(c.task) ? [] : [`${c.task}-rest`])] : []))
   return {
     at: Math.max(...list.map((r) => r.at)),
-    skip: all.flatMap((c) => (c.kind === 'removeTask' ? [c.task] : [])),
+    skip: [...new Set(skip)],
     noDeployer: all.some((c) => c.kind === 'removeFarmer'),
     noReview: all.some((c) => c.kind === 'setAutonomy'),
     everyone: all.some((c) => c.kind === 'setRollout'),

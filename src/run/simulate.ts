@@ -130,6 +130,10 @@ export interface SimInput {
   toggles?: Record<string, { t: number; on: boolean }[]>
   // Tasks an earlier run of this farm split mid-run, which this run plans in two from the start.
   presplit?: string[]
+  // The numbered asks you have already seen or answered in this run, by id: what each was about, as
+  // "task:reason:n" (the n-th ask of that reason on that task). Asks are numbered in the order they come up, so a
+  // run made again without a task would number the rest differently; this keeps each id on the ask it was.
+  askOf?: Record<string, string>
 }
 
 export const SEND_BACK = 'Send back'
@@ -246,6 +250,18 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const free: Partial<Record<FarmerId, number>> = {}
   let lastBuilt = 0
   let askN = 0
+  // The next numbered ask's id. One you already saw keeps its id, so your answer to it stays on it; an id you saw
+  // on another ask is never reused, so your answer there never lands on this one.
+  const askSeen: Record<string, number> = {}
+  const idOf = new Map(Object.entries(input.askOf ?? {}).map(([id, what]) => [what, id]))
+  const nextAsk = (task: string, reason: string) => {
+    let id = `ask-${++askN}`
+    const what = `${task}:${reason}:${(askSeen[`${task}:${reason}`] = (askSeen[`${task}:${reason}`] ?? 0) + 1)}`
+    const was = idOf.get(what)
+    if (was) return was
+    while (input.askOf?.[id] && input.askOf[id] !== what) id = `${id}-${task}`
+    return id
+  }
   const queue = [...build]
   // A split keeps its promise in the run itself: the steps left on the first part, and the hard cases' steps,
   // are sized so each ends on its own share, counting the check still to come on it.
@@ -342,7 +358,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         const files = 6 + touches.length * 5
         let go = true
         if (asks('big')) {
-          const id = `ask-${++askN}`
+          const id = nextAsk(task.id, 'big')
           const suggested = 'Go ahead, test everything'
           at(tt + 0.1, {
             type: 'ask', id, farmer: f, task: task.id, reason: 'big', touches, files,
@@ -392,7 +408,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         let approved = projected
         let at$ = tt + 0.1
         if (asks('cost')) {
-          const id = `ask-${++askN}`
+          const id = nextAsk(task.id, 'cost')
           at(tt + 0.1, {
             type: 'ask', id, farmer: lead, task: task.id, reason: 'cost',
             // How sure: how much of the task it has seen. Its hard cases are still ahead, and cost the most.
@@ -521,7 +537,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       at(end + 0.4, { type: 'check', task: task.id, by: checkerOf(f), pass: false, notes: '2 of 10 tests fail: empty input crashes the handler', evidence: ['tests/report.json'], proof: unit(task, true) })
       let c = 'Fix it'
       if (asks('failed')) {
-        const id = `ask-${++askN}`
+        const id = nextAsk(task.id, 'anomaly')
         at(end + 0.5, { type: 'ask', id, farmer: f, task: task.id, reason: 'anomaly', confidence: 'high', basis: 'Both failing tests crash on the same empty input.', question: `${task.name} failed its check: 2 of 10 tests crash on empty input.`, impact: 'I can fix the handler and add a test for it. About 2 minutes and $0.20.', suggested: 'Fix it', alternatives: ['Show me the failures', 'Stop this task'] })
         c = choose(id, 'Fix it')
         at(end + 1.4, { type: 'answer', id, choice: c, by: 'human' })
@@ -560,7 +576,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       let side = d.designer
       let own: string | undefined
       if (asks('disagree')) {
-        const id = `ask-${++askN}`
+        const id = nextAsk(task.id, 'disagree')
         // What talking it through needs: both sides, and what each way costs. Yours is reworked by the Designer at a
         // retry cost and checked again, like work sent back.
         const talk: Talk = {
@@ -635,7 +651,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     let reviewAt = start
     if (asks('ship') || stopped.size > 0) {
       for (let round = 0; ; round++) {
-        const id = `ask-${++askN}`
+        const id = nextAsk(task.id, 'irreversible')
         const suggested = isShip ? (straight ? 'Merge and ship to everyone' : 'Merge and ship to 10%') : 'Go ahead'
         at(reviewAt + 0.3, {
           type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible',
@@ -757,7 +773,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (direct) {
       // The fix goes straight to everyone too.
     } else if (asks('reship')) {
-      const id = `ask-${++askN}`
+      const id = nextAsk(task.id, 'risk')
       at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'risk', confidence: 'high', basis: `${rb.tests.length} new tests reproduce the rollback and now pass.`, question: 'Fixed what caused the rollback. Ship to 10% again?', impact: synth ? 'Same rule as before: if a synthetic test fails, I roll back by myself.' : 'Same rule as before: if errors pass 2%, I roll back by myself.', suggested: 'Ship to 10% again', alternatives: ['Not yet'] })
       at(t + 1, { type: 'answer', id, choice: choose(id, 'Ship to 10% again'), by: 'human' })
       t += 1.1
@@ -772,7 +788,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     good.forEach((e, i) => at(t + 0.6 + i * 0.6, { type: 'monitor', stage: '10%', metrics: mx(e, 1600 + i * 40, 0.92) }))
     t += 0.6 + good.length * 0.6
     if (input.deployAsks) {
-      const id = `ask-${++askN}`
+      const id = nextAsk(task.id, 'irreversible')
       const go = 'Ship to everyone'
       at(t, { type: 'ask', id, farmer: f, task: task.id, reason: 'irreversible', confidence: 'high', basis: synth ? `4 readings in a row with all ${S} synthetic tests passing.` : '4 readings in a row at 0.3% errors or less.', question: synth ? `10% has been clean for ${Math.round(good.length * 0.6)} min, with ${S} of ${S} synthetic tests passing. Ship to everyone?` : `10% has been clean for ${Math.round(good.length * 0.6)} min, with errors at 0.3%. Ship to everyone?`, impact: synth ? 'Every user gets it. If a synthetic test fails, I roll back by myself.' : 'Every user gets it. If errors pass 2%, I roll back by myself.', suggested: go, alternatives: ['Stay at 10%'] })
       const c = choose(id, go)
@@ -804,10 +820,11 @@ export function simulateRun(input: SimInput): RunEvent[] {
     if (e.type === 'replan') usage(e.t / MIN - 0.02, lead, '', usdPer(lead) * 0.1, 'read')
     if (e.type === 'ask') usage(e.t / MIN - 0.02, e.farmer, e.task ?? '', usdPer(e.farmer) * 0.03, 'read')
   }
-  // When the changes you asked for took effect: what they took out and changed, for the farm to show.
+  // When the changes you asked for took effect: what they took out and changed, for the farm to show. Hard cases
+  // that went with their task are named by it alone.
   if (rs) {
     const nameOf = (id: string) => input.tasks.find((k) => k.id === id)?.name ?? (/-rest$/.test(id) ? 'Hard cases' : id)
-    ev.push({ t: Math.max(rs.at, Math.round(0.06 * MIN)), type: 'reshape', titles: rs.titles, removed: [...rs.skip], skipped: rs.skip.map(nameOf), off: rs.noDeployer ? ['deployer'] : [], owner, doneWhen, renamed, synthetics: rs.synthetics, everyone: rs.everyone, noReview: rs.noReview })
+    ev.push({ t: Math.max(rs.at, Math.round(0.06 * MIN)), type: 'reshape', titles: rs.titles, removed: [...rs.skip], skipped: rs.skip.filter((id) => !(/-rest$/.test(id) && rs.skip.includes(id.slice(0, -5)))).map(nameOf), off: rs.noDeployer ? ['deployer'] : [], owner, doneWhen, renamed, synthetics: rs.synthetics, everyone: rs.everyone, noReview: rs.noReview })
   }
   ev.sort((a, b) => a.t - b.t)
   // Spend limits, the same rule for every farmer at every level: the Planner pauses a farmer before the step that
