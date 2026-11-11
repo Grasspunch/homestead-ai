@@ -1,6 +1,6 @@
 // Folds a run log into the state shown on screen at time t.
 import { checkCost, soloFromRun } from './compare'
-import { LIMIT_RAISED } from './simulate'
+import { LIMIT_RAISED, WAIT } from './simulate'
 import type { ActivityLine, Ask, FarmerId, FarmerRun, RunEvent, RunState, TaskState } from './types'
 
 export function emptyState(): RunState {
@@ -74,7 +74,9 @@ export function reduce(events: RunEvent[], t: number, viewerAnswers: Record<stri
         const f = farmer(e.farmer)
         if (f) {
           f.lastTool = e.summary
-          if (f.state === 'idle' || f.state === 'done') f.state = 'working'
+          // Waiting beside its own plot for the others' work: not working, though its task is under way.
+          if (e.tool === WAIT) f.state = 'idle'
+          else if (f.state === 'idle' || f.state === 'done') f.state = 'working'
           if (e.task) f.task = e.task
         }
         log({ farmer: e.farmer, task: e.task, text: e.summary, kind: 'tool' }, e.t)

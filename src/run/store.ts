@@ -1,7 +1,7 @@
 // App state: which screen, the live plan being edited, and the replay of a recorded run.
 import { useSyncExternalStore } from 'react'
 import { duration, pendingAsk, reduce } from './reduce'
-import { BRAND_ASK, BRAND_FIX, LIMIT_RAISED, SEND_BACK, fitLimits, needKey, simulateRun, type SimInput } from './simulate'
+import { BRAND_ASK, BRAND_FIX, LIMIT_RAISED, SEND_BACK, fitLimits, needKey, pairMoment, simulateRun, type SimInput } from './simulate'
 import { BY_YOU, liveStage, rollBack } from './rollback'
 import { scenario, simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
@@ -16,6 +16,8 @@ import { AREAS, areaFor, clampBudget } from './team'
 import type { ChatIn, DecidedAsk } from './talk'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from a shop’s help pages, and hands off to a person when it is not sure'
+// How long, in real time, the replay takes over two plots ripening together while the Tester checks both.
+const PAIR_MS = 5200
 
 export type Screen = { kind: 'home' } | { kind: 'farm'; project: string }
 export type Drawer =
@@ -497,9 +499,12 @@ class Store {
     this.notify()
   }
 
-  // Play the whole run in about three minutes of wall time, whatever its simulated length.
+  // Play the whole run in about three minutes of wall time, whatever its simulated length. A feature's run never
+  // plays slower than half an hour of work a minute, so a crew that finishes sooner by working at once isn't
+  // shown slower for it. A small change's short run still takes its three minutes.
   private setSpeed(events: RunEvent[]) {
-    this.speed = Math.max(1, duration(events) / 180_000)
+    const d = duration(events)
+    this.speed = Math.max(1, d / 180_000, d > 30 * 60_000 ? 30 : 0)
   }
 
   // Open a farm where you left it. A farm whose run hasn't started yet starts it.
@@ -601,11 +606,14 @@ class Store {
   }
 
   // Between the moments that matter, the run moves faster: no stretch takes more than about 15 seconds,
-  // and a release going out (or coming back) is its own moment.
+  // and a release going out (or coming back) is its own moment. So are two plots ripening together while the
+  // Tester checks both: that plays slowly, over about 5 seconds, so you can watch the crew working at once.
   private stretch: { from: number; to: number; speed: number } | null = null
   private paceTo(p: Project, nextAsk: number) {
+    const pair = pairMoment(p.events)
+    if (pair && this.clock >= pair.from && this.clock < pair.to) return (pair.to - pair.from) / PAIR_MS
     const deploy = p.events.find((e) => e.type === 'deploy' && e.t > this.clock)
-    const to = Math.min(nextAsk, deploy ? deploy.t : nextAsk)
+    const to = Math.min(nextAsk, deploy ? deploy.t : nextAsk, pair && pair.from > this.clock ? pair.from : nextAsk)
     if (!this.stretch || this.stretch.to !== to || this.clock < this.stretch.from) this.stretch = { from: this.clock, to, speed: Math.max(this.speed, (to - this.clock) / 15_000) }
     return this.stretch.speed
   }
@@ -632,9 +640,11 @@ class Store {
         e.t > this.clock &&
         ((e.type === 'ask' && !this.viewerAnswers[e.id]) || (e.type === 'deploy' && e.stage === 'rollback') || (e.type === 'check' && !e.pass)),
     )
-    // A failed check: land just after it, so its proof is up.
+    // A failed check: land just after it, so its proof is up. Two plots ripening together: land as the Tester sets off.
     const from = this.clock
-    this.clock = next ? next.t + (next.type === 'check' ? 1 : 0) : duration(p.events)
+    const pair = pairMoment(p.events)
+    const land = next ? next.t + (next.type === 'check' ? 1 : 0) : duration(p.events)
+    this.clock = pair && pair.from > from && pair.from < land ? pair.from : land
     this.stagesPassed(p, from, this.clock)
     this.drawer = null
     if (!this.playing) this.play()

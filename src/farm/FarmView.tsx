@@ -715,6 +715,9 @@ function poseOf(id: FarmerId, s: RunState, layout: Layout, planning: boolean, op
     const c = CHORES[idx % CHORES.length]
     return { x: c.x, y: c.y, anim: c.anim, dir: c.dir }
   }
+  // Its own plot started, waiting on the others' work: it stands by that plot.
+  const own = f.state === 'idle' ? plotOf(s.tasks.find((t) => t.farmer === id && t.status === 'growing')?.id) : undefined
+  if (own) return { ...side(own), anim: 'idle', dir: 'left' as Dir }
   const task = s.tasks.find((t) => t.id === f.task)
   const pl = plotOf(f.task)
   if (pl && task && (task.status === 'growing') && f.state === 'working') {
