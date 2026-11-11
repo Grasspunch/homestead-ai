@@ -116,7 +116,7 @@ export interface SimInput {
   // a stop re-runs the simulation so nothing after it involves that farmer.
   halts?: Partial<Record<FarmerId, number>>
   // Farmers you stopped because the run reached its budget, not their own limit.
-  budgetStop?: { t: number; id: string; f: FarmerId } // the run minute you stopped the whole run at its budget, and that ask
+  budgetStop?: { t: number; id: string; f: FarmerId; at?: number } // the run minute you stopped the whole run at its budget, and that ask
   // The project's budget for a run, in dollars: before a step would take the run over it, the Planner pauses and asks.
   budget?: number
   haltTotals?: Partial<Record<FarmerId, number>> // what each stopped farmer would have spent without the stop
@@ -888,7 +888,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
     const watch = (() => {
       const bs = input.budgetStop
       if (!bs) return () => false
-      const end = bs.t * MIN
+      // From the moment you pressed Stop, which a release that went out just before it is still part of.
+      const end = Math.max(bs.t * MIN, bs.at ?? 0)
       const live = [...ev].reverse().find((e) => e.type === 'deploy' && e.t <= end)
       const stage = live && live.type === 'deploy' && live.stage !== 'rollback' ? live.stage : null
       if (!stage) return () => false
@@ -909,7 +910,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       const keep = ev.filter((x) => {
         if (x.t <= cut || x.type === 'goal' || x.type === 'plan' || x.type === 'farmer' || x.type === 'stop' || watch(x)) return true
         // The whole run stopped at its budget: nothing of anyone's after that minute, releases and answers included.
-        if (input.budgetStop && x.t > input.budgetStop.t * MIN) return false
+        if (input.budgetStop && x.t > Math.max(input.budgetStop.t * MIN, input.budgetStop.at ?? 0)) return false
         if ('farmer' in x && x.farmer === f.id && x.type !== 'ask') return false
         if ('task' in x && x.task && mine.has(x.task)) return false
         return true
@@ -995,7 +996,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
     }
     // Stopped at the budget: that ask is the last thing anyone asks. Nothing is merged or shipped after it.
     if (bs) {
-      const end = bs.t * MIN
+      const end = Math.max(bs.t * MIN, bs.at ?? 0)
       const late = new Set(ev.filter((e) => e.type === 'ask' && e.id !== bs.id && e.t > end).map((e) => (e.type === 'ask' ? e.id : '')))
       const keep = ev.filter((e) => !((e.type === 'ask' || e.type === 'answer') && late.has(e.id)) && !(e.type === 'deploy' && e.t > end && !watch(e)))
       ev.length = 0

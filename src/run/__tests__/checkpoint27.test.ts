@@ -232,6 +232,26 @@ describe('checkpoint 27', () => {
     expect(doneLead(s)).toContain('rolled back, so nothing is live')
   })
 
+  it('stopped a moment after the 10% release went out: still live, watched, and rollable', () => {
+    const p = farm(SAMPLE_GOAL, false)
+    finish(p, 'Raise the budget')
+    const ten = p.events.find((e) => e.type === 'deploy' && e.stage === '10%')!
+    p.clock = ten.t + 300
+    store.setProjectBudget(p.id, 10)
+    const a = next(p)!
+    expect(a.budgetFor).toBeTruthy()
+    p.clock = Math.max(p.clock, a.t)
+    store.answer(a.id, 'Stop the run here')
+    const at = p.clock! + 2000
+    expect(liveStage(p.events, at)).toBe('10%')
+    expect(p.events.some((e) => (e.type === 'monitor' || (e.type === 'deploy' && e.stage === 'rollback')) && e.t > at)).toBe(true)
+    store.clock = at
+    p.clock = at
+    store.rollBackNow()
+    p.clock = Math.max(...p.events.map((e) => e.t))
+    expect(store.state(p)!.deploy.at(-1)?.stage).toBe('rollback')
+  })
+
   it('rolled back with the budget ask open, then Stop: nothing asks to ship again, nothing ships', () => {
     const { p, a } = tenLiveAsk()
     store.clock = p.clock!
