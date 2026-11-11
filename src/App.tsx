@@ -12,6 +12,7 @@ import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePa
 import { discuss, getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode } from './run/agent'
 import type { Scope } from './run/reshape'
 import { planInto } from './run/planning'
+import { shortDate } from './run/recorded'
 import { scenario } from './run/simPlan'
 import { pendingAsk } from './run/reduce'
 import { clip, store, useStore, type Project } from './run/store'
@@ -251,7 +252,13 @@ function Top({ p, s }: { p: Project; s: RunState }) {
             Simulated sample
           </span>
         ) : (
-          !p.plannedLive && <DemoTag goal={p.goal} />
+          p.plannedLive ? (
+            <span className="tag gold" title="The plan came from a live call; the run itself is simulated">
+              Simulated run
+            </span>
+          ) : (
+            <DemoTag goal={p.goal} />
+          )
         )}
       </div>
       <div className="spacer" />
@@ -339,9 +346,14 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
       <div className="who">
         <b>Planner</b>
         <span className="tag grey">Plan</span>
-        {p.plannedLive && (
+        {p.plannedLive && !p.plannedEarlier && (
           <span className="tag sky" title={`This plan came from a live call to ${pl?.model ?? 'Claude Opus 5.5'}`}>
-            Planned live
+            Planned live{p.liveSource ? `: ${p.liveSource}` : ''}
+          </span>
+        )}
+        {p.plannedEarlier && (
+          <span className="tag sky" title={`A live plan for this goal, made on ${shortDate(p.plannedEarlier)}${p.liveSource ? ` through ${p.liveSource}` : ''}`}>
+            Planned live earlier
           </span>
         )}
         {!p.plannedLive && noKey && <span className="tag gold">{p.liveNote}</span>}
@@ -349,6 +361,12 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
         {!p.plannedLive && !p.liveNote && <DemoTag goal={p.goal} />}
       </div>
       {!p.plannedLive && p.liveNote && !noKey && <p className="impact">This plan is simulated, because the live call failed: {p.liveNote}</p>}
+      {p.plannedLive && (
+        <p className="plan-live">
+          {p.plannedEarlier ? `Live call failed: this is the live plan from ${shortDate(p.plannedEarlier)}. ` : 'Live: the crew, limits and done-whens. '}
+          Simulated: the run.
+        </p>
+      )}
       {p.reshapes?.find((r) => r.flow)?.flow && <p className="plan-flow">With your flow: {p.reshapes.find((r) => r.flow)!.flow!.join(', ')}.</p>}
       <p className="plan-lead">
         {ids.length > 1 ? (

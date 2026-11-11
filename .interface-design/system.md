@@ -133,3 +133,7 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 ## Talking a disagreement through
 - A disagreement's input invites "Ask about either way, think it through, or suggest your own". A question gets an answer from the side it names (both when it names neither), as a short chat line under the options: the side's swatch, its label in bold, one sentence. Your question sits above it in meta ink as "You: …". The ask stays open.
 - A way of your own is said back by the Planner before anything changes: "Go with your way: …? The Designer builds it and the Tester checks it." with Yes and No. On Yes it's a decision like any other, logged as "Your way: …", and the pull request lists it as its own commit, "<task>: changed" with "Your way: …" under it.
+
+## One real AI moment
+- In Live mode the plan is the one live call. Its sky tag names who answered ("Planned live: Lovable AI"), and one meta line under it says what was live: "Live: the crew, limits and done-whens. Simulated: the run." The title then carries a gold "Simulated run" tag.
+- For the demo goals (the sample's and Home's starters) a live plan is kept. If the live call fails, the kept plan stands in with a sky "Planned live earlier" tag and "Live call failed: this is the live plan from 10 Nov. Simulated: the run." Never a kept plan for any other goal, and never one made up.

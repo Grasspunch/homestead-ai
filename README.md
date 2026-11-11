@@ -30,6 +30,8 @@ A real crew takes hours and real money. The simulation is deterministic, priced 
 
 With Live mode on, every live call, Claude or OpenAI, goes through Lovable's AI gateway with the server's `LOVABLE_API_KEY`, paid with workspace credits, and Settings says "Live: Lovable AI (uses workspace credits)". Out of credits, a call falls back to your own `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for that model's maker, when set; otherwise, rate limited or a wrong model id, it is simulated, and the screen says which source answered ("Lovable AI", "your Anthropic key", "your OpenAI key" or "Simulated (out of credits)"). Locally `/api/agent` is served by the dev server; the Lovable mirror has its own route at `src/routes/api/agent.ts`.
 
+The live plan is the one real AI moment: the Planner reads your goal and proposes the crew, limits and done-whens in one call, and everything after it is simulated, which the plan and the title say. For the sample's goal and the starters on Home, a live plan is kept (in the browser, and in `src/run/recorded-plans.json` after `node scripts/record-plans.mjs <url of /api/agent>`), so if the live call fails on the day the farm shows that real plan, tagged "Planned live earlier" with its date, instead of a simulated one.
+
 ```
 npm install && npm run dev
 npm test

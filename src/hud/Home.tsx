@@ -1,6 +1,7 @@
 // Your projects: every project drawn as a little farm, and the Planner asking what to build next.
 import { useEffect, useRef, useState } from 'react'
 import { planInto } from '../run/planning'
+import { EXAMPLE_GOALS } from '../run/recorded'
 import { draw, hasFrame } from '../map/atlas'
 import { TINT } from '../run/crew'
 import { pendingAsk, reduce } from '../run/reduce'
@@ -19,7 +20,6 @@ function fitScale(W: number, H: number, farms: number) {
   return [3, 2.5, 2, 1.5].find((s) => (2 + cols * 9) * PX * s <= W - 16 && (1.5 + rows * 7) * PX * s <= H - 230) ?? 1.5
 }
 // Starters that need no context: each matches one of the scripted runs (support, checkout, dashboard).
-const EXAMPLES = ['A chatbot that answers questions from a shop’s help pages', 'Card checkout for an online shop', 'A dashboard of new sign-ups each week']
 
 interface Mini {
   p: Project
@@ -222,7 +222,7 @@ export function Home() {
           {/* Starters until you type; a tap fills the box so you can edit it before planning. */}
           <div className={`examples-fold${goal ? ' shut' : ''}`} inert={!!goal || undefined} aria-hidden={!!goal || undefined}>
             <div className="row examples">
-              {EXAMPLES.map((x) => (
+              {EXAMPLE_GOALS.map((x) => (
                 <button
                   key={x}
                   type="button"
