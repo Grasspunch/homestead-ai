@@ -7,8 +7,8 @@ import { FARMER_ORDER } from './types'
 import { BY_YOU as ROLLED_BY_YOU } from './rollback'
 import { prOf } from './files'
 import { caught as allCaught } from './scale'
-import { doneLead } from './done'
-import { lessonLine, type Lesson } from './learn'
+import { doneLead, plannerEstimate } from './done'
+import { fixLineOf, lessonLine, type FixFarm, type Lesson } from './learn'
 
 // What the exports need from a farm. A Project fits it as it is.
 export interface ExportFarm {
@@ -20,7 +20,11 @@ export interface ExportFarm {
   liveSource?: string
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   events?: RunEvent[] // with run.lesson: the "Learned from run N" line, as Done says it
-  run?: { lesson?: Lesson }
+  run?: { lesson?: Lesson; fixedRollback?: number }
+  autonomy?: FixFarm['autonomy']
+  trust?: string
+  everSentBack?: boolean
+  cleanRuns?: number
 }
 
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`
@@ -105,11 +109,12 @@ function spendTable(s: RunState) {
   return table(['Farmer', 'Model', 'Spent', 'Limit'], rows)
 }
 
-function spendLines(s: RunState) {
+function spendLines(p: ExportFarm, s: RunState) {
+  const plan = p.events ? plannerEstimate(p.events) : undefined
   const total = s.done?.usd ?? s.usage.usd
   const k = s.usage.byKind
   const lines = [`- In all: ${cents(total)}${s.done ? ` over ${mins(s.done.minutes)}` : ''}`]
-  if (s.estimate) lines.push(`- Planned: ${usd(s.estimate.usd)} over ${mins(s.estimate.minutes)}`)
+  if (plan) lines.push(`- The Planner's estimate: ${usd(plan.usd)}`)
   lines.push(`- Reading ${cents(k.read.usd)}, writing ${cents(k.write.usd)}, redoing work ${cents(k.retry.usd)}`)
   if (s.checkUsd !== undefined) lines.push(`- Checks: ${cents(s.checkUsd)}`)
   if (s.soloActual) lines.push(`- ${soloLine(s).replace(/\.$/, '')}`)
@@ -123,6 +128,7 @@ export function prMarkdown(p: ExportFarm, s: RunState): string {
   const stopped = work.filter((t) => t.stopped && t.status !== 'accepted')
   const c = caught(s)
   const learned = learnedLine(p)
+  const fixed = s.done ? fixLineOf(p, s.deploy.some((d) => d.stage === 'rollback')) : null
   // Tasks counted as Done counts them: every plot, the release included.
   const summary = [
     `- ${p.goal}`,
@@ -130,6 +136,7 @@ export function prMarkdown(p: ExportFarm, s: RunState): string {
     `- ${c.checks.length || 'No'} problem${c.checks.length === 1 ? '' : 's'} caught by a check before merge${c.canary.length ? `, ${c.canary.length} bad release stopped at 10%` : ''}.`,
     `- ${s.asks.filter((a) => a.answer).length} decisions came to you; the crew handled ${s.autoFixes.length} by itself.`,
     ...(learned ? [`- ${learned}`] : []),
+    ...(fixed ? [`- ${fixed}`] : []),
   ]
   const commitList = commits.length
     ? commits.map((x, i) => `${i + 1}. **${x.title}**${x.usd !== undefined ? ` (${cents(x.usd)})` : ''}\n   ${x.body}`).join('\n')
@@ -158,7 +165,7 @@ export function prMarkdown(p: ExportFarm, s: RunState): string {
     '## Decisions',
     decisions(p, s),
     '## Spend',
-    spendLines(s),
+    spendLines(p, s),
     spendTable(s),
     '',
   ].join('\n\n')
@@ -179,16 +186,18 @@ function filesTable(p: ExportFarm, s: RunState) {
 export function runReport(p: ExportFarm, s: RunState): string {
   const c = caught(s)
   const learned = learnedLine(p)
+  const fixed = s.done ? fixLineOf(p, s.deploy.some((d) => d.stage === 'rollback')) : null
   const crew = FARMER_ORDER.filter((f) => s.farmers[f]).map((f) => {
     const x = s.farmers[f]!
     return [x.label, `${x.model} on ${x.agent === 'codex' ? 'Codex' : 'Claude Code'}`, x.context.join(', '), x.constraints.join('; '), `${whole(x.limits.usd)}, ${mins(x.limits.minutes)}`]
   })
   const outcome = [
     `- ${doneLead(s)}`,
-    s.done ? `- ${cents(s.done.usd)} over ${mins(s.done.minutes)}${s.estimate ? `, against a plan of ${usd(s.estimate.usd)} over ${mins(s.estimate.minutes)}` : ''}.` : '- The run has not finished.',
+    s.done ? `- ${cents(s.done.usd)} over ${mins(s.done.minutes)}${plannerEstimate(p.events ?? []) ? `, against the Planner's ${usd(plannerEstimate(p.events ?? [])!.usd)} estimate` : ''}.` : '- The run has not finished.',
     `- ${c.checks.length || 'No'} problem${c.checks.length === 1 ? '' : 's'} caught before merge${c.canary.length ? `, ${c.canary.length} bad release stopped at 10%` : ''}.`,
     `- ${s.asks.filter((a) => a.answer).length} decisions came to you; the crew handled ${s.autoFixes.length} by itself.`,
     ...(learned ? [`- ${learned}`] : []),
+    ...(fixed ? [`- ${fixed}`] : []),
   ]
   // Every moment worth a line: not each tool step.
   const moments = s.activity.filter((a) => a.kind !== 'tool').map((a) => `- ${at(a.t)}${a.farmer ? `, ${label(s, a.farmer)}` : ''}: ${a.text}`)
@@ -211,7 +220,7 @@ export function runReport(p: ExportFarm, s: RunState): string {
     '## Timeline',
     moments.length ? moments.join('\n') : '_Nothing happened yet._',
     '## Spend',
-    spendLines(s),
+    spendLines(p, s),
     table(['Task', 'Farmer', 'Result', 'Spent'], byTask),
     '',
   ].join('\n\n')

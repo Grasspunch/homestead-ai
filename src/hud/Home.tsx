@@ -10,6 +10,7 @@ import { store, useStore, type Project } from '../run/store'
 import type { FarmerId, RunState } from '../run/types'
 import { ASK_WHY, Ico, Portrait, atlasLoaded } from './bits'
 import { CELL, PX, fitLayout, type Layout } from './homeLayout'
+import { spentOf } from '../run/team'
 
 
 interface Mini {
@@ -20,6 +21,8 @@ interface Mini {
   emote: 'alert' | 'notes' | 'hearts' | 'read'
   farmer: FarmerId
   words: string
+  spent: number
+  budget: number
 }
 
 function minis(projects: Project[], cols: number): Mini[] {
@@ -45,6 +48,8 @@ function minis(projects: Project[], cols: number): Mini[] {
       stage: !p.approved ? -1 : s.done ? 3 : Math.min(2, Math.floor(prog * 3)),
       emote: !p.approved || unwatched ? 'read' : waiting ? 'alert' : s.done ? 'hearts' : 'notes',
       farmer: ask?.farmer ?? busy?.id ?? 'builder',
+      spent: p.approved && !unwatched ? s.usage.usd : 0,
+      budget: store.budgetOf(p),
       words: !p.approved
         ? 'Plan ready, not started'
         : unwatched
@@ -75,6 +80,13 @@ export function Home() {
   const [L, setL] = useState<Layout>({ s: 3, cols: 3, x: 0, y: 0 })
   const list = minis(st.projects, L.cols)
   const needs = list.filter((m) => m.emote === 'alert').length
+  // The one project worth a look for money: over its budget, or within a tenth of it.
+  const tight = [...list].filter((m) => m.spent >= m.budget * 0.9).sort((a, b) => b.spent / b.budget - a.spent / a.budget)[0]
+  const tightLine = tight
+    ? tight.spent > tight.budget + 0.005
+      ? `${tight.p.name} is ${spentOf(tight.spent, tight.budget).over} over its ${spentOf(tight.spent, tight.budget).limit} budget.`
+      : `${tight.p.name} has spent ${spentOf(tight.spent, tight.budget).spent} of its ${spentOf(tight.spent, tight.budget).limit} budget.`
+    : null
 
   useEffect(() => {
     let raf = 0
@@ -191,7 +203,7 @@ export function Home() {
           <div className="home-title">
             <h1 className="homehead">Your projects</h1>
           </div>
-          <p className="home-who">For an engineer handing a feature to a team of AI agents: you stay in charge of cost and risk without watching every step.</p>
+          <p className="home-who">For an engineer handing a feature to a crew of AI agents: you stay in charge of cost and risk without watching every step.</p>
           <p className="home-why">
             <span>Agent spend goes unseen until the bill, and agent work is hard to undo.</span>
             <span>A PR and Slack don’t budget each agent, flag outliers, or let trust grow with use.</span>
@@ -211,7 +223,14 @@ export function Home() {
                 </span>
               )}
             </div>
-            <p>Tell me what to build. I’ll split it into tasks and pick a team of AI agents to do them. They work on their own and come to you when a decision is yours.</p>
+            {tightLine && (
+              <p className="impact budget-line">
+                <button className="tag-btn" onClick={() => tight && (store.open(tight.p.id), store.setDrawer({ kind: 'usage' }))}>
+                  {tightLine}
+                </button>
+              </p>
+            )}
+            <p>Tell me what to build. I’ll split it into tasks and pick a crew of AI agents to do them. They work on their own and come to you when a decision is yours.</p>
             <p className="legend">On the map, each project is a farm, each task is a plot, and each agent is a farmer.</p>
             <form
               className="row"
@@ -256,6 +275,11 @@ export function Home() {
               <span className="farm-tag" style={{ left: 4.6 * T, top: 4.85 * T }}>
                 {m.p.name}
                 <span className={`farm-words${m.emote === 'alert' ? ' alert' : ''}`}>{m.words}</span>
+                {m.spent > 0 && (
+                  <span className={`farm-words${m.spent > m.budget + 0.005 ? ' alert' : ''}`}>
+                    {spentOf(m.spent, m.budget).spent} of {spentOf(m.spent, m.budget).limit} budget
+                  </span>
+                )}
               </span>
             </button>
           ))}

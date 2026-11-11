@@ -8,6 +8,7 @@ import { Ico, Mark, Portrait, Quiet, Swatch, cents, mins, usd } from './bits'
 import { ProofView, Rollout } from './Proof'
 import { BY_YOU } from '../run/rollback'
 import { caught } from '../run/scale'
+import { BUDGET, spentOf } from '../run/team'
 import { agentName } from '../run/kit'
 
 const STATUS: Record<TaskState['status'], string> = {
@@ -440,7 +441,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
   const out = outcome(s)
   return (
     <div className="vs">
-      <h3>{done ? 'This team vs one agent, this run' : 'This team vs one agent, planned'}</h3>
+      <h3>{done ? 'This crew vs one agent, this run' : 'This crew vs one agent, planned'}</h3>
       <p className="vs-gap">
         {sooner > 0 ? (
           <>
@@ -457,7 +458,7 @@ export function CrewVsAlone({ s }: { s: RunState }) {
       <p className="vs-note">Assuming one agent runs a third slower and 10% dearer, since it holds every file in context.</p>
       <div className="vs-grid" role="table">
         <span role="columnheader" />
-        <span role="columnheader">This team</span>
+        <span role="columnheader">This crew</span>
         <span role="columnheader">One Sonnet 5 agent</span>
         <span>Time</span>
         <b>{mins(crew.minutes)}</b>
@@ -486,7 +487,6 @@ export function CrewVsAlone({ s }: { s: RunState }) {
 }
 
 export function UsagePanel({ s }: { s: RunState }) {
-  const est = s.estimate
   const ids = FARMER_ORDER.filter((id) => s.farmers[id])
   const max = Math.max(0.01, ...ids.map((id) => s.farmers[id]!.usd))
   const kinds = s.usage.byKind
@@ -495,18 +495,7 @@ export function UsagePanel({ s }: { s: RunState }) {
   return (
     <Panel label="Spend">
       <CrewVsAlone s={s} />
-      <div>
-        <h3>Spent</h3>
-        <div className="stat">
-          <span className="big">{usd(s.usage.usd)}</span>
-          {est && <span>of {usd(est.usd)}</span>}
-        </div>
-        {est && (
-          <div className="bar" style={{ marginTop: 8 }}>
-            <i style={{ width: `${Math.min(100, (s.usage.usd / est.usd) * 100)}%`, background: s.usage.usd > est.usd ? 'var(--honey)' : 'var(--leaf)' }} />
-          </div>
-        )}
-      </div>
+      <ProjectBudget spent={s.usage.usd} />
       <div>
         <h3>By agent</h3>
         <div className="crew-spend">
@@ -549,6 +538,44 @@ export function UsagePanel({ s }: { s: RunState }) {
         </div>
       </div>
     </Panel>
+  )
+}
+
+// What this project has spent against the budget you set for it, and a way to change that budget.
+function ProjectBudget({ spent }: { spent: number }) {
+  const p = store.project()
+  const [typing, setTyping] = useState<string | null>(null)
+  if (!p) return null
+  const budget = store.budgetOf(p)
+  const m = spentOf(spent, budget)
+  const over = spent > budget + 0.005
+  const save = () => {
+    if (typing !== null) store.setProjectBudget(p.id, Number(typing))
+    setTyping(null)
+  }
+  return (
+    <div>
+      <h3>Spent</h3>
+      <div className="stat">
+        <span className="big">{m.spent}</span>
+        <span>of this project’s {m.limit} budget</span>
+        <span className="grow" />
+        {typing === null ? (
+          <button className="btn tan xs" onClick={() => setTyping(String(budget))}>Change budget</button>
+        ) : (
+          <form className="row" onSubmit={(e) => (e.preventDefault(), save())}>
+            <span className="field budget-field">
+              $<input type="number" min={BUDGET.min} max={BUDGET.max} step={1} value={typing} onChange={(e) => setTyping(e.target.value)} aria-label="Project budget in dollars" autoFocus />
+            </span>
+            <button className="btn xs" type="submit">Save</button>
+          </form>
+        )}
+      </div>
+      <div className="bar" style={{ marginTop: 8 }}>
+        <i style={{ width: `${Math.min(100, (spent / budget) * 100)}%`, background: over ? 'var(--honey)' : 'var(--leaf)' }} />
+      </div>
+      {over && <span className="returned"><b className="over">Over its budget by {m.over}</b></span>}
+    </div>
   )
 }
 

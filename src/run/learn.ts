@@ -58,6 +58,19 @@ export function lessonLine(lesson: Lesson, events: RunEvent[], done = false) {
 
 // The other thing a farm learns: the release bug that rolled the last run back at 10% is fixed in this one. Said
 // on Done only when this release stayed up, with how far that run counts toward merging by itself.
+// The same line from a farm and its finished run, for Done and the downloaded files alike.
+export interface FixFarm {
+  run?: { fixedRollback?: number }
+  autonomy?: { ship?: string }
+  trust?: string
+  everSentBack?: boolean
+  cleanRuns?: number
+}
+export function fixLineOf(p: FixFarm, rolledNow: boolean) {
+  if (!p.run?.fixedRollback) return null
+  return fixLine(p.run.fixedRollback, rolledNow, p.autonomy?.ship === 'ask' && !p.trust && !p.everSentBack ? (p.cleanRuns ?? 0) : undefined)
+}
+
 export function fixLine(fromRun: number, rolledNow: boolean, cleanRuns?: number) {
   if (rolledNow) return null
   const count = cleanRuns !== undefined ? ` Clean runs in a row: ${Math.min(3, cleanRuns)} of 3 toward merging by itself.` : ''

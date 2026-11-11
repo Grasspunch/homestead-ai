@@ -1,5 +1,5 @@
-// The lead's view: who runs agents on which project, each project's spend against its area's budget, and the
-// few things worth a look. Teammates' projects are simulated with the same engine as yours, and say so.
+// Budgets: each project's spend against its budget, said in one format. The teammate runs and buildTeam below are
+// no longer on any screen (Homestead is for one person); tests still read them.
 import { duration, reduce } from './reduce'
 import { fitLimits, simulateRun } from './simulate'
 import { scenario, simulatePlan } from './simPlan'

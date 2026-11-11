@@ -367,7 +367,7 @@ export function Kit() {
             Questions, fixes and your decisions land here as the run goes.
           </Quiet>
           <Quiet icon="check" title="Nothing stands out.">
-            No cost spikes, repeated work or disagreements across the team.
+            No cost spikes, repeated work or disagreements across your projects.
           </Quiet>
         </div>
       </Sec>

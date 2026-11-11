@@ -27,9 +27,9 @@ import { clip, store, useStore, type Project } from './run/store'
 import { isUi, type UiId } from './run/ui'
 import { SEND_BACK } from './run/simulate'
 import { BY_YOU } from './run/rollback'
-import { fixLine, lessonLine } from './run/learn'
+import { fixLineOf, lessonLine } from './run/learn'
 import { scaleLine } from './run/scale'
-import { doneLead } from './run/done'
+import { doneLead, plannerEstimate } from './run/done'
 import type { Ask, FarmerId, RunState } from './run/types'
 import { FARMER_ORDER } from './run/types'
 import { MODELS, MODEL_GROUPS, applyEdit } from './run/kit'
@@ -278,7 +278,6 @@ function Top({ p, s }: { p: Project; s: RunState }) {
           </div>
         )}
         {/* No "Simulated" label on screen: the speed says it, and the demo reads cleaner without it. */}
-        {/* A teammate's project you opened from Team: always says whose, since you can look but not answer. */}
       </div>
       <div className="spacer" />
       {!prRight && runAgain}
@@ -437,7 +436,7 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
                   <i className="mark no" />
                 </button>
               ) : (
-                <span className="crew-x locked" title="Every team needs a Builder, since it writes the code" aria-label="The Builder can't be dropped">
+                <span className="crew-x locked" title="Every crew needs a Builder, since it writes the code" aria-label="The Builder can't be dropped">
                   <i className="mark no" />
                 </span>
               )}
@@ -993,8 +992,7 @@ function plannedLine(p: Project, s: RunState) {
 
 // The Planner's own cost estimate, made before anything ran. The plan shows it; Done reads the real total against it.
 function plannerCost(p: Project) {
-  const e = p.events.find((x) => x.type === 'plan')
-  return e && e.type === 'plan' ? (e.basis ?? e.estimate).usd : undefined
+  return plannerEstimate(p.events)?.usd
 }
 
 // Your request, read into changes: one row each, all on, and you take off any you want kept as it is.
@@ -1203,7 +1201,7 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
   }
   const answered = s.asks.filter((a) => a.answer).length
   // The release bug the last run rolled back on, fixed in this one, and how far this run counts toward merging by itself.
-  const fixed = s.done && p.run?.fixedRollback ? fixLine(p.run.fixedRollback, s.deploy.some((d) => d.stage === 'rollback'), p.autonomy.ship === 'ask' && !p.trust && !p.everSentBack ? (p.cleanRuns ?? 0) : undefined) : null
+  const fixed = s.done ? fixLineOf(p, s.deploy.some((d) => d.stage === 'rollback')) : null
   return (
     <Dialogue farmer="planner" side={side} className={s.done ? 'done' : ''}>
       <div className="who">

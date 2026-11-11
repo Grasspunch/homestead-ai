@@ -1283,6 +1283,18 @@ class Store {
     return p
   }
 
+  // A project's budget: what you'll spend on it in all. Its own when you set one, its area's otherwise.
+  budgetOf(p: Project) {
+    return p.spendLimit ?? this.budgets[p.area ?? areaFor(p.goal)] ?? 60
+  }
+
+  setProjectBudget(id: string, typed: number) {
+    const p = this.project(id)
+    if (!p || !Number.isFinite(typed) || !(typed > 0)) return
+    p.spendLimit = clampBudget(typed)
+    this.notify()
+  }
+
   // An area's budget per project. Projects still on the old budget follow it; one given its own limit keeps it.
   setBudget(area: string, typed: number) {
     const was = this.budgets[area]

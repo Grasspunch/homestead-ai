@@ -8,7 +8,7 @@ One engineer who hands a feature to several coding agents and stays responsible 
 
 ## Why it matters, and why a pull request and Slack aren't enough
 
-Agent spend is easy to miss: each agent bills by the token, and nobody sees the total until the invoice. Agent work is also hard to undo once it has spread across files, merged and shipped. A pull request shows the finished diff and Slack carries the chatter, but neither gives each agent a budget, picks out the few runs that need a person (a cost spike, the same work done twice, two agents that disagree), or lets an agent earn more freedom as its runs come in clean. Homestead gives each agent a spend limit and each project a budget, stops you only at the moments that need a person, and offers to merge by itself after three clean runs.
+Agent spend is easy to miss: each agent bills by the token, and nobody sees the total until the invoice. Agent work is also hard to undo once it has spread across files, merged and shipped. A pull request shows the finished diff and Slack carries the chatter, but neither gives each agent a budget, picks out the few runs that need a person (a cost spike, the same work done twice, two agents that disagree), or lets an agent earn more freedom as its runs come in clean. Homestead gives each agent a spend limit and each project a budget (each farm on Home shows its spend against it, you change it from Spend, and the Planner names the one closest to or over its budget), stops you only at the moments that need a person, and offers to merge by itself after three clean runs.
 
 ## The problem
 
@@ -28,7 +28,7 @@ The comparison is one Claude Sonnet 5 agent doing the same work in a row, with n
 
 ## Learning, export and projection
 
-A farm learns from its own runs. After run 1, the task that ran over is planned in two from the start: run 2 says "Last time 'Index the help docs' ran over, so I split it from the start", needs no ask about it, and costs $3.51 less, $48 in all. It also ships the fix for run 1's rollback, so its release stays up and Done counts it as clean run 1 of the 3 that earn the offer to merge by itself. Done offers the pull request as Markdown and a run report to download, both opening with what was simulated and matching Done's numbers. Done also shows a projection, tagged as one: the run's own rates over a month of handing off 2 features a week.
+A farm learns from its own runs. After run 1, the task that ran over is planned in two from the start: run 2 says "Last time 'Index the help docs' ran over, so I split it from the start", needs no ask about it, and costs $3.51 less on that task. It also ships the fix for run 1's rollback, so its release stays up and Done counts it as clean run 1 of the 3 that earn the offer to merge by itself. Run 2 costs $46 in all. Done offers the pull request as Markdown and a run report to download, both opening with what was simulated and matching Done's numbers. Done also shows a projection, tagged as one: the run's own rates over a month of handing off 2 features a week.
 
 ## What is simulated
 
