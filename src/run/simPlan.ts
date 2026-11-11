@@ -116,7 +116,6 @@ const GENERIC: Script = {
   rollout: { peak: 0.029, bug: 'the timeout under load', cause: 'requests time out under load after 10 s', fix: 'Added a timeout fallback and paged the slow query', check: 'Every request answers in under 1 s under load', file: 'tests/load.test.ts', tests: ['a busy minute answers in under 1 s', 'a timeout falls back cleanly', 'paging returns every row once', 'a restart keeps the data', 'an empty list shows a clear message'] },
 }
 
-<<<<<<< HEAD
 // The demo run: swap the top bar's cost button for a dashboard of every agent on the farm. What the crew builds
 // is real: once the release reaches you, the coins in the top bar become the Agents button (see App's Top).
 const AGENT_DASH: Script = {
@@ -133,11 +132,8 @@ const AGENT_DASH: Script = {
   rollout: { peak: 0.026, bug: 'the busy-farm slowdown', cause: 'the dashboard asks every agent for its status each second, and on farms with many agents the calls pile up and time out', fix: 'Pushed each agent’s status when it changes instead of asking every second, and drew only the rows in view', check: 'A farm of 40 busy agents updates the dashboard in under 200 ms', file: 'tests/dashboard/busy-farm.test.ts', tests: ['40 busy agents update in under 200 ms', 'a status change shows within a second', 'a paused agent says what it is waiting on', 'a stopped agent stays listed, marked stopped', 'the farm keeps 60 fps with the dashboard open'] },
 }
 
-const SMALL: Script = { ...GENERIC, quiet: true, direct: true }
-=======
 // A small change gives the Builder src/ alone, so nothing the generic feature needs applies.
 const SMALL: Script = { ...GENERIC, quiet: true, direct: true, needs: undefined }
->>>>>>> origin/claude/project-thread-lb72f6
 
 // A small change: one line of copy, a label, a colour, a typo, a config value. It needs the Builder to make it and
 // run the existing tests, and you to look at the pull request. Not a Tester, a Designer, a Planner or a staged rollout. Short goals only, that say what to change
