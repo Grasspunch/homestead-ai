@@ -147,6 +147,59 @@ describe('checkpoint 27', () => {
       expect(store.state(p)!.usage.usd).toBeCloseTo(spent, 1)
     })
 
+  // Raise the first budget ask, then answer up to the Builder's limit ask and leave it open.
+  function toLimitAsk(raise: string) {
+    const p = farm(SAMPLE_GOAL)
+    for (let i = 0; i < 40; i++) {
+      const a = next(p)
+      if (!a) return { p, a: undefined }
+      p.clock = Math.max(p.clock!, a.t)
+      if (a.limitFor === 'builder') return { p, a }
+      store.answer(a.id, a.budgetFor ? raise : a.suggested)
+    }
+    return { p, a: undefined }
+  }
+
+  it('a Stop never erases answers you gave or money already spent', () => {
+    const { p, a } = toLimitAsk('Raise the budget to $115')
+    expect(a).toBeTruthy()
+    store.setProjectBudget(p.id, 50)
+    const lim = next(p)!
+    p.clock = Math.max(p.clock!, lim.t)
+    store.answer(lim.id, lim.limitFor ? lim.suggested : 'Stop the run here')
+    const b = next(p)
+    if (b) {
+      p.clock = Math.max(p.clock!, b.t)
+      store.answer(b.id, 'Stop the run here')
+    }
+    const given = { ...p.answers }
+    const spent = spentAt(p, p.clock!)
+    p.clock = done(p)
+    const s = store.state(p)!
+    expect(budgetStopOf(s)).toBeTruthy()
+    for (const [id, c] of Object.entries(given)) expect(s.asks.find((x) => x.id === id)?.answer?.choice).toBe(c)
+    expect(s.asks.some((x) => x.answer?.choice === 'Raise the budget to $115')).toBe(true)
+    expect(s.usage.usd).toBeGreaterThanOrEqual(spent - 0.01)
+  })
+
+  it('a budget lowered while a limit ask is open is asked before any farmer pays another step', () => {
+    const { p, a } = toLimitAsk('Raise the budget to $235')
+    expect(a).toBeTruthy()
+    store.setProjectBudget(p.id, 59)
+    store.answer(a!.id, a!.suggested)
+    const b = next(p)!
+    // Asked before the next step anyone pays for, so the run pauses there.
+    const nextStep = p.events.find((e) => e.type === 'usage' && e.t > a!.t)!
+    expect(b.t).toBeLessThan(nextStep.t)
+    expect(b.budgetFor).toBeTruthy()
+    const spent = spentAt(p, b.t)
+    expect(b.question).toContain(`with $${Math.round(spent)}`)
+    p.clock = Math.max(p.clock!, b.t)
+    store.answer(b.id, 'Stop the run here')
+    p.clock = done(p)
+    expect(store.state(p)!.usage.usd).toBeCloseTo(spent, 1)
+  })
+
   // Merge to 10%, lower the budget below what's spent: a budget ask opens while 10% is live.
   function tenLiveAsk() {
     const p = farm(SAMPLE_GOAL, false)

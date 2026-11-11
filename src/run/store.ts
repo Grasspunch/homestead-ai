@@ -58,7 +58,7 @@ export interface Project {
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   talks?: Record<string, (TalkLine | { from: 'you'; text: string })[]> // talking a disagreement through, by ask id
-  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; fixedRollback?: number; budgetStop?: { t: number; id: string; f: FarmerId }; brandAt?: number; toggles?: Record<string, { t: number; on: boolean }[]> } // seq: which run of this farm, from 1
+  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; fixedRollback?: number; budgetStop?: { t: number; id: string; f: FarmerId; at?: number }; brandAt?: number; toggles?: Record<string, { t: number; on: boolean }[]> } // seq: which run of this farm, from 1
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
@@ -662,7 +662,7 @@ class Store {
     if (p && needs && needs.type === 'ask' && needs.need && choice === needs.suggested) this.giveBack(p, needs)
     // Stop the run here: recorded once, at the moment you stopped it, and final for this run.
     if (p?.run && !p.run.budgetStop && needs && needs.type === 'ask' && needs.budgetFor && /^stop the run/i.test(choice)) {
-      p.run.budgetStop = { t: Math.max(needs.t, this.clock) / 60_000 - 0.01, id: needs.id, f: needs.budgetFor }
+      p.run.budgetStop = { t: Math.max(needs.t, this.clock) / 60_000 - 0.01, id: needs.id, f: needs.budgetFor, at: Math.max(needs.t, this.clock) }
       this.rebuild(p)
     }
     // A budget you raised is the project's budget from now on, the same one Home and Spend show.
@@ -1022,8 +1022,9 @@ class Store {
     // Roll back, and the watch on a release still live, which rolls back by itself if it goes bad.
     if (run.budgetStop) {
       const bs = run.budgetStop
-      const end = bs.t * 60_000
-      const gone = new Set(events.filter((e) => e.type === 'ask' && e.t > end && e.id !== bs.id).map((e) => (e.type === 'ask' ? e.id : '')))
+      // From the moment you pressed Stop: what happened before it, and every answer you gave, stays.
+      const end = Math.max(bs.t * 60_000, bs.at ?? 0)
+      const gone = new Set(events.filter((e) => e.type === 'ask' && e.t > end && e.id !== bs.id && !answers[e.id]).map((e) => (e.type === 'ask' ? e.id : '')))
       const drop = (e: RunEvent) =>
         (e.type === 'ask' && gone.has(e.id)) ||
         (e.type === 'answer' && (gone.has(e.id) || !events.some((x) => x.type === 'ask' && x.id === e.id))) ||

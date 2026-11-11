@@ -953,7 +953,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
       runSpent += e.usd
       if (!f || done.has(f.id)) continue
       if (budget !== undefined && !input.budgetStop && e.t < liveAll && runSpent > budget + 0.005) {
-        const tmB = e.t / MIN - 0.016
+        // Asked just before the step, and never before now: a step after now is never paid before it's asked.
+        const tmB = Math.max(e.t / MIN - 0.016, pastT / MIN - 0.0099)
         const id = `ask-budget${bAsked + 1 === 1 ? '' : `-${bAsked + 1}`}`
         if (budgetAsk(f, tmB, runBefore, e.task) === 'stop') {
           // The whole crew stops from that minute: nothing after it is spent.
