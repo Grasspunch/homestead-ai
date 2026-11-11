@@ -836,7 +836,8 @@ class Store {
     const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.plannedModel ?? f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
     const basis = plan.basis ?? plan.estimate
-    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []), presplit: lesson ? [lesson.task] : undefined } }
+    // Each run starts from the plan you approved: a split from an earlier run never stacks up as an extra task.
+    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks.filter((t) => !t.id.endsWith('-rest')), estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []), presplit: lesson ? [lesson.task] : undefined } }
   }
 
   // What the plan will cost and take, by simulating it on its default path with your current farmers and rules,
@@ -940,7 +941,10 @@ class Store {
       let n = 0
       const late = events.filter((e) => e.t <= now && (e.type === 'ask' || e.type === 'answer' || e.type === 'stop' || e.type === 'auto_fix') && !has(e)).map((e) => ({ ...e, t: now + 1000 + 50 * n++ }))
       const after = events.filter((e) => e.t > now && !head(e) && !(e.type === 'ask' && shown.has(e.id)))
+      // The new run always ends: its Done comes after everything else, even when the new run finished before now.
+      const end = events.find((e) => e.type === 'done')
       events = [...events.filter(head), ...kept, ...late, ...after].sort((a, b) => a.t - b.t)
+      if (end && !events.some((e) => e.type === 'done')) events.push(end)
       // An ask you answered just now keeps its answer in the log, even when the new run never asks it again.
       for (const a of kept) {
         if (a.type !== 'ask' || !answers[a.id] || events.some((e) => e.type === 'answer' && e.id === a.id)) continue

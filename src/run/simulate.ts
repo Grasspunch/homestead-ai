@@ -211,6 +211,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
   // The hard cases of a task, as their own task, before the end-to-end check and the release.
   const restOf = (task: PlanTask): PlanTask => ({ id: `${task.id}-rest`, name: 'Hard cases', farmer: 'builder', doneWhen: `The cases left out of ${lower(task.name)} pass their own tests`, gate: false })
   const addRest = (rest: PlanTask) => {
+    if (plan.some((t) => t.id === rest.id)) return
     const gateAt = plan.findIndex((t) => t.gate || t.id === 'e2e-check')
     plan = [...plan.slice(0, gateAt < 0 ? plan.length : gateAt), rest, ...plan.slice(gateAt < 0 ? plan.length : gateAt)]
     const e2e = queue.findIndex((t) => t.id === 'e2e-check')
@@ -351,6 +352,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
             alternatives: [raise, 'Stop it here'],
           })
           c = choose(id, suggested)
+          // A raise you approved stays a raise when a model change moves the price it names: never a stop.
+          if (c !== raise && /^Raise its limit/.test(c)) c = raise
           at(tt + 1.2, { type: 'answer', id, choice: c, by: 'human' })
           at$ = tt + 1.2
         } else {
