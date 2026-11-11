@@ -378,3 +378,35 @@ button.crew-x:hover { opacity: 1; }
 /* Quiet captions under the mailbox and the chest on the farm: smaller and paler than a plot label. */
 .yard-label { position: absolute; transform: translateX(-50%); z-index: 2; padding: 1px 5px; border: 0; border-radius: 3px; background: rgba(255, 246, 228, .72); font-family: px4; color: var(--bark-2); white-space: nowrap; letter-spacing: .4px; line-height: 1.2; cursor: pointer; }
 .yard-label:hover { background: rgba(255, 246, 228, .95); color: var(--bark); }
+
+/* ---- the team view: spend and outliers, never what anyone is doing ---- */
+.team { width: min(780px, 100%); max-height: 100%; overflow-y: auto; padding: 4px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
+.team-head { display: flex; align-items: center; gap: 10px; }
+.team-head p { margin: 0; font-size: var(--t-body); color: var(--bark); }
+.team-sec-row { display: flex; align-items: baseline; gap: 14px; margin-top: 6px; }
+.team-sec-row .team-sec { margin: 0; }
+.team-sec { margin: 6px 0 0; font: 400 21px/1 px7; color: var(--bark); }
+.team-meta, .who-ran { font-size: var(--t-meta); color: var(--bark-3); }
+.outliers { list-style: none; margin: 0; padding: 0; }
+.outlier { display: grid; grid-template-columns: 172px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 6px 0; border-top: 1px solid rgba(106, 74, 52, .16); }
+.outlier:first-child { border-top: 0; }
+.outlier .urgency { justify-self: start; }
+.outlier .what { font-size: var(--t-body); min-width: 0; }
+.outlier .what p { margin: 2px 0 0; font-size: var(--t-meta); color: var(--bark-2); line-height: 1.4; }
+.outlier .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
+.team-none { margin: 0; font-size: var(--t-body); color: var(--bark-2); }
+.budgets { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
+.budgets > [role=row] > :not(:last-child) { padding-right: 14px; }
+.budgets > [role=row] { display: contents; }
+.budgets > [role=row] > * { display: flex; align-items: center; min-height: 30px; border-top: 1px solid rgba(106, 74, 52, .16); }
+.area-row > * { min-height: 42px !important; }
+.area-row > b { font-size: var(--t-body); }
+.area-row .limit-field { width: 96px; }
+.farm-row > :first-child { padding-left: 14px; }
+.farm-row > * { border-top-color: transparent !important; }
+.farm-name { border: 0; background: none; padding: 0; font: 400 var(--t-body)/1.2 var(--ui); color: var(--bark); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.farm-name:hover { text-decoration: underline; }
+.spend { gap: 10px; font-size: var(--t-body); color: var(--bark-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spend b { color: var(--bark); }
+.spend .ticks { margin-top: 0; }
+.spend.over b { color: var(--berry); }

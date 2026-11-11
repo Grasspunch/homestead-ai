@@ -11,6 +11,7 @@ import { OWN, confirmOwn, isOwnWay, ownText, ownWayOf, type TalkLine } from './d
 import { applyEdit, emptyEdit, type KitEdit } from './kit'
 import { key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope, type Suggestion } from './reshape'
 import { isUi, propOf, uiLookOf, type UiId, type UiLook } from './ui'
+import { AREAS, MATES, areaFor, mateEvents, snapAt } from './team'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from a shop’s help pages, and hands off to a person when it is not sure'
 
@@ -56,6 +57,10 @@ export interface Project {
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
+  // The team view: the area a project belongs to, and its spend limit, which starts as the area's budget.
+  area?: string
+  spendLimit?: number
+  owner?: string // a teammate's simulated project you opened from the team view
 }
 
 export interface ReshapeOn {
@@ -203,6 +208,8 @@ interface Saved {
   screen?: Screen
   paused?: boolean
   flow?: FlowItem[] // changes for every farm, which new farms start with
+  budgets?: Record<string, number> // each area's budget per project
+  homeView?: 'mine' | 'team'
 }
 
 // Saved farms as they were written, or null when anything in them can't be read.
@@ -229,7 +236,8 @@ function valid(d: unknown): Saved | null {
   const sc = x.screen as Screen | undefined
   const screen = sc && (sc.kind === 'home' || (sc.kind === 'farm' && typeof sc.project === 'string')) ? sc : undefined
   const flow = Array.isArray(x.flow) ? (x.flow as FlowItem[]).filter((f) => !!f && typeof f.id === 'string' && typeof f.label === 'string' && !!f.change && typeof f.change.kind === 'string') : []
-  return { v: 1, projects: x.projects as Project[], kit: o(x.kit), kitAt: o(x.kitAt), chat: o(x.chat), crewNotes: o(x.crewNotes), crewSize: o(x.crewSize), seen, screen, paused: x.paused === true, flow }
+  const budgets = Object.fromEntries(Object.entries(o(x.budgets)).filter(([, v]) => typeof v === 'number' && v > 0)) as Record<string, number>
+  return { v: 1, projects: x.projects as Project[], kit: o(x.kit), kitAt: o(x.kitAt), chat: o(x.chat), crewNotes: o(x.crewNotes), crewSize: o(x.crewSize), seen, screen, paused: x.paused === true, flow, budgets, homeView: x.homeView === 'team' ? 'team' : 'mine' }
 }
 
 class Store {
@@ -244,6 +252,8 @@ class Store {
   chat: Record<string, ChatLine[]> = {}
   settingsOpen = false
   flow: FlowItem[] = [] // Your flow: changes for every farm
+  budgets: Record<string, number> = Object.fromEntries(AREAS.map((a) => [a.id, a.budget])) // each area's budget per project
+  homeView: 'mine' | 'team' = 'mine'
   fresh: { id: string; until: number } | null = null // a change just applied: its chip shows Undo until then
   static FRESH_MS = 8000
   notifications = false
@@ -363,6 +373,8 @@ class Store {
         screen: this.screen,
         paused: this.screen.kind === 'farm' && !this.playing,
         flow: this.flow,
+        budgets: this.budgets,
+        homeView: this.homeView,
       }
       localStorage.setItem(Store.KEY, JSON.stringify(data))
     } catch {
@@ -427,6 +439,8 @@ class Store {
     this.crewSize = d.crewSize
     this.seen = new Set(d.seen)
     this.flow = d.flow ?? []
+    this.budgets = { ...this.budgets, ...d.budgets }
+    this.homeView = d.homeView ?? 'mine'
     this.sampleLoading = false
     const screen = d.screen
     if (screen?.kind === 'farm' && this.projects.some((p) => p.id === screen.project)) {
@@ -1099,7 +1113,9 @@ class Store {
     // Two farms made in the same millisecond still get their own ids.
     let id = `own-${Date.now().toString(36)}`
     while (this.project(id)) id += 'x'
-    const p: Project = { id, name: 'New project', goal, kind: 'own', events: [{ t: 0, type: 'goal', text: goal }], approved: false, planning: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters } }
+    // It belongs to an area, and starts with that area's budget as its spend limit.
+    const area = areaFor(goal)
+    const p: Project = { id, name: 'New project', goal, kind: 'own', events: [{ t: 0, type: 'goal', text: goal }], approved: false, planning: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters }, area, spendLimit: this.budgets[area] }
     // A new farm starts with Your flow.
     const flow = this.flow.filter((f) => f.on)
     if (flow.length)
@@ -1108,6 +1124,37 @@ class Store {
     this.projects = [...this.projects, p]
     this.open(id)
     return p
+  }
+
+  // An area's budget per project. Projects still on the old budget follow it; one given its own limit keeps it.
+  setBudget(area: string, usd: number) {
+    const was = this.budgets[area]
+    if (!(usd > 0) || usd === was) return
+    this.budgets = { ...this.budgets, [area]: usd }
+    for (const p of this.projects) if ((p.area ?? areaFor(p.goal)) === area && (p.spendLimit === undefined || p.spendLimit === was)) p.spendLimit = usd
+    this.notify()
+  }
+
+  setHomeView(v: 'mine' | 'team') {
+    this.homeView = v
+    this.notify()
+  }
+
+  // Open a teammate's simulated project where it stands: at the moment the team view points to.
+  openTeam(id: string) {
+    const m = MATES.find((x) => x.id === id)
+    if (!m) return this.open(id)
+    let p = this.project(id)
+    if (!p) {
+      const events = structuredClone(mateEvents(m))
+      p = { id, name: m.name, goal: m.goal, kind: 'sample', owner: m.owner, area: m.area, spendLimit: this.budgets[m.area], events, approved: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters } }
+      this.projects = [...this.projects, p]
+      this.startRun(p)
+      const snap = snapAt(p.events, m.at)
+      p.clock = snap.t
+      p.answers = snap.answers
+    }
+    this.open(id)
   }
 
   setPlan(id: string, name: string, farmers: FarmerSetup[], tasks: PlanTask[], estimate: Estimate, singleAgentEstimate?: Estimate) {

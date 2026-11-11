@@ -133,3 +133,13 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 ## Talking a disagreement through
 - A disagreement's input invites "Ask about either way, think it through, or suggest your own". A question gets an answer from the side it names (both when it names neither), as a short chat line under the options: the side's swatch, its label in bold, one sentence. Your question sits above it in meta ink as "You: …". The ask stays open.
 - A way of your own is said back by the Planner before anything changes: "Go with your way: …? The Designer builds it and the Tester checks it." with Yes and No. On Yes it's a decision like any other, logged as "Your way: …", and the pull request lists it as its own commit, "<task>: changed" with "Your way: …" under it.
+
+## Home and the team view
+- Home is two sides. Left, vertically centred: one paper with the title, the Mine / Team switch, who it is for (one bold body line) and why (two meta lines), then the Planner. Right: your farms at the largest scale that fits (3 down to 1), centred in the room left, so nothing overflows at 1280x720 and 1920 has no empty half. On screens wider than 1680px the whole of Home sits centred.
+- Mine / Team is a choice of two pack buttons (xs), cream for the chosen one. The title follows it: "Your projects" or "Your team".
+- The team view is one paper on the right, scrolling inside itself if it must. It shows spend and outliers, never what anyone is doing: no timelines, no activity, no per-person ranking.
+- It leads with the gold "Simulated team" tag and one line: people, agents, projects, spent.
+- "Worth a look" holds outliers only, at most one of each: Cost spike (honey, coin), Same work twice (bark, star), Agents disagree (bark, chat). A row is the urgency tag, the project in bold with whose in meta ink, one line from the run itself, and an "Open" tan button that opens the project at that moment.
+- "Budgets" is a ruled grid by area: the area's row has its budget per project in a soft well; each project under it has its name (a link), whose and how many agents in meta ink, the tick meter (12 ticks) and "$13 of $60". Over its limit, the spend turns berry.
+- A new project starts with its area's budget as its spend limit. Changing the budget moves every project still on the old one; a project with a limit of its own keeps it.
+- A teammate's project you open carries the gold "Simulated team" tag in the title and stays out of Mine.

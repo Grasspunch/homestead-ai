@@ -246,7 +246,11 @@ function Top({ p, s }: { p: Project; s: RunState }) {
             ))}
           </div>
         )}
-        {look.hidden.includes('sampleTag') ? null : p.kind === 'sample' ? (
+        {look.hidden.includes('sampleTag') ? null : p.owner ? (
+          <span className="tag gold" title={`A teammate's project in the simulated team: ${p.owner}'s`}>
+            Simulated team
+          </span>
+        ) : p.kind === 'sample' ? (
           <span className="tag gold" title="No real AI calls: a scripted sample that plays out the same way every time">
             Simulated sample
           </span>
