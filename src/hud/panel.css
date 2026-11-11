@@ -374,3 +374,7 @@ button.crew-x:hover { opacity: 1; }
 .proof-pop.s2 { width: 320px; font-size: var(--t-lead); }
 .proof-pop.s1 .pp-head b, .proof-pop.s1 .pp-by, .proof-pop.s1 .pp-line .mono { font-size: var(--t-body); }
 .proof-pop.s2 .pp-head b, .proof-pop.s2 .pp-by, .proof-pop.s2 .pp-line .mono { font-size: var(--t-lead); }
+
+/* Quiet captions under the mailbox and the chest on the farm: smaller and paler than a plot label. */
+.yard-label { position: absolute; transform: translateX(-50%); z-index: 2; padding: 1px 5px; border: 0; border-radius: 3px; background: rgba(255, 246, 228, .72); font-family: px4; color: var(--bark-2); white-space: nowrap; letter-spacing: .4px; line-height: 1.2; cursor: pointer; }
+.yard-label:hover { background: rgba(255, 246, 228, .95); color: var(--bark); }

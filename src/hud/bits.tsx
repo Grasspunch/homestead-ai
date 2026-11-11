@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react'
 import { draw, frame, loadAtlas } from '../map/atlas'
 import { SWATCH, TINT } from '../run/crew'
-import type { FarmerId } from '../run/types'
+import type { AskReason, FarmerId } from '../run/types'
 
 // Icons from the Sprout Lands icon sheet (16 px cells). Names map to [column, row] in one colour set.
 const ICONS = {
@@ -85,6 +85,16 @@ export function Sign({ crop, size = 32 }: { crop: string; size?: number }) {
 export function Swatch({ farmer }: { farmer: FarmerId }) {
   const t = SWATCH[farmer]
   return <span className="sw" style={{ background: t.body, boxShadow: `inset 0 0 0 2px ${t.shade}` }} aria-hidden />
+}
+
+// Why an agent stopped for you, in words someone new can read: "Designer needs you: two agents disagree".
+export const ASK_WHY: Record<AskReason, string> = {
+  anomaly: 'a check failed',
+  cost: 'going over budget',
+  big: 'a big change to approve',
+  irreversible: 'ready to reach real users',
+  risk: 'ship again?',
+  disagree: 'two agents disagree',
 }
 
 export const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`
