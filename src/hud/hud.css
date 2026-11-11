@@ -408,20 +408,35 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .dlg.done .done-text p.scale-line { margin-top: 2px; }
 .dlg.done .row { flex-wrap: nowrap; }
 
-/* The Planner's box, folded down to its name and latest line: the farm gets the space back. */
-.who .fold { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none; }
-.dlg.folded { width: min(720px, calc(100% - 32px)); }
-.dlg.folded.with-side { width: min(720px, calc(100% - 490px)); }
-.dlg.folded .portrait { width: 72px; height: 72px; border-width: 10px; border-image-width: 12px; align-self: flex-end; }
-.dlg.folded .portrait canvas { inset: 2px; width: 48px !important; height: 48px !important; } /* Portrait sizes itself inline */
-.dlg.folded .body { justify-content: center; }
-.dlg.folded .body > :not(.who) { display: none; }
-.dlg.folded .who { min-width: 0; }
-.dlg.folded .who .tag.grey { display: none; } /* room for the latest line */
-.who .fold-last { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-body); color: var(--bark-2); }
+/* Windows in the middle sit in the bottom-left corner, so hiding one leaves its speaker where they were. */
+.dlg:not(.dock):not(.home) { left: 16px; transform: none; }
+.dlg.gone { display: none; }
+.dlg .body > .tuck-btn { position: absolute; top: -32px; right: 14px; display: inline-flex; align-items: center; gap: 6px; z-index: 1; }
+/* Hidden: the portrait in its frame, and what they're thinking in a cloud beside it. */
+.dlg.tucked { width: auto; max-width: calc(100% - 32px); }
+.tuck-frame { all: unset; cursor: pointer; display: flex; align-items: flex-start; gap: 6px; }
+.tuck-frame:focus-visible { outline: 3px solid var(--leaf); outline-offset: 4px; border-radius: 6px; }
+.tuck-frame .portrait { transition: transform .12s; }
+.tuck-frame:hover .portrait { transform: translateY(-3px); }
+.tuck-frame .thought { position: relative; align-self: flex-start; margin: 4px 0 0 14px; max-width: 300px; padding: 10px 14px; border-radius: 22px; background: var(--cream); border: 3px solid var(--bark-3);
+  box-shadow: 0 3px 0 rgba(60, 40, 25, .25); display: flex; gap: 8px; align-items: flex-start; font: 600 var(--t-body)/1.35 var(--ui); color: var(--bark); }
+.tuck-frame .thought .words { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+/* The two small puffs that make it a thought, not speech, trailing back to the portrait. */
+.tuck-frame .thought::before, .tuck-frame .thought::after { content: ""; position: absolute; background: var(--cream); border: 3px solid var(--bark-3); border-radius: 50%; }
+.tuck-frame .thought::before { width: 16px; height: 16px; left: -16px; bottom: 2px; }
+.tuck-frame .thought::after { width: 9px; height: 9px; left: -27px; bottom: -8px; }
+.tuck-frame .thought.alert { border-color: var(--berry); }
+.tuck-frame .thought.alert::before, .tuck-frame .thought.alert::after { border-color: var(--berry); }
+.tuck-frame .thought.alert .ico { flex: none; background-color: var(--berry); border-radius: 4px; margin-top: 1px; }
+.tuck-frame:hover .thought { border-color: var(--leaf); }
+@media (max-width: 900px) {
+  .dlg.tucked { left: 10px; right: auto; }
+  .dlg.tucked .portrait { display: block; width: 72px; height: 72px; border-width: 10px; border-image-width: 12px; }
+  .dlg.tucked .portrait canvas { inset: 2px; width: 48px !important; height: 48px !important; }
+  .tuck-frame .thought { max-width: calc(100vw - 140px); }
+}
 .export-group { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
 .export-label { font-size: var(--t-meta); color: var(--bark-3); margin-right: 2px; }
 .export-group .btn.xs { font: 700 var(--t-meta)/1 var(--ui); letter-spacing: 0; }
 .side .inbox-control { align-self: flex-start; }
 .top .title > .tag { padding: 3px 6px 2px; }
-@media (max-width: 900px) { .dlg.folded, .dlg.folded.with-side { width: auto; } }

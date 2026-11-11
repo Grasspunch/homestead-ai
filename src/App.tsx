@@ -498,7 +498,7 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
     store.pause()
   }, [])
   return (
-    <Dialogue farmer={shipper} side={side}>
+    <Center farmer={shipper} side={side} alert thought={mine ? 'Rolled back, as you asked.' : 'I rolled the release back. Open me to see why.'}>
       <div className="who">
         <b>{s.farmers[shipper]?.label ?? 'Deployer'}</b>
         <span className="urgency red">
@@ -535,14 +535,14 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
           See the pull request
         </button>
       </div>
-    </Dialogue>
+    </Center>
   )
 }
 
 // Offered once, after you merged a pull request with nothing sent back. It applies from the next run.
 function TrustDialogue({ side }: { side: boolean }) {
   return (
-    <Dialogue farmer="planner" side={side}>
+    <Center farmer="planner" side={side} thought="Three clean runs in a row. Merge by itself from now on?">
       <div className="who">
         <b>Planner</b>
       </div>
@@ -557,7 +557,7 @@ function TrustDialogue({ side }: { side: boolean }) {
           Keep asking me
         </button>
       </div>
-    </Dialogue>
+    </Center>
   )
 }
 
@@ -713,13 +713,13 @@ function OwnAsk({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
   }
   if (isShipAsk(ask))
     return (
-      <Dialogue farmer={ask.farmer} side={side}>
+      <Center farmer={ask.farmer} side={side} alert thought={holding ? 'Holding the pull request until you say so.' : 'The pull request is ready for you to review.'}>
         <PrReview s={s} ask={ask} holding={holding} hold={() => setHolding(true)} />
         <InWords ask={ask} onHold={() => setHolding(true)} />
-      </Dialogue>
+      </Center>
     )
   return (
-    <Dialogue farmer={ask.farmer} side={side}>
+    <Center farmer={ask.farmer} side={side} alert thought={holding ? 'Holding. Nothing ships until you say so.' : ask.question}>
       <div className="who">
         {/* Who stopped, and why, before anything else: the portrait alone doesn't name them. */}
         <b>{s.farmers[ask.farmer]?.label ?? 'An agent'} needs you</b>
@@ -784,7 +784,7 @@ function OwnAsk({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
           ))}
       </div>
       <InWords ask={ask} onHold={() => setHolding(true)} />
-    </Dialogue>
+    </Center>
   )
 }
 
@@ -1067,7 +1067,7 @@ function ChangeCard({ side }: { side: boolean }) {
     setBusy(false)
   }
   return (
-    <Dialogue farmer="planner" side={side}>
+    <Center farmer="planner" side={side} alert thought={`Make these changes? ${pd.proposal.title}`}>
       <div className="who">
         <b>Planner</b>
         <span className="urgency honey">
@@ -1133,31 +1133,90 @@ function ChangeCard({ side }: { side: boolean }) {
           Cancel
         </button>
       </div>
-    </Dialogue>
+    </Center>
   )
 }
 
-// Whether you folded the Planner's box down to its name. Kept across farms and reloads, since it's how you like the
-// screen, not something about one run.
-const FOLD_KEY = 'homestead:planner-folded'
-function usePlannerFolded(): [boolean, (v: boolean) => void] {
-  const [folded, setFolded] = useState(() => {
-    try {
-      return typeof localStorage !== 'undefined' && localStorage.getItem(FOLD_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
-  const set = (v: boolean) => {
-    setFolded(v)
-    try {
-      if (v) localStorage.setItem(FOLD_KEY, '1')
-      else localStorage.removeItem(FOLD_KEY)
-    } catch {
-      // Storage blocked: it still folds, it just opens again after a reload.
-    }
+// Every window in the middle of the screen can be hidden, so you can watch the farm. Hidden, only the speaker's
+// portrait stays, in the bottom-left corner where the window sits, with what they're thinking in a thought bubble;
+// click it to open the window again. Each window starts open, except the Planner's box, which remembers (keep).
+// The window stays mounted while hidden, so nothing you typed or ticked is lost. A forced window always shows,
+// and a change in wake opens a hidden one again.
+const TUCK_KEY = 'homestead:hidden'
+const tuckedSaved = (keep: string) => {
+  try {
+    return (localStorage.getItem(TUCK_KEY) ?? '').split(',').includes(keep)
+  } catch {
+    return false
   }
-  return [folded, set]
+}
+const saveTucked = (keep: string, on: boolean) => {
+  try {
+    const was = (localStorage.getItem(TUCK_KEY) ?? '').split(',').filter((k) => k && k !== keep)
+    localStorage.setItem(TUCK_KEY, (on ? [...was, keep] : was).join(','))
+  } catch {
+    // Storage blocked: it still hides, it just opens again after a reload.
+  }
+}
+function Center({
+  farmer,
+  side,
+  className = '',
+  thought,
+  alert = false,
+  keep,
+  forced = false,
+  wake,
+  children,
+}: {
+  farmer: FarmerId
+  side: boolean
+  className?: string
+  thought: string
+  alert?: boolean
+  keep?: string
+  forced?: boolean
+  wake?: unknown
+  children: React.ReactNode
+}) {
+  const [tucked, setTucked] = useState(() => !!keep && tuckedSaved(keep))
+  const set = (on: boolean) => {
+    setTucked(on)
+    if (keep) saveTucked(keep, on)
+  }
+  const woke = useRef(wake)
+  useEffect(() => {
+    if (wake !== woke.current && wake) set(false)
+    woke.current = wake
+  }, [wake])
+  const hidden = tucked && !forced
+  return (
+    <>
+      {/* First, so the farm's camera measures the frame, not the hidden window. */}
+      {hidden && (
+        <section className="dlg tucked">
+          <button className="tuck-frame" onClick={() => set(false)} title="Open this window">
+            <span className="portrait">
+              <Portrait farmer={farmer} />
+            </span>
+            <span className={`thought${alert ? ' alert' : ''}`}>
+              {alert && <Ico name="alert" tone="light" />}
+              <span className="words">{thought}</span>
+            </span>
+          </button>
+        </section>
+      )}
+      <Dialogue farmer={farmer} side={side} className={`${className}${hidden ? ' gone' : ''}`}>
+        {!forced && (
+          <button className="tag-btn tuck-btn" onClick={() => set(true)} title="Hide this window and keep watching the farm" aria-label="Hide this window">
+            <Ico name="minus" />
+            Hide
+          </button>
+        )}
+        {children}
+      </Dialogue>
+    </>
+  )
 }
 
 // The Planner's box: ask anything about the run, or change how it runs. A question gets an answer; a change is
@@ -1175,16 +1234,6 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
   const lines = all ? chat : chat.slice(-SHOWN)
   const plannerModel = plannerModelOf(p, s)
   const input = useRef<HTMLInputElement>(null)
-  // Folded, the box is just the Planner's name, its latest line and a button to open it again. Reached on purpose
-  // while a question waits, it always opens; and it opens by itself once when the run is done, so you see how it went.
-  const [foldPref, setFold] = usePlannerFolded()
-  const folded = foldPref && !onClose
-  const wasDone = useRef(!!s.done)
-  useEffect(() => {
-    if (s.done && !wasDone.current && foldPref) setFold(false)
-    wasDone.current = !!s.done
-  }, [s.done])
-  const latest = chat[chat.length - 1]
   const you = (t: string) => store.chatTo(p.id, { from: 'you', text: clip(t) })
   const say = (t: string, to?: FarmerId) => store.chatTo(p.id, { from: 'planner', text: t, ...(to ? { to } : {}) })
   // Not something to change: a note to the agent it's about, and the reply says who has it.
@@ -1251,24 +1300,20 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
   const answered = s.asks.filter((a) => a.answer).length
   // The release bug the last run rolled back on, fixed in this one, and how far this run counts toward merging by itself.
   const fixed = s.done ? fixLineOf(p, s.deploy.some((d) => d.stage === 'rollback')) : null
+  const lastSaid = [...chat].reverse().find((l) => l.from !== 'you')?.text
   return (
-    <Dialogue farmer="planner" side={side} className={`${s.done ? 'done' : ''}${folded ? ' folded' : ''}`}>
+    <Center
+      farmer="planner"
+      side={side}
+      className={s.done ? 'done' : ''}
+      keep="planner"
+      forced={!!onClose}
+      wake={!!s.done}
+      thought={s.done ? 'All done. Open me to see how the run went.' : lastSaid ?? 'Ask me anything about the run, or tell me what to change.'}
+    >
       <div className="who">
         <b>Planner</b>
         {s.done ? <span className="tag green">Done</span> : <span className="tag grey">Message the agents</span>}
-        {folded && latest && <span className="fold-last">{latest.from === 'you' ? `You: ${latest.text}` : latest.text}</span>}
-        {!onClose && (
-          <button
-            className="tag-btn fold"
-            onClick={() => setFold(!folded)}
-            aria-expanded={!folded}
-            aria-label={folded ? 'Open the Planner chat' : 'Fold the Planner chat away'}
-            title={folded ? 'Open the Planner chat' : 'Fold the Planner chat away'}
-          >
-            <Ico name={folded ? 'plus' : 'minus'} />
-            {folded ? 'Open' : 'Hide'}
-          </button>
-        )}
       </div>
       {s.done ? (
         <div className="done-text">
@@ -1371,7 +1416,7 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
           )}
         </form>
       </div>
-    </Dialogue>
+    </Center>
   )
 }
 
