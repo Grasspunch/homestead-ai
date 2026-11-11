@@ -5,12 +5,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { draw, frame, hasFrame } from '../map/atlas'
-import { atlasLoaded } from '../hud/bits'
+import { atlasLoaded, Ico } from '../hud/bits'
 import { TINT } from '../run/crew'
 import { ProofPop } from '../hud/Proof'
 import { stepWalker, type Dir, type Walker } from './walk'
 import type { FarmerId, RunState, TaskState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
+import './farm.css'
 
 const PX = 16 // atlas pixels per tile
 type Crop = 'wheat' | 'carrot' | 'pumpkin' | 'tulip' | 'cabbage'
@@ -95,6 +96,15 @@ interface Cam {
   ox: number
   oy: number
 }
+
+// Zoom: the wheel, a trackpad pinch, two fingers, or the + and - buttons. The scale moves in quarter steps
+// between these, so the pixel art stays even.
+const MIN_SCALE = 1.5
+const MAX_SCALE = 5
+const quarter = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.round(s * 4) / 4))
+// The HUD that sits over the top of the farm: the top bar, the chips that hang under its title, and the
+// Message the Planner button. The camera frames the farm below whichever reaches lowest.
+const TOP_HUD = 'header.top, header.top .reshapes, .planner-reach'
 
 
 // When you change the farm, a removed plot goes up in a puff of pixel cloud and the rest slide together.
@@ -235,7 +245,10 @@ export function FarmView(p: FarmViewProps) {
 
   // The camera: a fixed pixel scale (3x on desktop), centred on what matters in the space the HUD
   // leaves free. It leans toward the plot that needs you or the one you opened; drag to look around.
-  const camRef = useRef<Cam & { cx: number; cy: number; tx: number; ty: number; manual: boolean }>({ s: 3, ox: 0, oy: 0, cx: 0, cy: 0, tx: 0, ty: 0, manual: false })
+  // keep: the plot you opened or that's asking you, with its sign, label and any proof pop, in tiles. The camera
+  // never leaves any of it under the top bar or the dialogue.
+  type Box = { x0: number; x1: number; y0: number; y1: number }
+  const camRef = useRef<Cam & { cx: number; cy: number; tx: number; ty: number; manual: boolean; keep: Box | null }>({ s: 3, ox: 0, oy: 0, cx: 0, cy: 0, tx: 0, ty: 0, manual: false, keep: null })
   const labels = useRef<HTMLDivElement>(null)
   const narrow = size.w < 900
   // While planning, the plan docks on the left and the farm fills the rest: every plot, at the largest scale that fits.
@@ -249,7 +262,13 @@ export function FarmView(p: FarmViewProps) {
     return { x0, x1, y0, y1 }
   })()
   const fits = (k: number) => !box || ((box.x1 - box.x0) * PX * k <= size.w - DOCK - (p.side ? 470 : 0) - 16 && (box.y1 - box.y0) * PX * k <= size.h - 96)
-  const scale = narrow ? 2 : docked ? ([3, 2.5, 2].find(fits) ?? 2) : size.h < 760 ? 2.5 : 3
+  const base = narrow ? 2 : docked ? ([3, 2.5, 2].find(fits) ?? 2) : size.h < 760 ? 2.5 : 3
+  // Your zoom, as a factor on the scale that fits the screen, so it carries across planning, the run and a resize.
+  const [zoom, setZoom] = useState(1)
+  const zoomRef = useRef(1)
+  const baseRef = useRef(base)
+  baseRef.current = base
+  const scale = quarter(base * zoom)
   if (cam.s !== scale) setCam({ s: scale, ox: 0, oy: 0 })
   const focusId = p.openAsk?.task ?? (p.selected?.kind === 'task' ? p.selected.id : undefined)
   const activeIds = p.state.tasks.filter((t) => t.status === 'growing' || t.status === 'checking' || t.status === 'wilted').map((t) => t.id)
@@ -274,14 +293,30 @@ export function FarmView(p: FarmViewProps) {
     const at = popSeen.current.get(`${sh.id}-${sh.c.t}`)
     return at === undefined || performance.now() - at <= 7000 ? sh.id : undefined
   })()
+  // What the HUD covers at the top and the bottom of the farm, measured: the lowest edge of the top bar and
+  // anything hanging under it, and the top of the highest dialogue. Measured every frame, so a dialogue that
+  // grows, folds away or moves keeps the farm framed in what's left.
+  const hudInsets = () => {
+    const r = wrap.current?.getBoundingClientRect()
+    if (!r || !r.height) return { top: narrow ? 60 : 80, bottom: narrow ? 250 : 230 }
+    let top = 0
+    for (const el of document.querySelectorAll<HTMLElement>(TOP_HUD)) {
+      const b = el.getBoundingClientRect()
+      if (b.height && b.top < r.top + r.height / 3) top = Math.max(top, b.bottom - r.top)
+    }
+    let bottom = 16
+    for (const el of document.querySelectorAll<HTMLElement>('section.dlg')) {
+      const b = el.getBoundingClientRect()
+      if (b.height && b.bottom > r.top + r.height / 2) bottom = Math.max(bottom, r.bottom - b.top + 8)
+    }
+    return { top: top ? top + 10 : narrow ? 60 : 80, bottom }
+  }
   // The space the HUD leaves for the farm: below the top bar, above the dialogue, beside any open panel.
   const freeSize = () => {
-    const top = narrow ? 60 : 80
-    const dlg = document.querySelector('.dlg') as HTMLElement | null
-    const r = wrap.current?.getBoundingClientRect()
-    const bottom = dlg && r ? Math.max(0, r.bottom - dlg.getBoundingClientRect().top) + 8 : narrow ? 250 : 230
-    return { w: size.w - (p.side && !narrow ? 470 : 0) - 32, h: Math.max(0, size.h - top - bottom) }
+    const f = freeRect()
+    return { w: f.w, h: f.h }
   }
+  const followed = useRef<unknown[]>([])
   useEffect(() => {
     const c = camRef.current
     const pl = layout.plots.find((x) => x.id === focusId)
@@ -318,25 +353,32 @@ export function FarmView(p: FarmViewProps) {
     const tgt = !pl ? plots ?? idle ?? home : asking ? { x: pl.x + pl.w / 2, y: pl.y + pl.h / 2 } : { x: Math.max(home.x, pl.x + pl.w / 2 - 2), y: Math.max(7, pl.y + pl.h / 2) }
     c.tx = tgt.x
     c.ty = tgt.y
-    c.manual = false
+    // The plot the camera turned to, with its sign and selection corners above, its label below, and the proof
+    // pop over it when one is up: the camera keeps all of it in the free space, whatever the zoom.
+    c.keep = pl ? { x0: pl.x - 2.4, x1: pl.x + pl.w + 1.4, y0: pl.y - (pl.id === popNow ? 190 / (scale * PX) : 1.4), y1: pl.y + pl.h + 2.2 } : null
+    // Your zoom alone doesn't take the camera back from where you dragged or zoomed it; anything else does.
+    const follow = [focusId, layout, !!p.openAsk, docked, activeIds.join(), popNow, size.w, size.h]
+    if (follow.some((v, i) => v !== followed.current[i])) c.manual = false
+    followed.current = follow
     if (!c.cx) {
       c.cx = tgt.x
       c.cy = tgt.y
     }
   }, [focusId, layout, !!p.openAsk, docked, activeIds.join(), popNow, size.w, size.h, scale])
-  const freeRect = () => {
+  function freeRect() {
     if (docked) {
       const w = size.w - DOCK - (p.side ? 470 : 0)
-      return { cx: DOCK + w / 2, cy: 80 + (size.h - 96) / 2 }
+      return { cx: DOCK + w / 2, cy: 80 + (size.h - 96) / 2, w: w - 16, h: size.h - 96, right: size.w - DOCK - w, bottom: 16 }
     }
     const w = size.w - (p.side && !narrow ? 470 : 0)
-    const top = narrow ? 60 : 80
-    // The free space ends where the dialogue starts, measured, so a tall plan or review never covers what it's about.
-    const dlg = document.querySelector('.dlg') as HTMLElement | null
-    const box = wrap.current?.getBoundingClientRect()
-    const bottom = dlg && box ? Math.max(0, box.bottom - dlg.getBoundingClientRect().top) + 8 : narrow ? 250 : 230
-    return { cx: w / 2, cy: top + Math.max(0, size.h - top - bottom) / 2 }
+    // The free space starts under the top bar and ends where the dialogue starts, both measured, so neither the
+    // top bar's buttons nor a tall plan or review ever covers what the camera turned to show you.
+    const { top, bottom } = hudInsets()
+    const h = Math.max(0, size.h - top - bottom)
+    return { cx: w / 2, cy: top + h / 2, w: w - 32, h, right: size.w - w, bottom }
   }
+  const freeRectRef = useRef(freeRect)
+  freeRectRef.current = freeRect
 
   // A plot that left the plan goes up in a poof, and the rest slide to their new places.
   const placed = useRef<{ plots: Map<string, Plot>; tasks: Map<string, string> } | null>(null)
@@ -372,13 +414,22 @@ export function FarmView(p: FarmViewProps) {
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now
       const k = camRef.current
-      if (!k.manual) {
-        const f = 1 - Math.pow(0.002, dt)
-        k.cx += (k.tx - k.cx) * f
-        k.cy += (k.ty - k.cy) * f
-      }
       const fr = freeRect()
-      k.s = cam.s
+      if (!k.manual) {
+        // Lean toward the target, but never so far that the kept plot slips under the top bar or the dialogue.
+        const S = PX * k.s
+        // When the plot can't fit at all it's centred across, and shown from its sign down, so its top is never cut.
+        const fit = (t: number, lo: number, hi: number, half: number, tall: number) => (hi - lo > 2 * half ? tall : Math.min(lo + half, Math.max(hi - half, t)))
+        const gx = k.keep ? fit(k.tx, k.keep.x0, k.keep.x1, fr.w / 2 / S, (k.keep.x0 + k.keep.x1) / 2) : k.tx
+        const gy = k.keep ? fit(k.ty, k.keep.y0, k.keep.y1, fr.h / 2 / S, k.keep.y0 + fr.h / 2 / S) : k.ty
+        const f = 1 - Math.pow(0.002, dt)
+        k.cx += (gx - k.cx) * f
+        k.cy += (gy - k.cy) * f
+      }
+      if (zoomBox.current) {
+        zoomBox.current.style.right = `${fr.right + 16}px`
+        zoomBox.current.style.bottom = `${fr.bottom + 4}px`
+      }
       k.ox = Math.round(fr.cx - k.cx * PX * k.s)
       k.oy = Math.round(fr.cy - k.cy * PX * k.s)
       if (labels.current) labels.current.style.transform = `translate(${k.ox}px, ${k.oy}px)`
@@ -389,6 +440,58 @@ export function FarmView(p: FarmViewProps) {
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [ready, layout, cam, size, p.side])
+  useEffect(() => {
+    camRef.current.s = cam.s
+  }, [cam.s])
+
+  // Zoom by a factor, about a point on screen (the pointer, or the middle of two fingers) or about the middle
+  // of the free space. Zooming about a point keeps what's under it in place, like dragging does.
+  const zoomBox = useRef<HTMLDivElement>(null)
+  const zoomBy = (f: number, at?: { x: number; y: number }) => {
+    const b = baseRef.current
+    const z = Math.min(MAX_SCALE / b, Math.max(MIN_SCALE / b, zoomRef.current * f))
+    zoomRef.current = z
+    const k = camRef.current
+    const s = quarter(b * z)
+    if (s !== k.s && at && wrap.current) {
+      const r = wrap.current.getBoundingClientRect()
+      const mx = at.x - r.left
+      const my = at.y - r.top
+      const tx = (mx - k.ox) / (PX * k.s)
+      const ty = (my - k.oy) / (PX * k.s)
+      const fr = freeRectRef.current()
+      k.cx = Math.max(0, Math.min(layout.w, tx + (fr.cx - mx) / (PX * s)))
+      k.cy = Math.max(0, Math.min(layout.h, ty + (fr.cy - my) / (PX * s)))
+      k.manual = true
+    }
+    if (s !== k.s) {
+      k.s = s
+      // The labels jump with the farm while you zoom, instead of easing behind it.
+      const l = labels.current
+      if (l) {
+        l.classList.add('zooming')
+        clearTimeout(zoomEase.current)
+        zoomEase.current = setTimeout(() => l.classList.remove('zooming'), 450)
+      }
+    }
+    setZoom(z)
+  }
+  const zoomEase = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const zoomTo = (z: number) => zoomBy(z / zoomRef.current)
+  const zoomByRef = useRef(zoomBy)
+  zoomByRef.current = zoomBy
+  // The wheel and a trackpad pinch (which the browser sends as a wheel with ctrl held) zoom the farm, never the page.
+  useEffect(() => {
+    const el = wrap.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY
+      zoomByRef.current(Math.exp(-Math.max(-300, Math.min(300, dy)) * (e.ctrlKey ? 0.01 : 0.002)), { x: e.clientX, y: e.clientY })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   const toTile = (e: React.PointerEvent) => {
     const r = wrap.current!.getBoundingClientRect()
@@ -406,11 +509,40 @@ export function FarmView(p: FarmViewProps) {
   }
 
   const drag = useRef<{ x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null)
+  // Two fingers on the farm pinch to zoom.
+  const touches = useRef(new Map<number, { x: number; y: number }>())
+  const pinch = useRef<{ d: number; z: number } | null>(null)
+  const spread = () => {
+    const [a, b] = [...touches.current.values()]
+    return { d: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } }
+  }
   const onDown = (e: React.PointerEvent) => {
     const k = camRef.current
+    touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (touches.current.size === 2) {
+      pinch.current = { d: Math.max(1, spread().d), z: zoomRef.current }
+      if (drag.current) drag.current.moved = true
+      return
+    }
     drag.current = { x: e.clientX, y: e.clientY, cx: k.cx, cy: k.cy, moved: false }
   }
+  const lift = (e: React.PointerEvent) => {
+    touches.current.delete(e.pointerId)
+    if (touches.current.size < 2 && pinch.current) {
+      pinch.current = null
+      // The finger still down drags on from where the pinch left the farm.
+      const [rest] = [...touches.current.values()]
+      const k = camRef.current
+      if (rest) drag.current = { x: rest.x, y: rest.y, cx: k.cx, cy: k.cy, moved: true }
+    }
+  }
   const onMove = (e: React.PointerEvent) => {
+    if (touches.current.has(e.pointerId)) touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pinch.current && touches.current.size === 2) {
+      const { d, mid } = spread()
+      zoomBy((pinch.current.z * (d / pinch.current.d)) / zoomRef.current, mid)
+      return
+    }
     const d = drag.current
     if (d && e.buttons) {
       const dx = e.clientX - d.x
@@ -449,9 +581,11 @@ export function FarmView(p: FarmViewProps) {
     el.hidden = false
   }
   const onClick = (e: React.PointerEvent) => {
+    const pinched = touches.current.size > 1 || !!pinch.current
+    lift(e)
     const d = drag.current
-    drag.current = null
-    if (d?.moved) return
+    if (touches.current.size === 0) drag.current = null
+    if (d?.moved || pinched) return
     const h = hit(toTile(e))
     if (!h) return
     if (h.startsWith('f:')) p.onFarmer(h.slice(2) as FarmerId)
@@ -463,8 +597,29 @@ export function FarmView(p: FarmViewProps) {
 
   const T = PX * cam.s
   return (
-    <div ref={wrap} className="map-layer" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onClick} onPointerLeave={() => ((hover.current = null), nameTip(null))} style={{ touchAction: 'none' }}>
+    <div ref={wrap} className="map-layer" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onClick} onPointerCancel={lift} onPointerLeave={(e) => (lift(e), (hover.current = null), nameTip(null))} style={{ touchAction: 'none' }}>
       <canvas ref={canvas} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} aria-label="The farm" role="img" />
+      <div ref={zoomBox} className="farm-zoom" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
+        <button className="btn white" onClick={() => zoomBy(1.25)} disabled={scale >= MAX_SCALE} aria-label="Zoom in" title="Zoom in">
+          <Ico name="plus" />
+        </button>
+        <button className="btn white" onClick={() => zoomBy(1 / 1.25)} disabled={scale <= MIN_SCALE} aria-label="Zoom out" title="Zoom out">
+          <Ico name="minus" />
+        </button>
+        {(zoom !== 1 || scale !== base) && (
+          <button
+            className="btn white fit"
+            onClick={() => {
+              camRef.current.manual = false
+              zoomTo(1)
+            }}
+            aria-label="Back to the whole view"
+            title="Back to the whole view"
+          >
+            Fit
+          </button>
+        )}
+      </div>
       <span ref={tip} className="farmer-tip paper" hidden aria-hidden>
         <b />
         <span />
