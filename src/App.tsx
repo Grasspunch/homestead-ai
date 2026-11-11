@@ -9,8 +9,13 @@ import { Ico, LimitField, Mark, Portrait, Quiet, Sign, SimTag, Swatch, mins, usd
 import { FarmerPage } from './hud/FarmerPage'
 import { Rollout } from './hud/Proof'
 import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
-import { discuss, getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode } from './run/agent'
+import { discuss, getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode, talkAsk } from './run/agent'
+import { ownWayIn, plainPick, sidesCanAnswer, taskFor } from './run/askTalk'
+import { OWN, confirmOwn } from './run/discuss'
 import type { Scope } from './run/reshape'
+import { chatTurn } from './run/agent'
+import { trustWords } from './run/chatSim'
+import type { ChatOut } from './run/talk'
 import { planInto } from './run/planning'
 import { shortDate } from './run/recorded'
 import { ExportButtons } from './hud/Export'
@@ -120,7 +125,10 @@ function Farm() {
       {!p.approved ? (
         <PlanDialogue p={p} s={s} side={side} />
       ) : st.pending?.pid === p.id ? (
-        <ChangeCard side={side} />
+        <ChangeCard key={`${st.pending.request}:${st.pending.proposal.rows.map((r) => r.id).join()}`} side={side} />
+      ) : d?.kind === 'chat' && (ask || rolled || trust) ? (
+        // The Planner, reached while a question waits: closing it brings the question back.
+        <PlannerDialogue p={p} s={s} side={side} onClose={() => store.setDrawer(null)} />
       ) : ask ? (
         <AskDialogue key={ask.id} s={s} ask={ask} side={side} />
       ) : rolled ? (
@@ -129,6 +137,12 @@ function Farm() {
         <TrustDialogue side={side} />
       ) : (
         <PlannerDialogue p={p} s={s} side={side} />
+      )}
+      {p.approved && st.pending?.pid !== p.id && d?.kind !== 'chat' && (ask || rolled || trust) && (
+        <button className="btn tan planner-reach" onClick={() => store.setDrawer({ kind: 'chat' })}>
+          <Ico name="chat" />
+          Message the Planner
+        </button>
       )}
     </>
   )
@@ -804,65 +818,126 @@ function Sureness({ ask }: { ask: Ask }) {
   )
 }
 
-// Answer in your own words: the Planner reads it as one of the options, or says it can't and the ask stays open.
+// Talk an ask through in your own words. A plain pick ("yes", "stop it", an option's own words) is said back
+// for a yes. Anything else (a question, a condition, pushback, a request) gets a real answer from the agent that
+// asked, and whatever it reads (a pick, work sent back, a hold) is said back before it applies. A no keeps talking.
+type Reading = { text: string; ask?: string; talked: boolean } & ({ choice: string } | { sendBack: string; task: string })
 function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
   const st = useStore()
   const [text, setText] = useState('')
-  const [miss, setMiss] = useState('')
   const [busy, setBusy] = useState(false)
-  const [confirm, setConfirm] = useState<{ text: string; choice: string; ask?: string } | null>(null)
+  const [confirm, setConfirm] = useState<Reading | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+  const refocus = useRef(false)
+  useEffect(() => {
+    if (!confirm && refocus.current) {
+      refocus.current = false
+      input.current?.focus()
+    }
+  }, [confirm])
   const p = st.project()
+  const s = p ? st.state(p) : undefined
+  const label = (f: string) => s?.farmers[f as FarmerId]?.label ?? f
   const talk = p?.talks?.[ask.id] ?? []
+  const options = [ask.suggested, ...ask.alternatives].filter((o) => !/^show me/i.test(o) && o !== SEND_BACK)
+  const canSendBack = ask.alternatives.includes(SEND_BACK)
   const send = async (e: React.FormEvent) => {
     e.preventDefault()
     const msg = text.trim()
-    if (!msg || busy) return
-    const r = store.answerInWords(ask.id, msg)
-    // A question about a disagreement: the side it's about answers, and the ask stays open.
-    if (r.kind === 'discuss' && ask.talk && p) {
-      setMiss('')
+    if (!msg || busy || !p) return
+    // A plain pick: said back, then applied on yes.
+    if (plainPick(msg, options, ask.talk?.sides.map((x) => x.label) ?? [])) {
+      const r = store.answerInWords(ask.id, msg)
+      if (r.kind === 'confirm' || r.kind === 'answered') {
+        setText('')
+        setConfirm({ text: msg, choice: r.choice, ask: r.ask, talked: false })
+        return
+      }
+      if (r.kind === 'hold') {
+        setText('')
+        onHold()
+        return
+      }
+    }
+    // A way of your own on a disagreement: the Planner says it back first.
+    const way = ask.talk ? ownWayIn(msg, ask.talk) : null
+    if (way && ask.talk) {
       setText('')
-      setBusy(true)
-      const s = st.state(p)
-      const a = await discuss(msg, ask.talk, (f) => s?.farmers[f as FarmerId]?.model)
-      setBusy(false)
-      store.talkOn(ask.id, msg, a.data)
-      if (a.error) store.say(a.error)
+      setConfirm({ text: msg, choice: `${OWN}${way}`, ask: confirmOwn(way, ask.talk, label), talked: false })
       return
     }
-    const why =
-      r.kind !== 'none'
-        ? ''
-        : r.why === 'no'
-          ? 'Got it, not that. Which of these instead?'
-          : r.why === 'question'
-            ? 'That sounds like a question, so I haven’t changed anything. Pick an option or tell me which.'
-            : r.why === 'amount'
-              ? `${r.amount} isn’t one of these options, so nothing has changed. Pick one, or tell me which.`
-              : `I can’t match “${clip(msg)}” to one of these options, so this stays open. Pick one, or tell me again.`
-    setMiss(why)
-    if (r.kind === 'none' || r.kind === 'discuss') return
+    const history = talk.map((l) => ({ from: l.from, text: l.text }))
     setText('')
-    if (r.kind === 'confirm') setConfirm({ text: msg, choice: r.choice, ask: r.ask })
-    if (r.kind === 'hold') onHold()
+    setBusy(true)
+    store.talkOn(ask.id, msg, [])
+    try {
+      // A plain question about a disagreement: the sides answer it themselves.
+      if (ask.talk && sidesCanAnswer(msg)) {
+        const a = await discuss(msg, ask.talk, (f) => s?.farmers[f as FarmerId]?.model)
+        store.talkAdd(ask.id, a.data)
+        if (a.error) store.say(a.error)
+        return
+      }
+      const task = s?.tasks.find((t) => t.id === ask.task)
+      const a = await talkAsk(
+        {
+          ask: {
+            id: ask.id,
+            farmer: ask.farmer,
+            farmerLabel: label(ask.farmer),
+            reason: ask.reason,
+            question: ask.question,
+            ...(ask.impact ? { impact: ask.impact } : {}),
+            ...(ask.basis ? { basis: ask.basis } : {}),
+            ...(ask.confidence ? { confidence: ask.confidence } : {}),
+            ...(task ? { task: task.name } : {}),
+            suggested: ask.suggested,
+            options,
+            canSendBack,
+            ...(ask.talk ? { sides: ask.talk.sides } : {}),
+          },
+          history,
+          message: msg,
+        },
+        s?.farmers[ask.farmer]?.model,
+      )
+      store.talkAdd(ask.id, [{ from: ask.farmer, text: a.data.reply }])
+      if (a.error) store.say(a.error)
+      const out = a.data
+      if (out.sendBack && s) {
+        const list = s.tasks.filter((t) => t.status === 'accepted' && !t.gate)
+        const id = taskFor(out.sendBack, list.map((t) => ({ id: t.id, name: t.name, farmer: t.farmer, label: label(t.farmer) })), ask.task)
+        const t = list.find((x) => x.id === id)
+        if (t) setConfirm({ text: msg, sendBack: out.sendBack, task: t.id, ask: `Send “${clip(t.name, 40)}” back to the ${label(t.farmer)} with that note?`, talked: true })
+      } else if (out.choice && /^not yet/i.test(out.choice)) onHold()
+      else if (out.choice) setConfirm({ text: msg, choice: out.choice, ask: `Go with “${out.choice}”?`, talked: true })
+      else if (out.hold) onHold()
+    } finally {
+      setBusy(false)
+      input.current?.focus()
+    }
   }
-  if (confirm)
-    return (
-      <div className="row in-words confirm">
-        <p className="said grow">{confirm.ask ?? `I read that as “${confirm.choice}”. Go ahead?`}</p>
-        <button className="btn long" onClick={() => store.confirmInWords(ask.id, confirm.text, confirm.choice)}>
-          <Ico name="check" />
-          Yes
-        </button>
-        <button className="btn tan long" onClick={() => setConfirm(null)}>
-          No
-        </button>
-      </div>
-    )
+  // No to a reading: nothing applies, what you typed stays, and the talk goes on.
+  const no = () => {
+    if (!confirm) return
+    const line = { from: ask.farmer, text: 'OK, not that. What would you rather do?' }
+    if (confirm.talked) store.talkAdd(ask.id, [line])
+    else {
+      store.talkOn(ask.id, confirm.text, [line])
+      setText(confirm.text)
+    }
+    refocus.current = true
+    setConfirm(null)
+  }
+  const yes = () => {
+    if (!confirm) return
+    if ('sendBack' in confirm) store.sendBackInWords(ask.id, confirm.text, confirm.task, confirm.sendBack)
+    else store.confirmInWords(ask.id, confirm.text, confirm.choice)
+  }
   return (
     <>
-      {talk.length > 0 && (
-        <div className="said talk ask-talk" aria-label="Talking it through">
+      {(talk.length > 0 || busy) && (
+        <div className="said talk ask-talk" aria-label="Talking it through" aria-live="polite">
           {talk.map((l, i) =>
             l.from === 'you' ? (
               <span key={i} className="you">
@@ -872,23 +947,43 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
               <span key={i} className="side-line">
                 <Swatch farmer={l.from} />
                 <span>
-                  <b>{p && st.state(p)?.farmers[l.from]?.label}</b> {l.text}
+                  <b>{label(l.from)}</b> {l.text}
                 </span>
               </span>
             ),
           )}
+          {busy && (
+            <span className="side-line">
+              <Swatch farmer={ask.farmer} />
+              <span>
+                <b>{label(ask.farmer)}</b> is thinking…
+              </span>
+            </span>
+          )}
         </div>
       )}
-      {miss && <p className="said">{miss}</p>}
-      <form className="row grow-form in-words" onSubmit={send}>
-        <span className="field">
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={ask.reason === 'disagree' ? 'Ask about either way, think it through, or suggest your own' : 'Or answer in your own words'} aria-label="Answer in your own words" />
-        </span>
-        <button className="btn tan" type="submit" disabled={!text.trim() || busy}>
-          <Ico name="chat" />
-          Send
-        </button>
-      </form>
+      {confirm ? (
+        <div className="row in-words confirm">
+          <p className="said grow">{confirm.ask ?? ('choice' in confirm ? `I read that as “${confirm.choice}”. Go ahead?` : '')}</p>
+          <button className="btn long" onClick={yes}>
+            <Ico name="check" />
+            Yes
+          </button>
+          <button className="btn tan long" onClick={no}>
+            No
+          </button>
+        </div>
+      ) : (
+        <form className="row grow-form in-words" onSubmit={send}>
+          <span className="field">
+            <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder={ask.reason === 'disagree' ? 'Ask about either way, think it through, or suggest your own' : 'Ask anything, or answer in your own words'} aria-label="Answer in your own words" />
+          </span>
+          <button className="btn tan" type="submit" disabled={!text.trim() || busy}>
+            <Ico name="chat" />
+            {busy ? 'Waiting…' : 'Send'}
+          </button>
+        </form>
+      )}
     </>
   )
 }
@@ -902,14 +997,66 @@ function skippedLine(s: RunState) {
   return [out.length ? `Skipped, as you asked: ${list}.` : '', r.synthetics ? 'The rollout was judged by synthetic tests.' : ''].filter(Boolean).join(' ')
 }
 
+// The Planner's model, for live calls: Claude, or Codex if you switched it.
+const plannerModelOf = (p: Project, s: RunState) => (s.farmers.planner ? applyEdit(s.farmers.planner, store.kit[p.id]?.planner).model : undefined)
+// The last dozen lines of the Planner chat, for the Planner to answer in context.
+const historyOf = (pid: string) => (store.chat[pid] ?? []).slice(-12).map((l) => ({ from: l.from, text: l.text }))
+
 // Your request, read into changes: one row each, all on, and you take off any you want kept as it is.
+// You can talk it through too: ask what a row does, keep only some, set how long, or ask for something else.
 function ChangeCard({ side }: { side: boolean }) {
   const st = useStore()
   const pd = st.pending!
   const [on, setOn] = useState<Record<string, boolean>>(() => Object.fromEntries(pd.proposal.rows.map((r) => [r.id, true])))
   const [scope, setScope] = useState<Record<string, Scope>>(() => Object.fromEntries(pd.proposal.rows.map((r) => [r.id, r.scope])))
   const [busy, setBusy] = useState(false)
+  const [text, setText] = useState('')
+  const [said, setSaid] = useState<{ you: string; reply: string } | null>(null)
   const n = pd.proposal.rows.filter((r) => on[r.id]).length
+  const talk = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const msg = text.trim()
+    const p = store.project(pd.pid)
+    const s = p && store.state(p)
+    if (!msg || busy || !p || !s) return
+    setText('')
+    setBusy(true)
+    const model = plannerModelOf(p, s)
+    const r = await chatTurn({ message: msg, history: historyOf(p.id), status: store.chatStatus(p) }, model)
+    if (r.error) store.say(r.error)
+    const out = r.data
+    const a = out?.action
+    const reply = (fallback: string) => setSaid({ you: msg, reply: out?.reply?.trim() || fallback })
+    if (a?.kind === 'adjust') {
+      const keep = a.keep
+      const how = a.scope
+      if (keep) setOn(Object.fromEntries(pd.proposal.rows.map((x) => [x.id, keep.includes(x.id)])))
+      if (how) setScope(Object.fromEntries(pd.proposal.rows.map((x) => [x.id, how])))
+      reply('Done. Apply when it looks right.')
+    } else if (a?.kind === 'cancel') {
+      store.chatTo(p.id, { from: 'you', text: clip(msg) })
+      store.chatTo(p.id, { from: 'planner', text: out?.reply?.trim() || 'Cancelled. Nothing changed.' })
+      store.cancelChanges()
+    } else if (a?.kind === 'note') {
+      store.noteFor(p.id, a.to, msg)
+      reply(`Passed to the ${s.farmers[a.to]?.label ?? a.to}.`)
+    } else if (a?.kind === 'undo' || a?.kind === 'reopen') {
+      setSaid({ you: msg, reply: 'Apply or cancel this card first, then ask me that again.' })
+    } else if (a?.kind === 'none') {
+      reply('Ask about a row, say which to keep, or cancel.')
+    } else {
+      // Something more to change: read again into a card in place of this one. Without the model, it is read
+      // with the request that made this card, so "also skip the e2e check" adds to it.
+      const request = a?.kind === 'change' ? a.request : `${pd.request}. ${msg}`
+      const was = pd.wasPlaying
+      const res = await store.proposeChanges(p.id, request, (t, c) => reshapeRead(t, c, model))
+      if (res === 'card' && store.pending) store.pending.wasPlaying = was
+      else if (res === 'reply') setSaid({ you: msg, reply: (store.chat[p.id] ?? []).at(-1)?.text ?? '' })
+      else if (!res) setSaid({ you: msg, reply: 'I can’t read that as a change to these. Ask about a row, say which to keep, or cancel.' })
+      store.notify()
+    }
+    setBusy(false)
+  }
   return (
     <Dialogue farmer="planner" side={side}>
       <div className="who">
@@ -939,6 +1086,23 @@ function ChangeCard({ side }: { side: boolean }) {
           </li>
         ))}
       </ul>
+      {said && (
+        <div className="said talk" aria-live="polite">
+          <span className="you">You: {said.you}</span>
+          <span>{said.reply}</span>
+        </div>
+      )}
+      {!pd.denied && (
+        <form className="row grow-form" onSubmit={talk}>
+          <span className="field">
+            <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask about these, or change them" aria-label="Ask about these changes, or change them" />
+          </span>
+          <button className="btn tan" type="submit" disabled={!text.trim() || busy}>
+            <Ico name="chat" />
+            {busy ? '...' : 'Send'}
+          </button>
+        </form>
+      )}
       <div className="row">
         <button
           className="btn"
@@ -964,33 +1128,85 @@ function ChangeCard({ side }: { side: boolean }) {
   )
 }
 
-function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }) {
+// The Planner's box: ask anything about the run, or change how it runs. A question gets an answer; a change is
+// said back or easy to undo; an earlier answer or change can be taken back in words. Reachable while a question
+// waits (onClose brings the question back), and after the run is done.
+function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; side: boolean; onClose?: () => void }) {
   const st = useStore()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
-  const lines = (st.chat[p.id] ?? []).slice(-2)
-  // Live calls run on the Planner's own model: Claude, or Codex if you switched it.
-  const plannerModel = s.farmers.planner ? applyEdit(s.farmers.planner, st.kit[p.id]?.planner).model : undefined
+  const [all, setAll] = useState(false)
+  // A reading said back before it applies: Yes applies it, No leaves things as they are.
+  const [confirm, setConfirm] = useState<{ yes: () => void } | null>(null)
+  const chat = st.chat[p.id] ?? []
+  const SHOWN = 3
+  const lines = all ? chat : chat.slice(-SHOWN)
+  const plannerModel = plannerModelOf(p, s)
   const input = useRef<HTMLInputElement>(null)
-  const send = async (offer?: string) => {
-    const msg = (offer ?? text).trim()
-    if (!msg) return
-    if (offer === undefined) setText('')
-    setBusy(true)
-    // A request to change the farm gets the change card; anything else goes to the crew as a note.
-    const asked = await store.proposeChanges(p.id, msg, (t, c) => reshapeRead(t, c, plannerModel))
-    if (asked) {
-      setBusy(false)
-      return
-    }
-    store.chatTo(p.id, { from: 'you', text: msg })
+  const you = (t: string) => store.chatTo(p.id, { from: 'you', text: clip(t) })
+  const say = (t: string, to?: FarmerId) => store.chatTo(p.id, { from: 'planner', text: t, ...(to ? { to } : {}) })
+  // Not something to change: a note to the agent it's about, and the reply says who has it.
+  const pass = async (msg: string) => {
+    you(msg)
     const farmers = Object.values(s.farmers).filter((f): f is NonNullable<typeof f> => !!f).map((f) => ({ id: f.id, label: f.label }))
     const r = await route({ message: msg, farmers, tasks: s.tasks.map((t) => ({ id: t.id, name: t.name, farmer: t.farmer })) }, plannerModel)
-    setBusy(false)
     store.noteFor(p.id, r.data.to, msg)
-    store.chatTo(p.id, { from: 'planner', text: r.data.reply, to: r.data.to })
+    say(r.data.reply, r.data.to)
     if (r.error) store.say(r.error)
   }
+  // A change to the run gets the change card, or the Planner's reply when it can't make it.
+  const propose = async (request: string, msg: string) => {
+    const asked = await store.proposeChanges(p.id, request, (t, c) => reshapeRead(t, c, plannerModel))
+    if (!asked) await pass(msg)
+  }
+  const act = async (msg: string, out: ChatOut) => {
+    const a = out.action
+    const reply = out.reply?.trim()
+    if (a.kind === 'change') return propose(a.request, msg)
+    you(msg)
+    if (a.kind === 'undo') return store.undoChanges(a.id, reply || undefined)
+    if (a.kind === 'reopen') {
+      if (!a.choice) return say(store.reopen(a.askId) || reply || 'Asked again: answer it when you’re ready.')
+      const choice = a.choice
+      say(reply || `Change that answer to “${choice}”?`)
+      return setConfirm({ yes: () => say(store.reopen(a.askId, choice) || `Changed to “${choice}”. The run goes on from there.`) })
+    }
+    if (a.kind === 'note') {
+      store.noteFor(p.id, a.to, msg)
+      return say(reply || `Passed to the ${s.farmers[a.to]?.label ?? a.to}.`, a.to)
+    }
+    say(reply || 'Ask me about the run, or tell me what to change.')
+  }
+  const send = async (offer?: string) => {
+    const msg = (offer ?? text).trim()
+    if (!msg || busy) return
+    if (offer === undefined) setText('')
+    setBusy(true)
+    setConfirm(null)
+    try {
+      // Merging by itself is a setting of this project: flipped in words, and said back.
+      const tw = trustWords(msg)
+      const reviewOff = (p.reshapes ?? []).some((r) => r.changes.some((c) => c.kind === 'setAutonomy'))
+      if (tw === 'ask' && !reviewOff) {
+        you(msg)
+        return say(store.setShip(p.id, 'ask'))
+      }
+      if (tw === 'auto') {
+        you(msg)
+        if (reviewOff || p.autonomy.ship === 'auto') return say('Pull requests already merge by themselves on this project.')
+        say('Let pull requests merge by themselves when every check passes, from the next one? A failed check still asks you, and a rollback turns it off.')
+        return setConfirm({ yes: () => say(store.setShip(p.id, 'auto')) })
+      }
+      // The Planner answers first: a question gets an answer, and a request at most one action.
+      const r = await chatTurn({ message: msg, history: historyOf(p.id), status: store.chatStatus(p) }, plannerModel)
+      if (r.error) store.say(r.error)
+      if (r.data) await act(msg, r.data)
+      else await propose(msg, msg)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const answered = s.asks.filter((a) => a.answer).length
   return (
     <Dialogue farmer="planner" side={side} className={s.done ? 'done' : ''}>
       <div className="who">
@@ -1000,7 +1216,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
       {s.done ? (
         <div className="done-text">
           <p>
-            {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caughtLine(s)}, and you made {s.asks.filter((a) => a.answer).length} call{s.asks.filter((a) => a.answer).length === 1 ? '' : 's'}.
+            {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caughtLine(s)}, and you made {answered} call{answered === 1 ? '' : 's'}.
           </p>
           {skippedLine(s) && <p className="impact">{skippedLine(s)}</p>}
           {outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
@@ -1012,59 +1228,90 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
           )}
         </div>
       ) : null}
-      {!s.done && (
-        lines.length > 0 && (
-          <div className="said talk">
-            {lines.map((l, i) => (
-              <span key={i} className={l.from === 'you' ? 'you' : ''}>
-                {l.from === 'you' ? `You: ${l.text}` : l.text}
-                {l.closest && <span className="closest">{l.closest}</span>}
-                {l.chips && i === lines.length - 1 && (
-                  <span className="offers">
-                    {l.chips.map((c) => (
-                      <button key={c.label} className="tag-btn" disabled={busy} onClick={() => send(c.request)}>
-                        {c.label}
-                      </button>
-                    ))}
-                  </span>
-                )}
-              </span>
-            ))}
-          </div>
-        )
+      {(lines.length > 0 || chat.length > SHOWN) && (
+        <div className={`said talk${all ? ' all' : ''}`}>
+          {chat.length > SHOWN && (
+            <button className="tag-btn" onClick={() => setAll(!all)} aria-expanded={all}>
+              {all ? 'Show less' : `Show earlier (${chat.length - SHOWN})`}
+            </button>
+          )}
+          {lines.map((l, i) => (
+            <span key={all ? i : chat.length - lines.length + i} className={l.from === 'you' ? 'you' : ''}>
+              {l.from === 'you' ? `You: ${l.text}` : l.text}
+              {l.closest && <span className="closest">{l.closest}</span>}
+              {l.chips && i === lines.length - 1 && !confirm && (
+                <span className="offers">
+                  {l.chips.map((c) => (
+                    <button key={c.label} className="tag-btn" disabled={busy} onClick={() => send(c.request)}>
+                      {c.label}
+                    </button>
+                  ))}
+                </span>
+              )}
+            </span>
+          ))}
+          {confirm && (
+            <span className="offers">
+              <button
+                className="tag-btn"
+                onClick={() => {
+                  setConfirm(null)
+                  you('Yes')
+                  confirm.yes()
+                }}
+              >
+                Yes
+              </button>
+              <button
+                className="tag-btn"
+                onClick={() => {
+                  setConfirm(null)
+                  you('No')
+                  say('Okay, left as it is.')
+                }}
+              >
+                No
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+      {s.done && (
+        <div className="row">
+          <button className="btn" onClick={() => store.setDrawer({ kind: 'summary' })}>
+            <Ico name="star" />
+            See the pull request
+          </button>
+          <button className="btn tan" onClick={() => store.setDrawer({ kind: 'usage' })}>
+            Spend
+          </button>
+          <button className="btn tan" onClick={() => store.runAgain()}>
+            Run again
+          </button>
+          <ExportButtons p={p} s={s} />
+        </div>
       )}
       <div className="row">
-        {s.done ? (
-          <>
-            <button className="btn" onClick={() => store.setDrawer({ kind: 'summary' })}>
-              <Ico name="star" />
-              See the pull request
+        <form
+          className="row grow-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            send()
+          }}
+        >
+          <span className="field">
+            <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder={s.done ? 'Ask about the run, or change how the next one runs' : 'Ask the Planner anything, or change how this project runs'} aria-label="Message the Planner" />
+          </span>
+          <button className="btn" type="submit" disabled={busy}>
+            <Ico name="chat" />
+            {busy ? '...' : 'Send'}
+          </button>
+          {onClose && (
+            <button className="btn tan" type="button" onClick={onClose}>
+              Back
             </button>
-            <button className="btn tan" onClick={() => store.setDrawer({ kind: 'usage' })}>
-              Spend
-            </button>
-            <button className="btn tan" onClick={() => store.runAgain()}>
-              Run again
-            </button>
-            <ExportButtons p={p} s={s} />
-          </>
-        ) : (
-          <form
-            className="row grow-form"
-            onSubmit={(e) => {
-              e.preventDefault()
-              send()
-            }}
-          >
-            <span className="field">
-              <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder="Tell the agents something, or ask the Planner to change this project" aria-label="Message the agents" />
-            </span>
-            <button className="btn" type="submit" disabled={busy}>
-              <Ico name="chat" />
-              {busy ? '...' : 'Send'}
-            </button>
-          </form>
-        )}
+          )}
+        </form>
       </div>
     </Dialogue>
   )
