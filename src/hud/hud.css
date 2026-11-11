@@ -234,6 +234,8 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 .row:has(> .btn.long) > .btn, .row:has(> .btn.long) > form > .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
 .vs .vs-out { margin: 4px 0 8px; font-size: var(--t-body); color: var(--bark); font-weight: 700; }
 .dlg p.gain-line { color: var(--leaf); font-weight: 700; }
+.dlg p.scale-line { font-size: var(--t-meta); color: var(--bark-3); text-wrap: pretty; }
+.dlg p.scale-line .tag { margin-right: 4px; vertical-align: 1px; }
 
 /* The plan, docked: full height on the left, so every plot shows beside it. The Planner sits above, the tail points up at it. */
 .dlg.dock { left: 16px; right: auto; transform: none; top: 80px; bottom: 16px; width: 560px; flex-direction: column; align-items: flex-start; gap: 30px; }
@@ -315,3 +317,20 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .top .s-2 .mail-ico, .top .s-1 .mail-ico { width: 26px; height: 16px; background-size: 26px 16px; }
 .top .s2 .mail-ico { width: 52px; height: 32px; background-size: 52px 32px; }
 .top .top-coin.s2 .coin { width: 44px; height: 44px; background-size: 44px 44px; }
+
+/* ---- home: the intro and the Planner on the left, your farms or the team on the right ---- */
+.stage { --home-side: clamp(580px, 42vw, 640px); --home-pad: max(24px, calc((100vw - 1680px) / 2)); } /* wide screens keep the whole home centred */
+.home-side { position: absolute; left: var(--home-pad); top: 24px; bottom: 24px; width: var(--home-side); display: flex; flex-direction: column; justify-content: center; gap: 18px; z-index: 6; pointer-events: none; }
+.home-side > * { pointer-events: auto; }
+.home-intro { padding: 4px 10px 8px; display: flex; flex-direction: column; gap: 8px; }
+.home-title { display: flex; align-items: center; gap: 14px; }
+.home-title .homehead { position: static; margin: 0; line-height: 1; }
+.view-switch { margin-left: auto; display: flex; gap: 4px; }
+.home-who { margin: 0; font-size: var(--t-body); line-height: 1.4; font-weight: 700; color: var(--bark); }
+.home-why { margin: 0; font-size: var(--t-meta); line-height: 1.45; color: var(--bark-2); }
+.home-why span { display: block; }
+.dlg.home { position: static; transform: none; width: auto; }
+.dlg.home .portrait { width: 96px; height: 96px; border-width: 13px; border-image-width: 15px; }
+.dlg.home .portrait canvas { inset: -1px; }
+.team-room { position: absolute; left: calc(var(--home-pad) + var(--home-side) + 24px); right: var(--home-pad); top: 16px; bottom: 16px; display: flex; align-items: center; justify-content: center; z-index: 5; pointer-events: none; }
+.team-room > * { pointer-events: auto; }
