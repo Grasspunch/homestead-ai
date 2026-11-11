@@ -26,6 +26,8 @@ export interface Script {
   // A part of this app the run really changes once its release reaches you: 'agents' swaps the cost button
   // for the agent dashboard.
   ships?: 'agents'
+  // What the Tester sets up first, on its own plot, while the others build.
+  prep?: string
 }
 
 export interface ContextNeed {
@@ -121,6 +123,7 @@ const GENERIC: Script = {
 const AGENT_DASH: Script = {
   screen: 'agents',
   ships: 'agents',
+  prep: 'Set up a test farm of busy, paused and stopped agents',
   refactor: { what: 'move every agent’s run state into one selector that the farm and the dashboard both read', line: 'Moved agent state into one shared selector' },
   dispute: {
     topic: 'how the dashboard fits beside the farm',
@@ -192,10 +195,11 @@ function draft(goal: string): Draft {
     return {
       name: 'Agent dashboard',
       tasks: [
+        // Two farmers build side by side the whole way: the Designer's two plots beside the Builder's two.
         { id: 'agent-status', name: 'Track each agent', farmer: 'builder', doneWhen: 'Each agent’s task, last step and spend update as the run plays', mins: 11, usd: 0.8 },
-        { id: 'swap-button', name: 'Swap the cost button', farmer: 'builder', doneWhen: 'The top-bar button opens the dashboard, and the coins on the farm still open your spend', mins: 7, usd: 0.5, after: ['agent-status'] },
-        { id: 'live-rows', name: 'Keep it live', farmer: 'builder', doneWhen: 'The dashboard follows the run without slowing the farm', mins: 8, usd: 0.6, after: ['swap-button'] },
         { id: 'dash-design', name: 'Design the dashboard', farmer: 'designer', doneWhen: 'Every agent’s task, last step and spend read at a glance, and nothing covers the ask window', mins: 12, usd: 0.8 },
+        { id: 'swap-button', name: 'Swap the cost button', farmer: 'designer', doneWhen: 'The top-bar button opens the dashboard, and the coins on the farm still open your spend', mins: 7, usd: 0.5, after: ['dash-design', 'agent-status'] },
+        { id: 'live-rows', name: 'Keep it live', farmer: 'builder', doneWhen: 'The dashboard follows the run without slowing the farm', mins: 8, usd: 0.6, after: ['agent-status'] },
         { ...SHIP, doneWhen: 'Live for 10% with errors under 2%, then for everyone' },
       ],
       script: AGENT_DASH,
@@ -203,9 +207,9 @@ function draft(goal: string): Draft {
       context: { builder: ['src/hud/', 'src/run/store.ts'], designer: ['src/hud/', 'docs/brand.md'], tester: ['tests/hud/'] },
       why: {
         planner: 'Keeps the dashboard and the top-bar swap in step, and passes your notes on.',
-        builder: 'Tracks what each agent is doing, swaps the cost button for the dashboard and keeps it live.',
-        designer: 'The dashboard sits beside the farm, so it designs rows that read at a glance without covering it. It works from the brand guide.',
-        tester: 'Runs a farm with agents busy, paused and stopped, so the dashboard never shows a wrong status.',
+        builder: 'Tracks what each agent is doing and keeps the dashboard live.',
+        designer: 'The dashboard sits beside the farm, so it designs rows that read at a glance without covering it, then swaps the cost button for it. It works from the brand guide.',
+        tester: 'Runs a farm with agents busy, paused and stopped, so the dashboard never shows a wrong status. It sets that farm up while the others build.',
         deployer: 'Ships to 10% first, so if the dashboard slows the farm it rolls back on its own.',
       },
     }

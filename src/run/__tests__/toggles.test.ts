@@ -47,7 +47,7 @@ describe('every context and skill switch changes the run, or is locked', () => {
   it('the sample’s default run keeps its numbers and its asks', () => {
     const ev = run(SAMPLE_GOAL)
     const d = done(ev)
-    expect({ usd: d.usd, minutes: d.minutes, asks: d.asks }).toEqual({ usd: 54.14, minutes: 99, asks: 4 })
+    expect({ usd: d.usd, minutes: d.minutes, asks: d.asks }).toEqual({ usd: 54.14, minutes: 93, asks: 4 })
     expect(ev.filter((e) => e.type === 'ask').map((e) => (e.type === 'ask' ? e.id : ''))).toEqual(['ask-1', 'ask-brand', 'ask-limit-designer', 'ask-3', 'ask-2', 'ask-limit-builder', 'ask-4'])
     expect(ev.some((e) => e.type === 'ask' && e.need)).toBe(false)
   })

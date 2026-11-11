@@ -133,6 +133,17 @@ export interface SimInput {
 }
 
 export const SEND_BACK = 'Send back'
+// A farmer waiting beside its own plot for the others' work, and the checker walking over to check a plot.
+export const WAIT = 'wait'
+export const REVIEW = 'review'
+const WAITING = 'Waiting for the others’ work to test'
+// The moment two plots ripen together and the checker checks both, one after the other, in run ms: the replay
+// slows down for it and the skip button stops at its start.
+export function pairMoment(events: RunEvent[]): { from: number; to: number } | null {
+  const walks = events.filter((e) => e.type === 'tool' && e.tool === REVIEW)
+  if (walks.length < 2) return null
+  return { from: walks[0].t, to: walks[walks.length - 1].t + Math.round(0.75 * MIN) }
+}
 // The Designer can't see the brand guide: one ask, its own id so it never renumbers the others.
 export const BRAND_ASK = 'ask-brand'
 export const BRAND_FIX = 'Add the brand guide'
@@ -291,24 +302,51 @@ export function simulateRun(input: SimInput): RunEvent[] {
     lastBuilt = Math.max(lastBuilt, end + 0.5)
   }
 
+  // The checker's end-to-end plot, set up from the start and waiting on the others' work: when it waits, and till when.
+  let waiting: { from: number; to: number } | undefined
   while (queue.length) {
     const task = queue.shift()!
     r = rng(hash(goal + task.id))
     const f = task.farmer
     const deps = task.id === 'e2e-check' ? lastBuilt : 0
-    const start = Math.max(free[f] ?? 0.3, deps)
+    let start = Math.max(free[f] ?? 0.3, deps)
     // A Designer that can't see the brand guide works fast and loose: its first pass comes back early, off-brand.
     const loose = task === designerTask && !!sc.brand && !(farmers.find((x) => x.id === 'designer')?.context.includes(sc.brand) && (input.brandAt ?? 0) <= start * MIN)
     const full = perTask * (0.85 + r() * 0.4)
-    const len = full * (loose ? 0.55 : 1)
+    let len = full * (loose ? 0.55 : 1)
+    // The Tester doesn't wait for the others to start its end-to-end check: it sets up its test data on its own plot
+    // while they build, then waits beside it and runs the check once their work is in. Same steps, same cost.
+    const early = task.id === 'e2e-check' && f === checker && !sc.quiet && !build.some((x) => x !== task && x.farmer === f) && !halted(f, 0.3)
+    let lines = linesFor(task, f)
+    let pre = 0 // steps it did before the others' work was in
+    if (early) {
+      const prep = [sc.prep ?? lines[0], 'Wrote a test for each task’s goal']
+      const rest = lines.slice(1)
+      const p0 = 0.3
+      const plen = full * 0.4
+      const step$ = usdPer(f) / (prep.length + rest.length)
+      sized[task.id] = step$
+      at(p0, { type: 'task_start', task: task.id, farmer: f })
+      prep.forEach((line, i) => {
+        const tt = p0 + (plen * (i + 1)) / (prep.length + 1)
+        at(tt, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: line })
+        usage(tt + 0.01, f, task.id, step$, i === 0 ? 'read' : 'write')
+        at(tt + 0.02, { type: 'progress', task: task.id, value: ((i + 1) / (prep.length + rest.length)) * 0.85 })
+      })
+      at(p0 + plen, { type: 'tool', farmer: f, task: task.id, tool: WAIT, summary: WAITING })
+      waiting = { from: p0 + plen, to: Math.max(start, p0 + plen) }
+      start = waiting.to
+      len = full * 0.6
+      lines = rest
+      pre = prep.length
+    }
     if (halted(f, start)) {
       // Its farmer was stopped before this task began: it stays out of the pull request.
       stopped.add(task.id)
       at(input.halts![f]! + 0.05, { type: 'stop', task: task.id, reason: input.budgetStop && input.halts?.[f] === input.budgetStop.t ? 'You stopped the run at its budget. This task stays out of the pull request.' : `You stopped the ${label(f)} at its spend limit. This task stays out of the pull request.` })
       continue
     }
-    at(start, { type: 'task_start', task: task.id, farmer: f })
-    const lines = linesFor(task, f)
+    if (!pre) at(start, { type: 'task_start', task: task.id, farmer: f })
     let spent = 0
     let extra = 0 // minutes this task runs past its plan
     let cutAt = -1 // the line where you stopped it, if you did
@@ -330,7 +368,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       stepCosts.push(cost)
       spent += cost
       usage(tt + 0.01, f, task.id, cost, i === 0 ? 'read' : 'write')
-      at(tt + 0.02, { type: 'progress', task: task.id, value: ((i + 1) / lines.length) * 0.85 })
+      at(tt + 0.02, { type: 'progress', task: task.id, value: ((pre + i + 1) / (pre + lines.length)) * 0.85 })
       // The step that took it past its limit is its last.
       if (halted(f, tt + 0.03)) {
         haltedHere = true
@@ -611,6 +649,58 @@ export function simulateRun(input: SimInput): RunEvent[] {
       finish(task, end + 0.4, note)
     }
   }
+
+  // Two plots that ripen together: the checker walks to the first and checks it, then to the second and checks that.
+  // The first such pair in the run, between two farmers' work, is the moment the farm shows the crew working at once.
+  // Its checks move to that walk; nothing anyone else does moves with them.
+  const pairUp = () => {
+    const at$ = (e: RunEvent) => e.t / MIN
+    const done = plan
+      .filter((t) => !t.gate && t.id !== 'e2e-check' && finished.has(t.id) && !stopped.has(t.id))
+      .map((t) => {
+        const ripe = ev.find((e) => e.type === 'task_ripe' && e.task === t.id)
+        const verify = ev.find((e) => e.type === 'verify' && e.task === t.id)
+        const accept = ev.find((e) => e.type === 'accept' && e.task === t.id)
+        const check = ripe && [...ev].reverse().find((e) => e.type === 'check' && e.task === t.id && e.pass && e.t <= ripe.t)
+        // When it was ready to check: built, or redone after a failed check.
+        const ready = check ? Math.max(0, ...ev.filter((e) => e.t < check.t && (e.type === 'task_built' || e.type === 'tool') && e.task === t.id).map(at$)) : 0
+        return { t, ripe, verify, accept, check, ready }
+      })
+      .filter((x) => x.ripe && x.verify && x.accept && x.check && x.check.type === 'check' && x.check.by === checker && x.t.farmer !== checker)
+      .sort((a, b) => a.ripe!.t - b.ripe!.t)
+    for (let i = 0; i + 1 < done.length; i++) {
+      const [a, b] = [done[i], done[i + 1]]
+      if (a.t.farmer === b.t.farmer || b.ripe!.t - a.ripe!.t > 1.5 * MIN) continue
+      const w = Math.max(at$(a.check!), at$(b.check!)) - 0.3
+      // All of it before the end-to-end check runs on their work.
+      const e2e = ev.find((e) => e.type === 'task_start' && e.task === 'e2e-check')
+      if (w + 1.3 > (waiting?.to ?? (e2e ? at$(e2e) : Infinity))) continue
+      // Nothing may need you during the walk, or the run would stop in the middle of it.
+      if (ev.some((e) => e.type === 'ask' && at$(e) > w - 0.1 && at$(e) < w + 1.4)) continue
+      const [first, second] = a.ready <= b.ready ? [a, b] : [b, a]
+      const move = (x: typeof a, c: number) => {
+        x.check!.t = Math.round(c * MIN)
+        x.ripe!.t = Math.round((c + 0.1) * MIN)
+        x.verify!.t = Math.round((c + 0.15) * MIN)
+        x.accept!.t = Math.round((c + 0.2) * MIN)
+        lastBuilt = Math.max(lastBuilt, c + 0.25)
+      }
+      for (const x of [first, second]) {
+        // Ripe and waiting for its check, so both plots stand ready together: a redone task is built again.
+        const failed = ev.some((e) => e.type === 'check' && e.task === x.t.id && !e.pass)
+        if (failed) at(Math.max(x.ready, w - 0.3) + 0.01, { type: 'task_built', task: x.t.id })
+      }
+      at(w, { type: 'tool', farmer: checker, task: first.t.id, tool: REVIEW, summary: `Checking “${first.t.name}”` })
+      move(first, w + 0.35)
+      at(w + 0.5, { type: 'tool', farmer: checker, task: second.t.id, tool: REVIEW, summary: `Checking “${second.t.name}”` })
+      move(second, w + 0.95)
+      // Back to its own plot, to wait on the rest.
+      if (waiting && w + 1.2 > waiting.from && w + 1.2 < waiting.to) at(w + 1.2, { type: 'tool', farmer: checker, task: 'e2e-check', tool: WAIT, summary: WAITING })
+      ev.sort((x, y) => x.t - y.t)
+      return
+    }
+  }
+  pairUp()
 
   // Gated tasks: wait for everything, then for you.
   r = rng(hash(goal + 'gate'))
