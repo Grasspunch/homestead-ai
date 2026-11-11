@@ -7,8 +7,9 @@ import { FarmView, cropOf } from './farm/FarmView'
 import { Home } from './hud/Home'
 import { Ico, LimitField, Mark, Portrait, Sign, Swatch, mins, usd, type IconName } from './hud/bits'
 import { FarmerPage } from './hud/FarmerPage'
+import { PrView } from './hud/PrView'
 import { Rollout } from './hud/Proof'
-import { ControlPanel, HarvestPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
+import { ControlPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
 import { discuss, getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode } from './run/agent'
 import type { Scope } from './run/reshape'
 import { planInto } from './run/planning'
@@ -107,7 +108,7 @@ function Farm() {
       {d?.kind === 'farmer' && <FarmerPage p={p} s={s} id={d.id} />}
       {d?.kind === 'inbox' && <InboxPanel s={s} />}
       {d?.kind === 'usage' && <UsagePanel s={s} />}
-      {d?.kind === 'summary' && <HarvestPanel s={s} p={p} />}
+      {d?.kind === 'summary' && <PrView s={s} p={p} />}
       {d?.kind === 'control' && <ControlPanel p={p} />}
       {!p.approved ? (
         <PlanDialogue p={p} s={s} side={side} />
