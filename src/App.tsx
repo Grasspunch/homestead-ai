@@ -29,7 +29,7 @@ import { SEND_BACK } from './run/simulate'
 import { BY_YOU } from './run/rollback'
 import { fixLineOf, lessonLine } from './run/learn'
 import { scaleLine } from './run/scale'
-import { budgetStopOf, doneLead, plannerEstimate } from './run/done'
+import { budgetStopOf, doneLead, plannerEstimate, taskCount } from './run/done'
 import { spentOf } from './run/team'
 import type { Ask, FarmerId, RunState } from './run/types'
 import { FARMER_ORDER } from './run/types'
@@ -61,23 +61,85 @@ export function App() {
       window.removeEventListener('pagehide', leave)
     }
   }, [])
+  useBackToHome(st.screen.kind === 'farm' ? st.screen.project : undefined)
 
   return (
     <div className="stage">
       {st.screen.kind === 'home' ? <Home /> : <Farm />}
       {st.settingsOpen && <Settings />}
-      {st.toast && (
-        <div key={st.toast.id} className={`toast paper${st.toast.undo ? ' with-undo' : ''}`} role="status">
-          {st.toast.text}
-          {st.toast.undo && (
-            <button className="toast-undo" onClick={() => store.undoChanges(st.toast!.undo!)}>
-              Undo
-            </button>
-          )}
-        </div>
+      {st.toast && <Toast key={st.toast.id} toast={st.toast} />}
+    </div>
+  )
+}
+
+// A toast shows for its time (hud.css's animation length), stops taking clicks as it fades, then leaves the page.
+function Toast({ toast }: { toast: NonNullable<typeof store.toast> }) {
+  const ms = toast.undo ? 6000 : 2600
+  const [fading, setFading] = useState(false)
+  useEffect(() => {
+    // With reduced motion it doesn't fade (hud.css): fully there, and clickable, until it goes.
+    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    const fade = setTimeout(() => setFading(true), still ? ms : ms * 0.85)
+    const gone = setTimeout(() => {
+      if (store.toast?.id !== toast.id) return
+      store.toast = null
+      store.notify()
+    }, ms)
+    return () => {
+      clearTimeout(fade)
+      clearTimeout(gone)
+    }
+  }, [toast.id, ms])
+  return (
+    <div className={`toast paper${toast.undo ? ' with-undo' : ''}${fading ? ' fading' : ''}`} role="status">
+      {toast.text}
+      {toast.undo && (
+        <button className="toast-undo" onClick={() => store.undoChanges(toast.undo!)} disabled={fading}>
+          Undo
+        </button>
       )}
     </div>
   )
+}
+
+// Browser Back from a farm returns to Your projects, and Forward opens that farm again while it exists. The URL
+// stays as it is (the Lovable mirror mounts the app at / from its own router): opening a farm from Home adds a
+// history entry that names it, and a reload keeps that entry, so the farm reopens as before.
+const FARM_KEY = 'homesteadFarm'
+const farmIn = (state: unknown): string | undefined => {
+  const id = state && typeof state === 'object' ? (state as Record<string, unknown>)[FARM_KEY] : undefined
+  return typeof id === 'string' ? id : undefined
+}
+const openFarm = () => (store.screen.kind === 'farm' ? store.screen.project : undefined)
+// Called after the effect that restores saved farms, so a reload sees the farm it reopened.
+function useBackToHome(shown: string | undefined) {
+  const was = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const pop = (e: PopStateEvent) => {
+      const id = farmIn(e.state)
+      const now = openFarm()
+      if (id && store.project(id)) {
+        if (now !== id) store.open(id)
+      } else if (now) store.home()
+    }
+    window.addEventListener('popstate', pop)
+    return () => window.removeEventListener('popstate', pop)
+  }, [])
+  useEffect(() => {
+    const open = openFarm()
+    const before = was.current
+    was.current = open
+    const entry = farmIn(history.state)
+    if (open === entry) return
+    if (open) {
+      // From Home a farm gets an entry of its own; from another farm (a notification) it takes that one's place.
+      if (entry) history.replaceState({ ...history.state, [FARM_KEY]: open }, '')
+      else history.pushState({ ...history.state, [FARM_KEY]: open }, '')
+    } else if (before && entry) {
+      // The Home button: as if you'd pressed Back, so Forward opens the farm again.
+      history.back()
+    } else history.replaceState({ ...history.state, [FARM_KEY]: undefined }, '')
+  }, [shown])
 }
 
 // ---- the farm screen --------------------------------------------------------------
@@ -165,9 +227,9 @@ function InboxYields({ win }: { win: string | null }) {
 function Top({ p, s }: { p: Project; s: RunState }) {
   const st = useStore()
   const open = s.asks.filter((a) => !a.answer).length
-  // Every plot on the farm, the release included, so the count matches what you see.
+  // Every plot on the farm, the release included, so the count matches what you see; Home says the same count.
   const work = s.tasks
-  const workDone = work.filter((t) => t.status === 'ripe' || t.status === 'accepted').length
+  const { done: workDone } = taskCount(s)
   const left = work.filter((t) => t.status !== 'accepted').length
   const where = ({ '100%': 'Live', '10%': 'Live for 10%', rollback: 'Rolled back' } as Record<string, string>)[s.deploy[s.deploy.length - 1]?.stage ?? ''] ?? 'Not shipped'
   const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? (left ? `${where}, ${work.length - left} of ${work.length} tasks` : `Done, ${where.toLowerCase()}`) : `${workDone} of ${work.length} tasks done`
@@ -376,7 +438,8 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
             {one && est && (
               <>
                 {' '}One Sonnet 5 agent alone would{' '}
-                {one.minutes > est.minutes ? <>take <b className="gain">{mins(one.minutes - est.minutes)} longer</b></> : <>finish <b>{mins(est.minutes - one.minutes)} sooner</b></>}
+                {/* Under half a minute apart is no gain either way: say so rather than "0 min sooner". */}
+                {Math.round(one.minutes - est.minutes) > 0 ? <>take <b className="gain">{mins(one.minutes - est.minutes)} longer</b></> : Math.round(est.minutes - one.minutes) > 0 ? <>finish <b>{mins(est.minutes - one.minutes)} sooner</b></> : <>take about as long</>}
                 {Math.abs(est.usd - one.usd) < 0.5 ? ' for the same cost' : est.usd > one.usd ? <> and cost <b>{usd(est.usd - one.usd)} less</b></> : <> and cost <b>{usd(one.usd - est.usd)} more</b></>}
                 {s.farmers.tester ? ', with no one checking its work' : ''}.
               </>

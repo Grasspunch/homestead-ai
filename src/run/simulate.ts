@@ -192,6 +192,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const stopped = new Set<string>()
   const finished = new Set<string>()
   let changes = 0 // commits from work you sent back
+  let refactored: string | undefined // the task whose refactor went ahead: its own commit once that task is in
   // A farmer you stopped at its limit does nothing after that minute.
   const haltTotals = input.haltTotals ?? {}
   const halted = (id: FarmerId, min: number) => input.halts?.[id] !== undefined && min > input.halts[id]!
@@ -390,6 +391,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
           at(tt + 0.2, { type: 'auto_fix', task: task.id, what: `The ${label(f)} made a change across ${files} files in ${touches.length + 1} tasks. Every test passed before and after.` })
         }
         if (go) {
+          refactored = task.id
           at(tt + 1.5, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `${sc.refactor.line} (${files} files)` })
           usage(tt + 1.51, f, task.id, usdPer(f) * 0.5, 'write')
           at(tt + 2.2, { type: 'check', task: task.id, by: checkerOf(f), pass: true, notes: 'Every test still passes after the change', evidence: ['tests/report.json'], proof: integration(plan) })
@@ -653,7 +655,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
     const isShip = /ship|deploy|launch|release|live/i.test(task.name + task.id)
     const shipped = () => [...finished].filter((id) => !plan.find((t) => t.id === id)?.gate).length
     const built = () => plan.filter((t) => !t.gate).length
-    const commits = () => shipped() + changes
+    // The same count as the pull request window: each task, each change you sent back, and the refactor.
+    const commits = () => shipped() + changes + (refactored && finished.has(refactored) ? 1 : 0)
     // A failed check always asks; otherwise, with shipping set to "just do it", the Deployer merges by itself.
     let everyone = false
     let reviewAt = start

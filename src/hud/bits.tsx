@@ -100,7 +100,11 @@ export const ASK_WHY: Record<AskReason, string> = {
 export const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`
 // A task's own cost, to the cent: the same number the ask about it used.
 export const cents = (n: number) => `$${n.toFixed(2)}`
-export const mins = (n: number) => (n >= 60 ? `${Math.floor(n / 60)} h ${Math.round(n % 60)} min` : `${Math.round(n)} min`)
+// Rounded first, then split, so 119.7 reads "2 h 0 min", never "1 h 60 min".
+export const mins = (n: number) => {
+  const m = Math.round(n)
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`
+}
 export const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n))
 
 // A limit you type: "$ 53" or "50 min". Saves on Enter or when you leave the field.

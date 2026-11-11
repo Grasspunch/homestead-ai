@@ -1,6 +1,13 @@
 // The first line of the Planner's Done dialogue: what is in and where it is now.
 import type { Estimate, RunEvent, RunState } from './types'
 
+// "N of M tasks done", as the top bar and Home both say it: every plot on the farm, the release and any
+// split-off "Hard cases" included, done once its check passed. One count, so the two screens never disagree.
+export function taskCount(s: Pick<RunState, 'tasks'>) {
+  const done = s.tasks.filter((t) => t.status === 'ripe' || t.status === 'accepted').length
+  return { done, total: s.tasks.length }
+}
+
 // It counts every plot on the farm, the release and any split-off "Hard cases" included,
 // the same as the top bar's "N of M tasks done", so the number matches what you see.
 export function doneLead(s: Pick<RunState, 'tasks' | 'deploy'> & Partial<Pick<RunState, 'asks'>>) {

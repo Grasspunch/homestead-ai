@@ -26,6 +26,8 @@ const hash = (s: string) => {
 const sha = (id: string) => hash(id).toString(16).padStart(8, '0').slice(0, 7)
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 const isShipAsk = (a: Ask) => a.reason === 'irreversible' && /merge/i.test(a.suggested)
+// You approved the merge: you answered the pull request's ask with a merge ("Merge and ship…" or "Ship to everyone").
+const mergedByYou = (a: Ask) => isShipAsk(a) && !!a.answer && /^(merge|ship)/i.test(a.answer.choice)
 
 // The title is the goal's first clause, as a person would name the pull request.
 export function titleOf(goal: string) {
@@ -85,7 +87,7 @@ export function PrView({ s, p }: { s: RunState; p: Project }) {
               </>
             ) : state.key === 'merged' ? (
               <>
-                <b>The {label(s, merger) || 'Deployer'}</b> merged {plural(commits, 'commit')} into <code>main</code> from <code>{branch}</code>
+                <b>{s.asks.some(mergedByYou) ? 'You' : `The ${label(s, merger) || 'Deployer'}`}</b> merged {plural(commits, 'commit')} into <code>main</code> from <code>{branch}</code>
               </>
             ) : commits ? (
               <>
@@ -121,7 +123,7 @@ export function PrView({ s, p }: { s: RunState; p: Project }) {
         </span>
         <span>
           <b className={failing ? 'del' : undefined}>{passedChecks}</b>
-          {failing ? `checks passed, ${failing} failing` : `${passedChecks === 1 ? 'check' : 'checks'} passed`}
+          {`${passedChecks === 1 ? 'check' : 'checks'} passed${failing ? `, ${failing} failing` : ''}`}
         </span>
       </div>
 
@@ -541,7 +543,7 @@ function loopOf(s: RunState, p: Project, pr: Pr): Item[] {
     if (a.answer.choice === SEND_BACK) {
       const sb = p.sendBacks?.[a.id]
       items.push({ t: a.answer.t, key: `you-${a.id}`, tone: 'changes', who: 'you', text: `requested changes${sb ? ` on ${name(sb.task)}` : ''}`, quote: sb?.note })
-    } else if (isShipAsk(a) && /^merge/i.test(a.answer.choice)) items.push({ t: a.answer.t, key: `you-${a.id}`, tone: 'merged', who: 'you', text: 'approved and merged' })
+    } else if (mergedByYou(a)) items.push({ t: a.answer.t, key: `you-${a.id}`, tone: 'merged', who: 'you', text: 'approved and merged' })
   }
   const self = s.activity.find((x) => /merged the pull request by itself|pushed straight to main/i.test(x.text))
   if (self && !items.some((x) => x.tone === 'merged')) items.push({ t: self.t, key: 'self-merge', tone: 'merged', who: self.farmer ?? 'deployer', text: 'merged it by itself, since every check passed' })
