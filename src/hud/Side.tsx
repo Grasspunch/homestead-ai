@@ -251,6 +251,12 @@ function supersededBy(s: RunState, x: { t: number; what: string }) {
 export function InboxPanel({ s }: { s: RunState }) {
   const open = s.asks.filter((a) => !a.answer)
   const decided = s.asks.filter((a) => a.answer).reverse()
+  // Whether each answer can still be changed, and why not when it can't.
+  const changeable = new Map(store.decided().map((d) => [d.id, d]))
+  const change = (id: string) => {
+    const why = store.reopen(id)
+    if (why) store.say(why)
+  }
   const fixed = [...s.autoFixes].reverse()
   return (
     <Panel label="Inbox">
@@ -295,15 +301,24 @@ export function InboxPanel({ s }: { s: RunState }) {
         <div>
           <h3>You decided</h3>
           <div className="list">
-            {decided.map((a) => (
-              <button key={a.id} onClick={() => a.task && store.setDrawer({ kind: 'task', id: a.task })}>
-                <Swatch farmer={a.farmer} />
-                <span className="grow">
-                  {a.answer!.choice}
-                  <span className="sub">{store.project()?.notes?.[a.id] ? `In your words: “${clip(store.project()!.notes![a.id])}”. ` : ''}{a.question}</span>
-                </span>
-              </button>
-            ))}
+            {decided.map((a) => {
+              const d = changeable.get(a.id)
+              return (
+                <div key={a.id}>
+                  <Swatch farmer={a.farmer} />
+                  <button className="grow" style={{ textAlign: 'left' }} onClick={() => a.task && store.setDrawer({ kind: 'task', id: a.task })}>
+                    {a.answer!.choice}
+                    <span className="sub">{store.project()?.notes?.[a.id] ? `In your words: “${clip(store.project()!.notes![a.id])}”. ` : ''}{a.question}</span>
+                    {d && !d.canChange && d.why ? <span className="sub">{d.why}</span> : null}
+                  </button>
+                  {d?.canChange && (
+                    <button className="btn tan sm" onClick={() => change(a.id)} aria-label={`Change your answer: ${a.answer!.choice}`}>
+                      Change
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

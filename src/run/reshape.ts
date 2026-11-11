@@ -115,6 +115,8 @@ export interface Ctx {
   tasks: { id: string; name: string; farmer: FarmerId; gate?: boolean; status?: string }[]
   farmers: FarmerId[]
   active?: Change[] // changes already on
+  on?: { title: string; changes: Change[] }[] // the same changes, by the request that turned them on
+  autonomy?: { ship?: 'ask' | 'auto' } // how pull requests merge now: 'auto' after you let it merge by itself
   ui?: UiLook // how the screen looks now, Your flow included; without it, from this farm's changes alone
 }
 
@@ -128,6 +130,17 @@ export const CAN_DO = 'I can’t change that yet.'
 const KEEP = /\b(dont|do not|never|not|keep|leave|without skipping|no skipping)\b/
 
 const SHIP_WORDS = /\b(ship|shipping|deploy|deploying|release|push|rollout|roll out|launch)\b/
+
+// Turning something off that a change turned on: "turn off incident mode", "cancel the stage alerts".
+const OFF = /\b(turn off|switch off|turn it off|cancel|stop|disable|undo|no more|exit|get out of|done with|back out of)\b/
+
+// A question, not a request: "is the deploy going ok?", "why is the Tester on this". "Can you skip…" is a request.
+const QUESTION = /^\s*(is|are|was|were|why|what|whats|how|hows|when|where|who|whos|which|does|did|do|has|have|should)\b/
+
+type Mode = 'incident' | 'synth' | 'notify'
+const MODE_NAME: Record<Mode, string> = { incident: 'Incident mode', synth: 'Judging the rollout by synthetic tests', notify: 'Stage alerts' }
+const inMode = (m: Mode, c: Change) =>
+  m === 'incident' ? c.kind === 'setAutonomy' || c.kind === 'removeFarmer' || c.kind === 'setRollout' : m === 'synth' ? c.kind === 'setRolloutCheck' || c.kind === 'setDoneWhen' : c.kind === 'notifyOn'
 
 export function readChanges(text: string, ctx: Ctx): Reading {
   const t = norm(text)
@@ -169,13 +182,30 @@ export function readChanges(text: string, ctx: Ctx): Reading {
   const unnecessary = () => ctx.tasks.filter((k) => !k.gate && (k.id === 'e2e-check' || /-rest$/.test(k.id)) && k.status !== 'accepted')
   let incident = false
   let matched = false
+  // Modes you asked to turn off or refused: never turned on, and said back as they are.
+  const offAsked = new Set<Mode>()
   want.push(...ui)
   for (const c of clauses) {
     const no = KEEP.test(c)
+    const off = OFF.test(c)
     const skip = /\b(skip|skipping|drop|remove|cut|without|no|turn off|switch off|bypass|ditch|lose)\b/.test(c)
-    if (/\b(incident|outage|emergency|sev ?[0-2]|hotfix|on fire|asap)\b/.test(c) && !no) incident = true
+    if (/\b(incident|outage|emergency|sev ?[0-2]|hotfix|on fire|asap)\b/.test(c)) {
+      if (off || /\b(dont|do not|never|not|no longer|no more)\b/.test(c)) {
+        offAsked.add('incident')
+        continue
+      }
+      if (!no) incident = true
+    }
     // Synthetic tests as the rollout's measure of success, and a notification at each stage, unless refused.
-    const refused = /\b(dont|do not|never|no|not)\b/.test(c)
+    const refused = /\b(dont|do not|never|no|not)\b/.test(c) || off
+    if (/\bsynthetics?\b/.test(c) && refused) {
+      offAsked.add('synth')
+      continue
+    }
+    if (/\b(notif\w*|notify|ping|alert|alerts)\b/.test(c) && refused) {
+      offAsked.add('notify')
+      continue
+    }
     if (/\bsynthetics?\b/.test(c) && !refused) {
       const ship = ctx.tasks.find((k) => k.gate)
       if (ship) want.push({ kind: 'setDoneWhen', task: ship.id, doneWhen: 'Synthetic tests pass in prod at every stage' })
@@ -189,14 +219,16 @@ export function readChanges(text: string, ctx: Ctx): Reading {
     }
     // Keeping something as it is.
     if (no) {
-      if (named(c, 'review') || /pull request|\bpr\b/.test(c)) keep.review = true
+      const was = JSON.stringify([keep.review, keep.deployer, keep.stage10, [...keep.tasks], [...keep.farmers]])
+      if (named(c, 'review') || /pull request|\bpr\b|before merging|asking me|ask me/.test(c)) keep.review = true
       if (named(c, 'deployer')) keep.deployer = true
       if (/10 ?%|canary|stage/.test(c) && !/each stage|every stage/.test(c)) keep.stage10 = true
       for (const f of ['tester', 'designer', 'builder', 'planner'] as FarmerId[]) if (named(c, f)) keep.farmers.add(f)
       for (const k of taskByWords(c.replace(KEEP, ' skip '))) keep.tasks.add(k.id)
       if (/\bcheck(s|ing)?\b|end to end|e2e/.test(c)) keep.tasks.add('e2e-check')
       if (/hard cases/.test(c)) for (const k of ctx.tasks.filter((x) => /-rest$/.test(x.id))) keep.tasks.add(k.id)
-      matched = true
+      // "Not sure" keeps nothing, so it isn't read as a request at all.
+      if (JSON.stringify([keep.review, keep.deployer, keep.stage10, [...keep.tasks], [...keep.farmers]]) !== was) matched = true
       continue
     }
     if (skip && named(c, 'deployer')) want.push({ kind: 'removeFarmer', farmer: 'deployer' })
@@ -234,9 +266,26 @@ export function readChanges(text: string, ctx: Ctx): Reading {
     return true
   })
   if (!changes.length) {
+    // What you asked to keep or turn off, against what is on now: said as it is, never as "already so" when it isn't.
+    const on = ctx.active ?? []
+    const titleOn = (c: Change) => ctx.on?.find((r) => r.changes.some((x) => key(x) === key(c)))?.title ?? 'A change you made'
+    const against = [...on.filter((c) => kept(c)), ...on.filter((c) => [...offAsked].some((m) => inMode(m, c)))]
+    const titles = [...new Set(against.map(titleOn))]
+    if (titles.length)
+      return {
+        kind: 'none',
+        reply: `${titles.join(' and ')} ${titles.length > 1 ? 'are' : 'is'} on now, and ${titles.length > 1 ? 'they change' : 'it changes'} that. Turn ${titles.length > 1 ? 'them' : 'it'} off to put it back.`,
+        chips: titles.map((x) => ({ label: `Turn off ${x}`, request: `turn off ${x}` })),
+      }
+    if (keep.review && ctx.autonomy?.ship === 'auto')
+      return { kind: 'none', reply: 'Pull requests merge by themselves on this project now, since you let them.', chips: [{ label: 'Keep asking me', request: 'keep asking me before merging' }] }
+    if (offAsked.size && !on.some((c) => [...offAsked].some((m) => inMode(m, c))))
+      return { kind: 'none', reply: `${[...offAsked].map((m) => MODE_NAME[m]).join(' and ')} ${offAsked.size > 1 ? 'aren’t' : 'isn’t'} on, so there is nothing to turn off.`, chips: [] }
     if (uiNotes.length) return { kind: 'none', reply: [...new Set(uiNotes)].join(' '), chips: [] }
     if (uiUnknown) return { kind: 'none', reply: UI_CAN, chips: [] }
-    if (matched) return { kind: 'none', reply: 'That is already how this farm runs, so nothing changes.', chips: [] }
+    if (matched) return { kind: 'none', reply: 'That is already how this project runs, so nothing changes.', chips: [] }
+    // A question about the run is answered, not read as a change it can't make.
+    if (/\?\s*$/.test(text.trim()) || QUESTION.test(t)) return { kind: 'not-a-change' }
     // About the screen, but no part of it I know: say what I can change.
     if (SCREEN.test(t) && /\b(remove|hide|get rid of|take away|move|change|show|bring back|make|resize|rename|recolou?r|colou?r|bigger|smaller)\b/.test(t)) return { kind: 'none', reply: UI_CAN, chips: [] }
     if (/\b(skip|change|switch|turn off|remove|stop|instead|notify|deploy|push|ship|page|paging|on ?call|pager|slack|email|rolls? back|rollback|when it)\b/.test(t)) return { kind: 'none', reply: CAN_DO, ...nearest(t, ctx) }

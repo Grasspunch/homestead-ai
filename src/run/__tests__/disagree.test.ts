@@ -110,7 +110,7 @@ describe('your own way', () => {
     // The decisions log shows it, and the chat says how it was read.
     const s = reduce(ev, Number.MAX_SAFE_INTEGER, p.answers ?? {})
     expect(s.asks.find((a) => a.id === d.id)?.answer?.choice).toBe('Your way: a small banner in the footer')
-    expect(store.chat[p.id]?.slice(-1)[0]?.text).toBe('Going with your way: a small banner in the footer.')
+    expect(store.chat[p.id]?.slice(-1)[0]?.text).toBe('Going with your way: a small banner in the footer. Ask me to change it any time.')
   })
   it('the branch is deterministic, like a send-back', () => {
     const plan = simulatePlan(GOAL)
