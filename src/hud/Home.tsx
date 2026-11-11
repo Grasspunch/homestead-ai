@@ -11,7 +11,7 @@ import type { FarmerId, RunState } from '../run/types'
 import { ASK_WHY, Ico, Portrait, atlasLoaded } from './bits'
 import { CELL, PX, fitLayout, type Layout } from './homeLayout'
 import { spentOf } from '../run/team'
-import { budgetStopOf } from '../run/done'
+import { budgetStopOf, taskCount } from '../run/done'
 
 
 interface Mini {
@@ -34,10 +34,9 @@ function minis(projects: Project[], cols: number): Mini[] {
     const answers = p.answers ?? {}
     const s = reduce(p.events, t, answers)
     const waiting = p.approved && pendingAsk(p.events, t, answers)
-    // The same count as the top bar: the work tasks, not the release.
-    const work = s.tasks.filter((k) => !k.gate)
-    const done = work.filter((k) => k.status === 'ripe' || k.status === 'accepted').length
-    const prog = work.length ? done / work.length : 0
+    // The same count as the top bar, release included.
+    const { done, total } = taskCount(s)
+    const prog = total ? done / total : 0
     const busy = Object.values(s.farmers).find((f) => f && f.state === 'working')
     // Who needs you and why, in words: the colour alone doesn't say.
     const ask = waiting ? s.asks.find((a) => !a.answer) : undefined
@@ -61,7 +60,7 @@ function minis(projects: Project[], cols: number): Mini[] {
               ? 'Needs you'
               : s.done
                 ? doneWords(p, s, t)
-                : `${done} of ${work.length} tasks done`,
+                : `${done} of ${total} tasks done`,
     }
   })
 }

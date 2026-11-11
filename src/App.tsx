@@ -29,18 +29,29 @@ import { SEND_BACK } from './run/simulate'
 import { BY_YOU } from './run/rollback'
 import { fixLineOf, lessonLine } from './run/learn'
 import { scaleLine } from './run/scale'
-import { budgetStopOf, doneLead, plannerEstimate } from './run/done'
+import { budgetStopOf, doneLead, plannerEstimate, taskCount } from './run/done'
 import { spentOf } from './run/team'
 import type { Ask, FarmerId, RunState } from './run/types'
 import { FARMER_ORDER } from './run/types'
 import { MODELS, MODEL_GROUPS, applyEdit } from './run/kit'
+
+// Is Esc meant for the field you're in? A select, or a text field with something typed in it, keeps what you
+// typed rather than closing the panel around it.
+function typingIn(el: Element | null) {
+  if (!el) return false
+  if (el instanceof HTMLSelectElement) return true
+  if (el instanceof HTMLTextAreaElement) return el.value !== ''
+  if (el instanceof HTMLInputElement) return !/^(checkbox|radio|button|submit|reset|range|color|file|image)$/.test(el.type) && el.value !== ''
+  return el instanceof HTMLElement && el.isContentEditable && (el.textContent ?? '') !== ''
+}
 
 export function App() {
   const st = useStore()
   useEffect(() => {
     if (!st.projects.length) st.loadSample()
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // Esc closes one thing at a time: a menu that took it, or a field with something typed in it, keeps the panel open.
+      if (e.key === 'Escape' && !e.defaultPrevented && !typingIn(document.activeElement)) {
         if (store.settingsOpen) {
           store.settingsOpen = false
           store.notify()
@@ -61,23 +72,85 @@ export function App() {
       window.removeEventListener('pagehide', leave)
     }
   }, [])
+  useBackToHome(st.screen.kind === 'farm' ? st.screen.project : undefined)
 
   return (
     <div className="stage">
       {st.screen.kind === 'home' ? <Home /> : <Farm />}
       {st.settingsOpen && <Settings />}
-      {st.toast && (
-        <div key={st.toast.id} className={`toast paper${st.toast.undo ? ' with-undo' : ''}`} role="status">
-          {st.toast.text}
-          {st.toast.undo && (
-            <button className="toast-undo" onClick={() => store.undoChanges(st.toast!.undo!)}>
-              Undo
-            </button>
-          )}
-        </div>
+      {st.toast && <Toast key={st.toast.id} toast={st.toast} />}
+    </div>
+  )
+}
+
+// A toast shows for its time (hud.css's animation length), stops taking clicks as it fades, then leaves the page.
+function Toast({ toast }: { toast: NonNullable<typeof store.toast> }) {
+  const ms = toast.undo ? 6000 : 2600
+  const [fading, setFading] = useState(false)
+  useEffect(() => {
+    // With reduced motion it doesn't fade (hud.css): fully there, and clickable, until it goes.
+    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    const fade = setTimeout(() => setFading(true), still ? ms : ms * 0.85)
+    const gone = setTimeout(() => {
+      if (store.toast?.id !== toast.id) return
+      store.toast = null
+      store.notify()
+    }, ms)
+    return () => {
+      clearTimeout(fade)
+      clearTimeout(gone)
+    }
+  }, [toast.id, ms])
+  return (
+    <div className={`toast paper${toast.undo ? ' with-undo' : ''}${fading ? ' fading' : ''}`} role="status">
+      {toast.text}
+      {toast.undo && (
+        <button className="toast-undo" onClick={() => store.undoChanges(toast.undo!)} disabled={fading}>
+          Undo
+        </button>
       )}
     </div>
   )
+}
+
+// Browser Back from a farm returns to Your projects, and Forward opens that farm again while it exists. The URL
+// stays as it is (the Lovable mirror mounts the app at / from its own router): opening a farm from Home adds a
+// history entry that names it, and a reload keeps that entry, so the farm reopens as before.
+const FARM_KEY = 'homesteadFarm'
+const farmIn = (state: unknown): string | undefined => {
+  const id = state && typeof state === 'object' ? (state as Record<string, unknown>)[FARM_KEY] : undefined
+  return typeof id === 'string' ? id : undefined
+}
+const openFarm = () => (store.screen.kind === 'farm' ? store.screen.project : undefined)
+// Called after the effect that restores saved farms, so a reload sees the farm it reopened.
+function useBackToHome(shown: string | undefined) {
+  const was = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const pop = (e: PopStateEvent) => {
+      const id = farmIn(e.state)
+      const now = openFarm()
+      if (id && store.project(id)) {
+        if (now !== id) store.open(id)
+      } else if (now) store.home()
+    }
+    window.addEventListener('popstate', pop)
+    return () => window.removeEventListener('popstate', pop)
+  }, [])
+  useEffect(() => {
+    const open = openFarm()
+    const before = was.current
+    was.current = open
+    const entry = farmIn(history.state)
+    if (open === entry) return
+    if (open) {
+      // From Home a farm gets an entry of its own; from another farm (a notification) it takes that one's place.
+      if (entry) history.replaceState({ ...history.state, [FARM_KEY]: open }, '')
+      else history.pushState({ ...history.state, [FARM_KEY]: open }, '')
+    } else if (before && entry) {
+      // The Home button: as if you'd pressed Back, so Forward opens the farm again.
+      history.back()
+    } else history.replaceState({ ...history.state, [FARM_KEY]: undefined }, '')
+  }, [shown])
 }
 
 // ---- the farm screen --------------------------------------------------------------
@@ -97,7 +170,9 @@ function Farm() {
   // A rollback is a moment of its own until the next release goes out, or until you carry on.
   const lastDeploy = s.deploy[s.deploy.length - 1]
   const rolled = lastDeploy?.stage === 'rollback' && !st.seen.has(`${p.id}:${lastDeploy.t}`) ? lastDeploy : null
-  const d = st.drawer
+  // A panel for a task the plan no longer has shows nothing, so it doesn't hold the farm aside either.
+  const open = st.drawer
+  const d = open?.kind === 'task' && !s.tasks.some((t) => t.id === open.id) ? null : open
   const sel = d?.kind === 'task' ? { kind: 'task' as const, id: d.id } : d?.kind === 'farmer' ? { kind: 'farmer' as const, id: d.id } : null
   const side = !!d && d.kind !== 'chat' && d.kind !== 'farmer' && d.kind !== 'ask' && d.kind !== 'summary' ? true : d?.kind === 'summary'
   return (
@@ -119,6 +194,7 @@ function Farm() {
       />
       <Top p={p} s={s} />
       <InboxYields win={st.settingsOpen ? 'settings' : st.pending?.pid === p.id ? 'change' : ask ? `ask:${ask.id}` : rolled ? `rollback:${rolled.t}` : trust ? 'trust' : null} />
+      <PrYields ask={ask && !isShipAsk(ask) ? ask.id : null} open={d?.kind === 'summary'} />
       {d?.kind === 'task' && <TaskPanel p={p} s={s} id={d.id} />}
       {d?.kind === 'farmer' && <FarmerPage p={p} s={s} id={d.id} />}
       {d?.kind === 'inbox' && <InboxPanel s={s} />}
@@ -162,12 +238,28 @@ function InboxYields({ win }: { win: string | null }) {
   return null
 }
 
+// The pull request covers the ask window, so a new question closes it: the run waits on you, and you see why.
+// The merge question stays, since the pull request answers it itself. One that comes as you open the pull request
+// (the next step after a rollback, say) leaves it open for you to read: its header says the run waits on you.
+function PrYields({ ask, open }: { ask: string | null; open: boolean }) {
+  const last = useRef(ask)
+  const openedAt = useRef(0)
+  useEffect(() => {
+    if (open) openedAt.current = Date.now()
+  }, [open])
+  useEffect(() => {
+    if (ask && ask !== last.current && store.drawer?.kind === 'summary' && Date.now() - openedAt.current > 2000) store.setDrawer(null)
+    last.current = ask
+  }, [ask])
+  return null
+}
+
 function Top({ p, s }: { p: Project; s: RunState }) {
   const st = useStore()
   const open = s.asks.filter((a) => !a.answer).length
-  // Every plot on the farm, the release included, so the count matches what you see.
+  // Every plot on the farm, the release included, so the count matches what you see; Home says the same count.
   const work = s.tasks
-  const workDone = work.filter((t) => t.status === 'ripe' || t.status === 'accepted').length
+  const { done: workDone } = taskCount(s)
   const left = work.filter((t) => t.status !== 'accepted').length
   const where = ({ '100%': 'Live', '10%': 'Live for 10%', rollback: 'Rolled back' } as Record<string, string>)[s.deploy[s.deploy.length - 1]?.stage ?? ''] ?? 'Not shipped'
   const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? (left ? `${where}, ${work.length - left} of ${work.length} tasks` : `Done, ${where.toLowerCase()}`) : `${workDone} of ${work.length} tasks done`
@@ -376,7 +468,8 @@ function PlanDialogue({ p, s, side }: { p: Project; s: RunState; side: boolean }
             {one && est && (
               <>
                 {' '}One Sonnet 5 agent alone would{' '}
-                {one.minutes > est.minutes ? <>take <b className="gain">{mins(one.minutes - est.minutes)} longer</b></> : <>finish <b>{mins(est.minutes - one.minutes)} sooner</b></>}
+                {/* Under half a minute apart is no gain either way: say so rather than "0 min sooner". */}
+                {Math.round(one.minutes - est.minutes) > 0 ? <>take <b className="gain">{mins(one.minutes - est.minutes)} longer</b></> : Math.round(est.minutes - one.minutes) > 0 ? <>finish <b>{mins(est.minutes - one.minutes)} sooner</b></> : <>take about as long</>}
                 {Math.abs(est.usd - one.usd) < 0.5 ? ' for the same cost' : est.usd > one.usd ? <> and cost <b>{usd(est.usd - one.usd)} less</b></> : <> and cost <b>{usd(one.usd - est.usd)} more</b></>}
                 {s.farmers.tester ? ', with no one checking its work' : ''}.
               </>
@@ -528,7 +621,8 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
         <button
           className="btn tan"
           onClick={() => {
-            store.seen.add(`${p.id}:${t}`)
+            // As Carry on does, the run goes on: the pull request is a look, not a pause.
+            done()
             store.setDrawer({ kind: 'summary' })
           }}
         >

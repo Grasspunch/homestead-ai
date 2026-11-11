@@ -44,6 +44,10 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
   const lines = s.activity.filter((a) => a.task === id).slice(-6).reverse()
   const chat = /support|assistant|chat/i.test(p.name + p.goal)
   const ask = s.asks.find((a) => a.task === id && !a.answer)
+  // The release, rolled back: said whatever the task's status, and never as live.
+  const lastDeploy = s.deploy[s.deploy.length - 1]
+  const rolled = t.gate && lastDeploy?.stage === 'rollback' ? lastDeploy : undefined
+  const shipped = t.status === 'ripe' || t.status === 'accepted'
   return (
     <Panel label={`Task: ${t.name}`}>
       <div>
@@ -53,10 +57,10 @@ export function TaskPanel({ p, s, id }: { p: Project; s: RunState; id: string })
       {!planning && (
         <div className="sum">
           {ask ? <b>Waiting for you. </b> : null}
-          {t.gate && s.deploy.length && s.deploy[s.deploy.length - 1].stage === 'rollback' && t.status !== 'ripe' && t.status !== 'accepted' ? <b>{s.deploy[s.deploy.length - 1].reason === BY_YOU ? 'Rolled back by you. ' : 'Rolled back by itself. '}</b> : null}
-          {STATUS[t.status]}
+          {rolled ? <b>{rolled.reason === BY_YOU ? 'Rolled back by you. ' : 'Rolled back by itself. '}</b> : null}
+          {rolled && shipped ? 'No user gets this release now' : STATUS[t.status]}
           {t.status === 'growing' ? `, about ${Math.round(t.progress * 100)}% there.` : '.'} {f && t.status !== 'ripe' && t.status !== 'accepted' ? t.status === 'waiting' ? `${f.label} will work on this.` : `${f.label} is on it.` : ''}{t.status === 'accepted' && t.acceptedBy && t.acceptedBy !== 'you' ? ` The ${s.farmers[t.acceptedBy]?.label ?? 'checker'} checked it.` : ''}
-          {t.summary && (t.status === 'ripe' || t.status === 'accepted') ? ` ${t.summary}.` : ''}
+          {t.summary && shipped && !rolled ? ` ${t.summary}.` : ''}
         </div>
       )}
       <div className="meta">
@@ -739,7 +743,7 @@ export function ControlPanel({ p }: { p: Project }) {
           )
         })}
       </div>
-      {p.approved && <p className="fine">Changing this restarts the run.</p>}
+      {p.approved && <p className="fine">A change here applies from the next run.{store.isDone(p) ? '' : ' This run keeps going as it started, with your answers.'}</p>}
     </Panel>
   )
 }

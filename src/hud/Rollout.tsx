@@ -145,7 +145,8 @@ export function Rollout({ state, compact = false, size }: { state: RunState; com
     if (!tracking) return
     const i = hit ? readings.indexOf(hit) : -1
     const next = e.key === 'ArrowRight' ? Math.min(readings.length - 1, i + 1) : e.key === 'ArrowLeft' ? (i < 0 ? readings.length - 1 : Math.max(0, i - 1)) : e.key === 'Home' ? 0 : e.key === 'End' ? readings.length - 1 : e.key === 'Escape' ? null : undefined
-    if (next === undefined) return
+    // Esc with no reading picked is not the chart's: it closes the panel as anywhere else.
+    if (next === undefined || (next === null && hover === null)) return
     e.preventDefault()
     setHover(next === null ? null : readings[next].t)
   }

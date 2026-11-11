@@ -29,7 +29,11 @@ export interface ExportFarm {
 
 const usd = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(0)}`
 const cents = (n: number) => `$${n.toFixed(2)}`
-const mins = (n: number) => (n >= 60 ? `${Math.floor(n / 60)} h ${Math.round(n % 60)} min` : `${Math.round(n)} min`)
+// The same as the screen's: rounded first, then split, so 119.7 reads "2 h 0 min", never "1 h 60 min".
+export const mins = (n: number) => {
+  const m = Math.round(n)
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`
+}
 const whole = (n: number) => `$${Math.round(n)}` // limits are whole dollars
 const at = (ms: number) => mins(ms / 60_000)
 // Markdown table cells: no pipes or line breaks inside a cell.

@@ -26,6 +26,8 @@ const hash = (s: string) => {
 const sha = (id: string) => hash(id).toString(16).padStart(8, '0').slice(0, 7)
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 const isShipAsk = (a: Ask) => a.reason === 'irreversible' && /merge/i.test(a.suggested)
+// You approved the merge: you answered the pull request's ask with a merge ("Merge and ship…" or "Ship to everyone").
+const mergedByYou = (a: Ask) => isShipAsk(a) && !!a.answer && /^(merge|ship)/i.test(a.answer.choice)
 
 // The title is the goal's first clause, as a person would name the pull request.
 export function titleOf(goal: string) {
@@ -51,8 +53,13 @@ function stateOf(s: RunState, pr: Pr) {
 
 const label = (s: RunState, f: FarmerId | undefined) => (f ? s.farmers[f]?.label ?? f : '')
 
+// The pull request while the run waits on you: no file is being written.
+const held = (pr: Pr): Pr => ({ ...pr, live: [], files: pr.files.map((f) => ({ ...f, live: false, parts: f.parts.map((x) => ({ ...x, live: false })) })) })
+
 export function PrView({ s, p }: { s: RunState; p: Project }) {
-  const pr = useMemo(() => prOf(s, p.goal), [s, p.goal])
+  // A question for you holds the run: nobody is writing until you answer, so nothing here says they are.
+  const waiting = s.asks.find((a) => !a.answer)
+  const pr = useMemo(() => (waiting ? held(prOf(s, p.goal)) : prOf(s, p.goal)), [s, p.goal, !!waiting])
   const [tab, setTab] = useState<Tab>('conversation')
   const [path, setPath] = useState<string | null>(null)
   const state = stateOf(s, pr)
@@ -85,7 +92,7 @@ export function PrView({ s, p }: { s: RunState; p: Project }) {
               </>
             ) : state.key === 'merged' ? (
               <>
-                <b>The {label(s, merger) || 'Deployer'}</b> merged {plural(commits, 'commit')} into <code>main</code> from <code>{branch}</code>
+                <b>{s.asks.some(mergedByYou) ? 'You' : `The ${label(s, merger) || 'Deployer'}`}</b> merged {plural(commits, 'commit')} into <code>main</code> from <code>{branch}</code>
               </>
             ) : commits ? (
               <>
@@ -93,13 +100,27 @@ export function PrView({ s, p }: { s: RunState; p: Project }) {
               </>
             ) : (
               <>
-                <b>The agents</b> are writing on <code>{branch}</code>. No commits yet.
+                <b>The agents</b> {waiting ? 'are waiting for you' : 'are writing'} on <code>{branch}</code>. No commits yet.
               </>
             )}
           </span>
           {state.rolledBack && <span className="tag red">Rolled back</span>}
           <ExportButtons p={p} s={s} />
         </div>
+        {/* A question other than the merge, which the merge box below answers: said here, on every tab. */}
+        {waiting && !isShipAsk(waiting) && (
+          <section className="prv-now" aria-label="Waiting for you">
+            <h4>Waiting for you</h4>
+            <div className="prv-now-row">
+              <span className="grow">
+                The run is paused on a question: <b>{waiting.question}</b>
+              </span>
+              <button className="btn sm" onClick={() => store.setDrawer(null)}>
+                Answer it
+              </button>
+            </div>
+          </section>
+        )}
       </header>
 
       <div className="prv-stats">
@@ -121,7 +142,7 @@ export function PrView({ s, p }: { s: RunState; p: Project }) {
         </span>
         <span>
           <b className={failing ? 'del' : undefined}>{passedChecks}</b>
-          {failing ? `checks passed, ${failing} failing` : `${passedChecks === 1 ? 'check' : 'checks'} passed`}
+          {`${passedChecks === 1 ? 'check' : 'checks'} passed${failing ? `, ${failing} failing` : ''}`}
         </span>
       </div>
 
@@ -169,7 +190,8 @@ function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: 
   const planner: FarmerId = s.farmers.planner ? 'planner' : (FARMER_ORDER.find((f) => s.farmers[f]) ?? 'builder')
   const reviewers = [...new Set(s.tasks.flatMap((t) => t.checks.map((c) => c.by)))]
   const assignees = FARMER_ORDER.filter((f) => s.tasks.some((t) => t.farmer === f && !t.gate))
-  const now = workingNow(s, pr)
+  const waiting = s.asks.find((a) => !a.answer)
+  const now = waiting ? [] : workingNow(s, pr)
   const last = s.deploy[s.deploy.length - 1]
   const live = !!last && last.stage !== 'rollback'
   const decided = s.asks.filter((a) => a.answer)
@@ -210,10 +232,10 @@ function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: 
             <ul className="prv-tasks">
               {work.map((t) => (
                 <li key={t.id}>
-                  <TaskMark t={t} />
+                  <TaskMark t={t} waiting={!!waiting} />
                   <span className="grow">
                     {t.name}
-                    <span className="sub">{taskLine(s, t)}</span>
+                    <span className="sub">{taskLine(s, t, !!waiting)}</span>
                   </span>
                 </li>
               ))}
@@ -257,7 +279,7 @@ function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: 
             <div key={f} className="prv-person">
               <Swatch farmer={f} />
               <span className="grow">{label(s, f)}</span>
-              {s.farmers[f]?.state === 'working' && <i className="live-dot" aria-label="working" />}
+              {s.farmers[f]?.state === 'working' && !waiting && <i className="live-dot" aria-label="working" />}
             </div>
           ))}
         </div>
@@ -281,21 +303,21 @@ function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: 
   )
 }
 
-function TaskMark({ t }: { t: TaskState }) {
+function TaskMark({ t, waiting = false }: { t: TaskState; waiting?: boolean }) {
   if (t.status === 'accepted') return <Mark pass />
   if (t.stopped || t.status === 'wilted') return <Mark pass={false} />
-  if (t.status === 'growing') return <i className="live-dot" aria-label="being written" />
-  return <span className="prv-todo" aria-label={t.status === 'waiting' ? 'not started' : 'being checked'} />
+  if (t.status === 'growing' && !waiting) return <i className="live-dot" aria-label="being written" />
+  return <span className="prv-todo" aria-label={t.status === 'waiting' ? 'not started' : t.status === 'growing' ? 'waiting for you' : 'being checked'} />
 }
 
-function taskLine(s: RunState, t: TaskState) {
+function taskLine(s: RunState, t: TaskState, waiting = false) {
   const by = `The ${label(s, t.farmer)}`
   if (t.stopped && t.status !== 'accepted') return `${by}. Stopped, left out of this pull request`
   if (t.status === 'accepted') {
     const c = [...t.checks].reverse().find((x) => x.pass)
     return c ? `${by}, checked by the ${label(s, c.by)}` : by
   }
-  if (t.status === 'growing') return `${by} is writing it`
+  if (t.status === 'growing') return waiting ? `${by}. Waiting for your answer` : `${by} is writing it`
   if (t.status === 'checking' || t.status === 'ripe') return `${by}. Being checked`
   if (t.status === 'wilted') return `${by}. Failed a check, being fixed`
   return `${by}. Not started`
@@ -541,7 +563,7 @@ function loopOf(s: RunState, p: Project, pr: Pr): Item[] {
     if (a.answer.choice === SEND_BACK) {
       const sb = p.sendBacks?.[a.id]
       items.push({ t: a.answer.t, key: `you-${a.id}`, tone: 'changes', who: 'you', text: `requested changes${sb ? ` on ${name(sb.task)}` : ''}`, quote: sb?.note })
-    } else if (isShipAsk(a) && /^merge/i.test(a.answer.choice)) items.push({ t: a.answer.t, key: `you-${a.id}`, tone: 'merged', who: 'you', text: 'approved and merged' })
+    } else if (mergedByYou(a)) items.push({ t: a.answer.t, key: `you-${a.id}`, tone: 'merged', who: 'you', text: 'approved and merged' })
   }
   const self = s.activity.find((x) => /merged the pull request by itself|pushed straight to main/i.test(x.text))
   if (self && !items.some((x) => x.tone === 'merged')) items.push({ t: self.t, key: 'self-merge', tone: 'merged', who: self.farmer ?? 'deployer', text: 'merged it by itself, since every check passed' })

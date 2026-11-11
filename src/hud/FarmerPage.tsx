@@ -1,7 +1,7 @@
 // A farmer's own page: what it is doing right now, and everything it carries, all changeable.
 // Task, model, skills and connectors, the files it may read, its rules and its limits.
 import { store, useStore, type Project } from '../run/store'
-import { MODELS, MODEL_GROUPS, RULES, agentName, SKILLS, applyEdit, brandIn, contextName, contextTokens, defaultRules, emptyEdit, lockedPath, lockedSkill, type KitItem } from '../run/kit'
+import { MODELS, MODEL_GROUPS, RULES, agentName, SKILLS, applyEdit, brandIn, contextName, contextTokens, defaultRules, emptyEdit, lockedPath, lockedSkill, turnPath, type KitItem } from '../run/kit'
 import { scenario } from '../run/simPlan'
 import type { FarmerId, RunState } from '../run/types'
 import { FARMER_ORDER } from '../run/types'
@@ -43,13 +43,7 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
   // Everything in its context, the paths you switched off included, each once.
   const plan = base.planContext ?? base.context
   const seen = [...new Set([...plan, ...edit.contextOff, ...edit.contextAdd])]
-  const turn = (c: string, on: boolean) => set((e) => {
-    if (on) {
-      e.contextOff = e.contextOff.filter((x) => x !== c)
-      if (!plan.includes(c) && !e.contextAdd.includes(c)) e.contextAdd = [...e.contextAdd, c]
-    } else if (e.contextAdd.includes(c)) e.contextAdd = e.contextAdd.filter((x) => x !== c)
-    else e.contextOff = [...e.contextOff, c]
-  })
+  const turn = (c: string, on: boolean) => set((e) => turnPath(e, c, on, plan))
   // The task that failed its check without a file or skill you turned off, once it has.
   const failedWithout = (need: { path?: string; skill?: string }) => {
     const a = p.events.find((e) => e.type === 'ask' && e.t <= st.clock && e.need?.farmer === id && (need.path ? e.need.path === need.path : e.need.skill === need.skill))
@@ -210,7 +204,7 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
               <h3>What it can see</h3>
               <div className="kit">
                 {seen.map((c, i) => {
-                  const on = !edit.contextOff.includes(c)
+                  const on = f.context.includes(c)
                   const reading = working && on && i === 0
                   const name = contextName(c)
                   const lock = lockedPath(id, c, plan)
@@ -263,7 +257,8 @@ export function FarmerPage({ p, s, id }: { p: Project; s: RunState; id: FarmerId
                     e.preventDefault()
                     const input = e.currentTarget.elements.namedItem('path') as HTMLInputElement
                     const v = input.value.trim()
-                    if (v && !f.context.includes(v)) set((x) => (x.contextAdd = [...x.contextAdd, v]))
+                    // A path you switched off comes back on; one it already sees stays as it is.
+                    if (v && !f.context.includes(v)) turn(v, true)
                     input.value = ''
                   }}
                 >
