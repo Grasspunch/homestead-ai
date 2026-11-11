@@ -298,9 +298,6 @@ function Top({ p, s }: { p: Project; s: RunState }) {
 // The top bar's icons by size step, -2 to 2: whole pixel scales of the 16px icons.
 const ICO_SIZE = [16, 16, 32, 32, 48]
 
-// The pixel font is for labels of three words or fewer; a longer answer reads better in the text face.
-const long = (label: string) => (label.trim().split(/\s+/).length > 3 ? ' long' : '')
-
 // dock: the plan stands on the left, full height, so the whole farm shows beside it. The Planner sits above it.
 function Dialogue({ farmer, side, dock = false, className = '', children }: { farmer: FarmerId; side: boolean; dock?: boolean; className?: string; children: React.ReactNode }) {
   return (
@@ -672,18 +669,18 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
           </button>
         </form>
       ) : (
-        <div className="row">
-          <button className={`btn${long(merge)}`} onClick={() => store.answer(ask.id, merge)} autoFocus>
+        <div className="row answer-chips">
+          <button className="btn xs long" onClick={() => store.answer(ask.id, merge)} autoFocus>
             <Ico name="check" />
             {merge}
           </button>
-          <button className="btn tan" onClick={() => setWriting(true)}>
+          <button className="btn chip xs long" onClick={() => setWriting(true)}>
             {SEND_BACK}
           </button>
           {rest
             .filter((a) => !(holding && /^not yet/i.test(a)))
             .map((a) => (
-              <button key={a} className={`btn tan${long(a)}`} onClick={() => (/^not yet/i.test(a) ? hold() : store.answer(ask.id, a))}>
+              <button key={a} className="btn chip xs long" onClick={() => (/^not yet/i.test(a) ? hold() : store.answer(ask.id, a))}>
                 {a}
               </button>
             ))}
@@ -735,18 +732,19 @@ function OwnAsk({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
           <Ico name={r.icon} tone="light" />
           {r.label}
         </span>
-        {task && (
-          <button className="plot-chip" onClick={() => store.setDrawer({ kind: 'task', id: task.id })} title="Open this task">
-            <Sign crop={cropOf(s.tasks, task.id)} />
-            {task.name}
-          </button>
-        )}
       </div>
       {holding ? (
         <p>Holding. Nothing ships until you say so.</p>
       ) : (
         <>
-          <p>{ask.question}</p>
+          {/* The question first, then the task it's about, then your answers; the reasoning waits under Why. */}
+          <p className="ask-q">{ask.question}</p>
+          {task && (
+            <button className="plot-chip ask-task" onClick={() => store.setDrawer({ kind: 'task', id: task.id })} title="Open this task">
+              <Sign crop={cropOf(s.tasks, task.id)} />
+              {task.name}
+            </button>
+          )}
           {dis && (
             <div className="sides">
               {dis.sides.map((x) => (
@@ -763,34 +761,42 @@ function OwnAsk({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
               ))}
             </div>
           )}
-          {ask.touches && ask.touches.length > 0 && (
-            <div className="touches">
-              <span className="sub">Reaches</span>
-              {ask.touches.map((id) => (
-                <button key={id} className="touch" onClick={() => store.setDrawer({ kind: 'task', id })}>
-                  {s.tasks.find((t) => t.id === id)?.name ?? id}
-                </button>
-              ))}
-              {ask.files ? <span className="mono">{ask.files} files</span> : null}
-            </div>
-          )}
-          {ask.impact && <p className="impact">{ask.impact}</p>}
-          <Sureness ask={ask} />
         </>
       )}
-      <div className="row">
-        <button className={`btn${long(ask.suggested)}`} onClick={() => store.answer(ask.id, ask.suggested)} autoFocus>
+      {/* Every answer a small chip in one row; the suggested one keeps its check. */}
+      <div className="row answer-chips">
+        <button className="btn xs long" onClick={() => store.answer(ask.id, ask.suggested)} autoFocus>
           <Ico name="check" />
           {ask.suggested}
         </button>
         {ask.alternatives
           .filter((a) => !(holding && /^not yet/i.test(a)))
           .map((a) => (
-            <button key={a} className={`btn tan${long(a)}`} onClick={() => pick(a)}>
+            <button key={a} className="btn chip xs long" onClick={() => pick(a)}>
               {a}
             </button>
           ))}
       </div>
+      {!holding && (ask.impact || ask.confidence || (ask.touches && ask.touches.length > 0)) && (
+        <details className="ask-why">
+          <summary>Why</summary>
+          <div className="ask-why-body">
+            {ask.touches && ask.touches.length > 0 && (
+              <div className="touches">
+                <span className="sub">Reaches</span>
+                {ask.touches.map((id) => (
+                  <button key={id} className="touch" onClick={() => store.setDrawer({ kind: 'task', id })}>
+                    {s.tasks.find((t) => t.id === id)?.name ?? id}
+                  </button>
+                ))}
+                {ask.files ? <span className="mono">{ask.files} files</span> : null}
+              </div>
+            )}
+            {ask.impact && <p className="impact">{ask.impact}</p>}
+            <Sureness ask={ask} />
+          </div>
+        </details>
+      )}
       <InWords ask={ask} onHold={() => setHolding(true)} />
     </Center>
   )
@@ -818,6 +824,9 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
   const [confirm, setConfirm] = useState<Reading | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const refocus = useRef(false)
+  const log = useRef<HTMLDivElement>(null)
+  // The field waits behind a small link until you want it; once you've talked, it stays open.
+  const [open, setOpen] = useState(false)
   useEffect(() => {
     if (!confirm && refocus.current) {
       refocus.current = false
@@ -828,6 +837,10 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
   const s = p ? st.state(p) : undefined
   const label = (f: string) => s?.farmers[f as FarmerId]?.label ?? f
   const talk = p?.talks?.[ask.id] ?? []
+  useEffect(() => {
+    const el = log.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [talk.length, busy])
   const options = [ask.suggested, ...ask.alternatives].filter((o) => !/^show me/i.test(o) && o !== SEND_BACK)
   const canSendBack = ask.alternatives.includes(SEND_BACK)
   const send = async (e: React.FormEvent) => {
@@ -926,28 +939,31 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
   return (
     <>
       {(talk.length > 0 || busy) && (
-        <div className="said talk ask-talk" aria-label="Talking it through" aria-live="polite">
-          {talk.map((l, i) =>
-            l.from === 'you' ? (
-              <span key={i} className="you">
-                You: {l.text}
-              </span>
-            ) : (
-              <span key={i} className="side-line">
-                <Swatch farmer={l.from} />
-                <span>
-                  <b>{label(l.from)}</b> {l.text}
+        // Talking it through reads like the Planner's chat: whoever asked on the left, you on the right.
+        <div className="chat-log ask-talk" ref={log} aria-label="Talking it through" aria-live="polite">
+          {talk.map((l, i) => (
+            <div key={i} className={`msg ${l.from === 'you' ? 'you' : 'planner'}`}>
+              {l.from !== 'you' && (
+                <span className="msg-who">
+                  <Swatch farmer={l.from} />
+                  {label(l.from)}
                 </span>
-              </span>
-            ),
-          )}
+              )}
+              <span className="say">{l.text}</span>
+            </div>
+          ))}
           {busy && (
-            <span className="side-line">
-              <Swatch farmer={ask.farmer} />
-              <span>
-                <b>{label(ask.farmer)}</b> is thinking…
+            <div className="msg planner">
+              <span className="msg-who">
+                <Swatch farmer={ask.farmer} />
+                {label(ask.farmer)}
               </span>
-            </span>
+              <span className="say thinking" aria-label={`${label(ask.farmer)} is thinking`}>
+                <i />
+                <i />
+                <i />
+              </span>
+            </div>
           )}
         </div>
       )}
@@ -962,10 +978,14 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
             No
           </button>
         </div>
+      ) : !open && !talk.length && !busy ? (
+        <button type="button" className="reply-link" onClick={() => setOpen(true)} aria-expanded={false}>
+          Reply in words
+        </button>
       ) : (
         <form className="row grow-form in-words" onSubmit={send}>
           <span className="field">
-            <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder={ask.reason === 'disagree' ? 'Ask about either way, think it through, or suggest your own' : 'Ask anything, or answer in your own words'} aria-label="Answer in your own words" />
+            <input ref={input} autoFocus={open} value={text} onChange={(e) => setText(e.target.value)} placeholder={ask.reason === 'disagree' ? 'Ask about either way, think it through, or suggest your own' : 'Ask anything, or answer in your own words'} aria-label="Answer in your own words" />
           </span>
           <button className="btn tan" type="submit" disabled={!text.trim() || busy}>
             <Ico name="chat" />
@@ -1218,15 +1238,21 @@ function Center({
           </button>
         </section>
       )}
-      <Dialogue farmer={farmer} side={side} className={`${className}${hidden ? ' gone' : ''}`}>
-        {!forced && (
-          <button className="tag-btn tuck-btn" onClick={() => set(true)} title="Hide this window and keep watching the farm" aria-label="Hide this window">
-            <Ico name="minus" />
-            Hide
-          </button>
-        )}
-        {children}
-      </Dialogue>
+      {/* Dialogue's own markup, except that hidden it stops being a .dlg, so the farm's camera never measures it. */}
+      <section className={hidden ? 'dlg-gone' : `dlg${side ? ' with-side' : ''}${className ? ` ${className}` : ''}`}>
+        <div className="portrait">
+          <Portrait farmer={farmer} size={108} />
+        </div>
+        <div className="body paper bubble" data-tail="left">
+          {!forced && (
+            <button className="tag-btn tuck-btn" onClick={() => set(true)} title="Hide this window and keep watching the farm" aria-label="Hide this window">
+              <Ico name="minus" />
+              Hide
+            </button>
+          )}
+          {children}
+        </div>
+      </section>
     </>
   )
 }
@@ -1258,12 +1284,17 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
   const st = useStore()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
-  const [all, setAll] = useState(false)
   // A reading said back before it applies: Yes applies it, No leaves things as they are.
   const [confirm, setConfirm] = useState<{ yes: () => void } | null>(null)
+  // The end-of-run card shows one line until you ask for More.
+  const [more, setMore] = useState(false)
   const chat = st.chat[p.id] ?? []
-  const SHOWN = 3
-  const lines = all ? chat : chat.slice(-SHOWN)
+  // The whole conversation scrolls in its own window, newest at the bottom, and follows each new line.
+  const log = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = log.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [chat.length, busy, !!confirm])
   // Hidden, the Planner thinks its last line.
   const lastSaid = [...chat].reverse().find((l) => l.from !== 'you')?.text
   const plannerModel = plannerModelOf(p, s)
@@ -1338,7 +1369,7 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
     <Center
       farmer="planner"
       side={side}
-      className={s.done ? 'done' : ''}
+      className={`chat${s.done ? ' done' : ''}`}
       keep="planner"
       forced={!!onClose}
       wake={!!s.done}
@@ -1349,7 +1380,7 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
         {s.done ? <span className="tag green">Done</span> : <span className="tag grey">Message the agents</span>}
       </div>
       {s.done ? (
-        <div className="done-text">
+        <div className={`done-text${more ? '' : ' folded'}`}>
           <p>
             {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}{plannedLine(p, s)}. {caughtLine(s)}, and you made {answered} call{answered === 1 ? '' : 's'}.
           </p>
@@ -1364,29 +1395,32 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
           )}
         </div>
       ) : null}
-      {(lines.length > 0 || chat.length > SHOWN) && (
-        <div className={`said talk${all ? ' all' : ''}`}>
-          {chat.length > SHOWN && (
-            <button className="tag-btn" onClick={() => setAll(!all)} aria-expanded={all}>
-              {all ? 'Show less' : `Show earlier (${chat.length - SHOWN})`}
-            </button>
-          )}
-          {lines.map((l, i) => (
-            <span key={all ? i : chat.length - lines.length + i} className={l.from === 'you' ? 'you' : ''}>
-              {l.from === 'you' ? `You: ${l.text}` : l.text}
+      {s.done && (
+        <button type="button" className="reply-link" onClick={() => setMore(!more)} aria-expanded={more}>
+          {more ? 'Less' : 'More'}
+        </button>
+      )}
+      {/* Like any chat: the Planner on the left, you on the right, each in its own bubble. */}
+      <div className="chat-log" ref={log} role="log" aria-label="Your chat with the Planner">
+        {chat.map((l, i) => (
+          <div key={i} className={`msg ${l.from === 'you' ? 'you' : 'planner'}`}>
+            <span className="say">
+              {l.text}
               {l.closest && <span className="closest">{l.closest}</span>}
-              {l.chips && i === lines.length - 1 && !confirm && (
-                <span className="offers">
-                  {l.chips.map((c) => (
-                    <button key={c.label} className="tag-btn" disabled={busy} onClick={() => send(c.request)}>
-                      {c.label}
-                    </button>
-                  ))}
-                </span>
-              )}
             </span>
-          ))}
-          {confirm && (
+            {l.chips && i === chat.length - 1 && !confirm && (
+              <span className="offers">
+                {l.chips.map((c) => (
+                  <button key={c.label} className="tag-btn" disabled={busy} onClick={() => send(c.request)}>
+                    {c.label}
+                  </button>
+                ))}
+              </span>
+            )}
+          </div>
+        ))}
+        {confirm && (
+          <div className="msg planner">
             <span className="offers">
               <button
                 className="tag-btn"
@@ -1409,46 +1443,53 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
                 No
               </button>
             </span>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+        {busy && (
+          <div className="msg planner">
+            <span className="say thinking" aria-label="The Planner is thinking">
+              <i />
+              <i />
+              <i />
+            </span>
+          </div>
+        )}
+      </div>
       {s.done && (
-        <div className="row">
+        <div className="row done-actions">
           <button className="btn" onClick={() => store.setDrawer({ kind: 'summary' })}>
             <Ico name="star" />
             See the pull request
           </button>
-          <button className="btn tan" onClick={() => store.setDrawer({ kind: 'usage' })}>
+          <button className="btn chip xs long" onClick={() => store.setDrawer({ kind: 'usage' })}>
             Spend
           </button>
-          <button className="btn tan" onClick={() => store.runAgain()}>
+          <button className="btn chip xs long" onClick={() => store.runAgain()}>
             Run again
           </button>
           <ExportButtons p={p} s={s} />
         </div>
       )}
-      <div className="row">
-        <form
-          className="row grow-form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            send()
-          }}
-        >
-          <span className="field">
-            <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder={s.done ? 'Ask about the run, or change how the next one runs' : 'Ask the Planner anything, or change how this project runs'} aria-label="Message the Planner" />
-          </span>
-          <button className="btn" type="submit" disabled={busy}>
-            <Ico name="chat" />
-            {busy ? '...' : 'Send'}
+      <form
+        className="chat-input"
+        onSubmit={(e) => {
+          e.preventDefault()
+          send()
+        }}
+      >
+        <span className="field">
+          <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder={s.done ? 'Ask about the run, or change how the next one runs' : 'Ask the Planner anything, or change how this project runs'} aria-label="Message the Planner" />
+        </span>
+        <button className="btn sm" type="submit" disabled={busy}>
+          <Ico name="chat" />
+          Send
+        </button>
+        {onClose && (
+          <button className="btn tan sm" type="button" onClick={onClose}>
+            Back
           </button>
-          {onClose && (
-            <button className="btn tan" type="button" onClick={onClose}>
-              Back
-            </button>
-          )}
-        </form>
-      </div>
+        )}
+      </form>
     </Center>
   )
 }

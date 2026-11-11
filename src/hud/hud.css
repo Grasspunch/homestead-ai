@@ -413,7 +413,7 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .dlg:not(.dock):not(.home) { left: 16px; transform: none; }
 .dlg:not(.dock):not(.home) > .portrait { align-self: flex-end; }
 .dlg:not(.dock):not(.home) > .bubble[data-tail='left']::before { top: auto; bottom: 30px; }
-.dlg.gone { display: none; }
+.dlg-gone { display: none; }
 .dlg .body > .tuck-btn { position: absolute; top: -32px; right: 14px; display: inline-flex; align-items: center; gap: 6px; z-index: 1; }
 /* Hidden: the portrait in its frame, and what they're thinking in the game's own text box, joined to the
    portrait by the pack's dots, the ones the Planner thinks with. */
@@ -460,3 +460,53 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .export-group .btn.xs { font: 700 var(--t-meta)/1 var(--ui); letter-spacing: 0; }
 .side .inbox-control { align-self: flex-start; }
 .top .title > .tag { padding: 3px 6px 2px; }
+
+/* ---- the Planner's chat, read like any chat: its bubbles on the left, yours on the right ---- */
+.dlg.chat .body { gap: 10px; }
+.dlg.chat.done .row { flex-wrap: wrap; }
+.chat-log { display: flex; flex-direction: column; gap: 10px; max-height: min(340px, 42vh); overflow-y: auto; overscroll-behavior: contain; padding: 2px 4px 2px 0; scrollbar-width: thin; scrollbar-color: var(--bark-4) transparent; }
+.chat-log .msg { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; max-width: 86%; }
+.chat-log .msg.you { align-self: flex-end; align-items: flex-end; }
+/* The game's own buttons as bubbles: white for the Planner, like the farm's speech bubbles; sky for you. */
+.chat-log .say { display: block; border: 8px solid transparent; border-image: url(/ui/btn_white.png) 6 fill / 12px stretch; image-rendering: pixelated; padding: 1px 4px 3px;
+  font: 500 var(--t-body)/1.45 var(--ui); color: var(--bark); white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; }
+.chat-log .msg.you .say { border-image-source: url(/ui/btn_sky.png); }
+.chat-log .say .closest { display: block; margin-top: 4px; font-weight: 700; }
+.chat-log .say.thinking { padding: 4px 6px 6px; }
+.chat-log .offers { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-input { display: flex; gap: 8px; align-items: center; }
+.chat-input .field { flex: 1; min-width: 0; height: 42px; }
+.chat-input .btn.sm { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 900px) { .chat-log { max-height: 34vh; } .chat-log .msg { max-width: 92%; } }
+
+/* ---- every window in the middle: narrow, next to the portrait, one clear question, slim controls ---- */
+.dlg:not(.dock):not(.home):not(.tucked) { width: min(640px, calc(100% - 32px)); }
+.dlg.with-side:not(.dock) { width: min(640px, calc(100% - 490px)); }
+.dlg:not(.dock):not(.home) .body { gap: 10px; }
+.dlg p.ask-q { font: 600 var(--t-lead)/1.4 var(--ui); color: var(--bark); text-wrap: pretty; }
+.dlg .ask-task { align-self: flex-start; height: 24px; margin-top: -4px; font: 600 var(--t-meta)/1 var(--ui); letter-spacing: 0; color: var(--bark-2); }
+.dlg .ask-why > summary { cursor: pointer; width: fit-content; font: 700 var(--t-meta)/1.3 var(--ui); color: var(--bark-2); list-style: none; display: inline-flex; align-items: center; gap: 6px; text-decoration: underline; text-underline-offset: 3px; }
+.dlg .ask-why > summary::-webkit-details-marker { display: none; }
+.dlg .ask-why > summary:hover { color: var(--bark); }
+.dlg .ask-why-body { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.dlg .sides { grid-template-columns: 1fr; gap: 6px; }
+/* Slim controls: buttons the height of a field, one line each. */
+.dlg:not(.dock) .row .btn, .dlg:not(.dock) .chat-input .btn, .dlg:not(.dock) .in-words .btn { height: 42px; border-width: 10px; font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
+.dlg:not(.dock) .field { height: 42px; min-width: 0; }
+.dlg:not(.dock) .row { gap: 8px; }
+.dlg .send-back { flex-wrap: wrap; }
+.dlg .send-back select.field-box { height: 42px; }
+/* Talking an ask through: whoever asked on the left, named, you on the right. */
+.chat-log.ask-talk { max-height: min(220px, 30vh); }
+.chat-log .msg-who { display: inline-flex; align-items: center; gap: 6px; font: 700 var(--t-meta)/1 var(--ui); color: var(--bark-2); }
+
+/* ---- round two: answers as small chips, Reply in words behind a link, a one-line end card ---- */
+.dlg:not(.dock) .row.answer-chips { gap: 6px; flex-wrap: wrap; }
+.dlg:not(.dock) .row .btn.xs { height: 34px; border-width: 8px; font: 700 var(--t-meta)/1.2 var(--ui); gap: 6px; }
+.dlg .reply-link { align-self: flex-start; background: none; border: 0; padding: 0; cursor: pointer; font: 700 var(--t-meta)/1.3 var(--ui); color: var(--bark-2); text-decoration: underline; text-underline-offset: 3px; }
+.dlg .reply-link:hover { color: var(--bark); }
+.dlg .done-text.folded > :not(:first-child) { display: none; }
+.dlg .done-text.folded > p:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlg .done-actions { align-items: center; gap: 6px; }
+.dlg .done-actions .export-group .btn { border-image-source: url(/ui/btn_chip.png); }
+.dlg .done-actions .export-group .btn:hover { border-image-source: url(/ui/btn_cream.png); }
