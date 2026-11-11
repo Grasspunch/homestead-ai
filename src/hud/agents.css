@@ -42,3 +42,13 @@
 /* A note never covers an open side panel: it centres in the space left of the panel instead. */
 .stage:has(.side) .toast { left: calc((100% - 468px) / 2); max-width: calc(100% - 496px); }
 @media (max-width: 900px) { .stage:has(.side) .toast { left: 50%; max-width: none; } }
+
+/* A farmer's name by the cursor on the farm, and the crew's names on the Agents button's faces. */
+.farmer-tip { position: absolute; z-index: 8; pointer-events: none; display: flex; flex-direction: column; padding: 4px 10px; font-size: var(--t-meta); line-height: 1.3; white-space: nowrap; color: var(--bark); }
+.farmer-tip[hidden] { display: none; }
+.farmer-tip b { font-family: px7; font-weight: 400; font-size: 18px; line-height: 1.1; }
+.farmer-tip span:empty { display: none; }
+.agent-face { position: relative; overflow: visible; }
+.agent-face canvas { border-radius: 2px; }
+.agent-face .face-name { position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%); padding: 3px 8px; font: 400 15px/1.1 px7; color: var(--bark); white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 120ms steps(2); z-index: 20; }
+.agent-face:hover .face-name { opacity: 1; }

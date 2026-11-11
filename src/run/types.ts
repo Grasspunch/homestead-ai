@@ -23,6 +23,8 @@ export interface FarmerSetup {
   limits: Limits
   why?: string // why the Planner put it on this crew, on this model
   plannedModel?: string // the model the plan priced it on, when you've changed it since
+  planContext?: string[] // what the plan gave it to see, when you've changed its context since
+  skillsOff?: string[] // skills, tools and connectors you turned off
 }
 
 export interface PlanTask {
@@ -94,6 +96,7 @@ export type RunEvent =
       confidence?: Confidence // how sure the farmer is of its suggested answer
       basis?: string // what that rests on, in one short line
       talk?: Talk // a disagreement: both sides and their costs, so you can ask about them
+      need?: { farmer: FarmerId; path?: string; skill?: string } // a file or skill it worked without; the suggested answer gives it back
     }
   | { t: number; type: 'answer'; id: string; choice: string; by: 'human' | 'session' }
   | { t: number; type: 'task_ripe'; task: string; evidence?: string[]; summary?: string; change?: string }

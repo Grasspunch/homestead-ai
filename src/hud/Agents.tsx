@@ -37,6 +37,7 @@ export function AgentsButton({ s, className, label, onClick }: { s: RunState; cl
         {crew.slice(0, 3).map((f) => (
           <span key={f.id} className={`agent-face ${f.state}`}>
             <Portrait farmer={f.id} size={24} />
+            <span className="face-name paper">{f.label}</span>
           </span>
         ))}
       </span>

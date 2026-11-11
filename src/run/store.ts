@@ -1,7 +1,7 @@
 // App state: which screen, the live plan being edited, and the replay of a recorded run.
 import { useSyncExternalStore } from 'react'
 import { duration, pendingAsk, reduce } from './reduce'
-import { BRAND_ASK, BRAND_FIX, LIMIT_RAISED, SEND_BACK, fitLimits, simulateRun, type SimInput } from './simulate'
+import { BRAND_ASK, BRAND_FIX, LIMIT_RAISED, SEND_BACK, fitLimits, needKey, simulateRun, type SimInput } from './simulate'
 import { liveStage, rollBack } from './rollback'
 import { scenario, simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
@@ -9,7 +9,7 @@ import { lessonFrom, lessonLine, type Lesson } from './learn'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
 import { OWN, confirmOwn, isOwnWay, ownText, ownWayOf, type TalkLine } from './discuss'
-import { applyEdit, emptyEdit, type KitEdit } from './kit'
+import { SKILLS, applyEdit, emptyEdit, type KitEdit } from './kit'
 import { CAN_DO, key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope, type Suggestion } from './reshape'
 import { isUi, propOf, uiLookOf, type UiId, type UiLook } from './ui'
 import { AREAS, MATES, areaFor, mateEvents, snapAt } from './team'
@@ -57,7 +57,7 @@ export interface Project {
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   talks?: Record<string, (TalkLine | { from: 'you'; text: string })[]> // talking a disagreement through, by ask id
-  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; brandAt?: number } // seq: which run of this farm, from 1
+  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson; brandAt?: number; addedAt?: Record<string, number> } // seq: which run of this farm, from 1
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
@@ -653,6 +653,9 @@ class Store {
     const p = this.project()
     // Adding the brand guide is a change to the Designer's context, the same as adding it on its page.
     if (p && askId === BRAND_ASK && choice === BRAND_FIX) this.addBrand(p)
+    // So is any other file or skill a farmer asked for back.
+    const needs = p?.events.find((e) => e.type === 'ask' && e.id === askId)
+    if (p && needs && needs.type === 'ask' && needs.need && choice === needs.suggested) this.giveBack(p, needs)
     // A different answer from the one in the log: the run forks from here.
     const rec = p?.events.find((e) => e.type === 'answer' && e.id === askId)
     if (p && rec && rec.type === 'answer' && rec.choice !== choice) this.rebuild(p)
@@ -837,7 +840,8 @@ class Store {
     const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.plannedModel ?? f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
     const basis = plan.basis ?? plan.estimate
-    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []), presplit: lesson ? [lesson.task] : undefined } }
+    // Each run starts from the plan you approved: a split from an earlier run never stacks up as an extra task.
+    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks.filter((t) => !t.id.endsWith('-rest')), estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []), presplit: lesson ? [lesson.task] : undefined } }
   }
 
   // What the plan will cost and take, by simulating it on its default path with your current farmers and rules,
@@ -868,6 +872,7 @@ class Store {
     const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed, this.kitAt[p.id] ?? {}, run.lesson)
     if (!built) return
     if (run.brandAt !== undefined) (built.input as SimInput).brandAt = run.brandAt
+    if (run.addedAt) (built.input as SimInput).addedAt = run.addedAt
     // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
     const t0 = p.clock ?? 0
     if (t0 > 0) {
@@ -941,7 +946,10 @@ class Store {
       let n = 0
       const late = events.filter((e) => e.t <= now && (e.type === 'ask' || e.type === 'answer' || e.type === 'stop' || e.type === 'auto_fix') && !has(e)).map((e) => ({ ...e, t: now + 1000 + 50 * n++ }))
       const after = events.filter((e) => e.t > now && !head(e) && !(e.type === 'ask' && shown.has(e.id)))
+      // The new run always ends: its Done comes after everything else, even when the new run finished before now.
+      const end = events.find((e) => e.type === 'done')
       events = [...events.filter(head), ...kept, ...late, ...after].sort((a, b) => a.t - b.t)
+      if (end && !events.some((e) => e.type === 'done')) events.push(end)
       // An ask you answered just now keeps its answer in the log, even when the new run never asks it again.
       for (const a of kept) {
         if (a.type !== 'ask' || !answers[a.id] || events.some((e) => e.type === 'answer' && e.id === a.id)) continue
@@ -1369,6 +1377,23 @@ class Store {
     })
   }
 
+  // A file or skill a task failed without, given back: from the ask's moment, as with the brand guide.
+  private giveBack(p: Project, ask: Extract<RunEvent, { type: 'ask' }>) {
+    const n = ask.need!
+    if (p.run) p.run.addedAt = { ...p.run.addedAt, [needKey(n)]: Math.max(p.run.addedAt?.[needKey(n)] ?? 0, ask.t) }
+    this.editKit(p.id, n.farmer, (e) => {
+      if (n.skill) e.off = e.off.filter((x) => x !== n.skill)
+      if (n.path) e.contextOff = e.contextOff.filter((x) => x !== n.path)
+    })
+  }
+
+  // What a farmer has on, as need keys: each path it sees and each skill not turned off.
+  private kitKeys(id: string, farmer: FarmerId, e: KitEdit) {
+    const base = this.project(id)?.events.find((x) => x.type === 'farmer' && x.id === farmer)
+    const paths = base && base.type === 'farmer' ? applyEdit(base, e).context : []
+    return [...paths.map((path) => needKey({ farmer, path })), ...SKILLS[farmer].filter((i) => !e.off.includes(i.id)).map((i) => needKey({ farmer, skill: i.id }))]
+  }
+
   editKit(id: string, farmer: FarmerId, fn: (e: KitEdit) => void) {
     const k = (this.kit[id] ??= {})
     const e = (k[farmer] ??= emptyEdit())
@@ -1378,7 +1403,9 @@ class Store {
     }
     const brand = farmer === 'designer' ? scenario(this.project(id)?.goal ?? '').script.brand : undefined
     const sawBrand = sees(brand)
+    const before = new Set(this.kitKeys(id, farmer, e))
     fn(e)
+    const back = this.kitKeys(id, farmer, e).filter((k) => !before.has(k))
     const brandAdded = !sawBrand && sees(brand)
     this.kit = { ...this.kit, [id]: { ...k } }
     // On a running farm the change applies from now: the run is simulated again with it, and what was already spent stays.
@@ -1390,9 +1417,14 @@ class Store {
       p.run.kit = structuredClone(this.kit[id])
       // From now on the Designer sees the brand guide; a check that failed without it stays failed in the past.
       if (brandAdded) p.run.brandAt = Math.max(p.clock ?? 0, p.run.brandAt ?? 0)
+      // So does any other file or skill you turned back on.
+      for (const k of back) p.run.addedAt = { ...p.run.addedAt, [k]: Math.max(p.clock ?? 0, p.run.addedAt?.[k] ?? 0) }
       this.rebuild(p)
       // Added on the Designer's page while it was asking for it: that's the answer.
       if (brandAdded && !this.viewerAnswers[BRAND_ASK] && pendingAsk(p.events, p.clock ?? 0, this.viewerAnswers) === BRAND_ASK) this.answer(BRAND_ASK, BRAND_FIX)
+      const open = pendingAsk(p.events, p.clock ?? 0, this.viewerAnswers)
+      const asked = open ? p.events.find((x) => x.type === 'ask' && x.id === open) : undefined
+      if (asked && asked.type === 'ask' && asked.need && back.includes(needKey(asked.need))) this.answer(asked.id, asked.suggested)
     } else if (p?.approved && this.isDone(p)) this.say('Saved for the next run. This one is finished.')
     this.notify()
   }

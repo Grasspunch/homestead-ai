@@ -12,7 +12,7 @@ import type { Autonomy, Estimate, FarmerId, FarmerSetup, PlanTask, Proof, RunEve
 import { AUTONOMY_PRESETS } from './types'
 import { scenario } from './simPlan'
 import type { Reshaped } from './reshape'
-import { MODELS } from './kit'
+import { MODELS, SKILLS, contextName } from './kit'
 import { isOwnWay, ownText, type Talk } from './discuss'
 
 const MIN = 60_000
@@ -119,6 +119,8 @@ export interface SimInput {
   reshape?: Reshaped
   // When you added the scenario's brand guide to the Designer's context during this run (ms). Before then it couldn't see it.
   brandAt?: number
+  // When you gave a farmer back a file or skill a task failed without, by "farmer:path" or "farmer:skill" (ms).
+  addedAt?: Record<string, number>
   // Tasks an earlier run of this farm split mid-run, which this run plans in two from the start.
   presplit?: string[]
 }
@@ -128,6 +130,11 @@ export const SEND_BACK = 'Send back'
 export const BRAND_ASK = 'ask-brand'
 export const BRAND_FIX = 'Add the brand guide'
 export const BRAND_LOOK = 'Show me the Designer’s context'
+// Any other file or skill a task fails without, turned off: its own ask, and its own key for when you gave it back.
+export const needKey = (n: { farmer: FarmerId; path?: string; skill?: string }) => `${n.farmer}:${n.path ?? n.skill}`
+export const needAsk = (n: { farmer: FarmerId; path?: string; skill?: string }) => `ask-need-${needKey(n)}`
+const STOP_TASK = 'Stop this task'
+interface Need { farmer: FarmerId; task: string; path?: string; skill?: string; fail: string; basis: string; redo: string }
 
 export function simulateRun(input: SimInput): RunEvent[] {
   const { goal } = input
@@ -191,6 +198,33 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const failing = sc.quiet ? undefined : builderTasks.find((t) => t !== pricey) ?? build.find((t) => t !== pricey && t !== disputed)
   // The task where the Builder wants a refactor that reaches the others' code.
   const sweeping = sc.quiet ? undefined : builderTasks.find((t) => t !== pricey && t !== failing) ?? (builderTasks.length > 1 ? builderTasks[builderTasks.length - 1] : undefined)
+  // What a task fails without: the files the scenario names, and the skills each role works with. Each applies
+  // only when you took it away, so the plan's own run never changes.
+  const evalTask = build.find((t) => t.farmer !== 'tester' && /eval/i.test(t.doneWhen))
+  const e2eTask = build.find((t) => t.id === 'e2e-check')
+  const lastBuilder = builderTasks[builderTasks.length - 1]
+  const needs: Need[] = [
+    ...(sc.needs ?? []),
+    ...(builderTasks[0] ? [{ farmer: 'builder' as const, skill: 'tests', task: builderTasks[0].id, fail: 'No tests to pass: Write tests first is off for the Builder', basis: 'Write tests first is off, so I wrote no tests for it.', redo: 'Wrote its tests and ran them' }] : []),
+    ...(lastBuilder ? [{ farmer: 'builder' as const, skill: 'search', task: lastBuilder.id, fail: 'One caller still uses the old code: Search the code is off, so the Builder missed it', basis: 'Search the code is off, so I looked for callers by hand and missed one.', redo: 'Searched the code and moved the last caller' }] : []),
+    ...(designerTask
+      ? [
+          { farmer: 'designer' as const, skill: 'shots', task: designerTask.id, fail: 'No screenshots to check: Screenshot pages is off for the Designer', basis: 'Screenshot pages is off, so I had nothing to show the checker.', redo: 'Took screenshots of the built screens' },
+          { farmer: 'designer' as const, skill: 'a11y', task: designerTask.id, fail: 'Fails accessibility: a field has no label and the contrast is too low. Accessibility check is off', basis: 'Accessibility check is off, so I didn’t test labels or contrast.', redo: 'Labelled the field and fixed the contrast' },
+        ]
+      : []),
+    ...(e2eTask ? [{ farmer: 'tester' as const, skill: 'browser', task: e2eTask.id, fail: 'Can’t click through the app: Drive a browser is off for the Tester', basis: 'Drive a browser is off, so I can only run unit tests.', redo: 'Clicked through the app in a browser' }] : []),
+    ...(evalTask ? [{ farmer: 'tester' as const, skill: 'evals', task: evalTask.id, fail: 'Can’t score the answers: Answer evals is off for the Tester', basis: 'Answer evals is off, so I can’t score the answers.', redo: 'Scored the answers against the eval questions' }] : []),
+  ]
+  const setupOf = (id: FarmerId) => farmers.find((x) => x.id === id)
+  // Taken away: a file the plan gave it that it can't see now, or a skill you turned off, not yet given back by min.
+  const without = (n: Need, min: number) => {
+    const x = setupOf(n.farmer)
+    if (!x) return false
+    const back = (input.addedAt?.[needKey(n)] ?? 0) > min * MIN
+    if (n.path) return (x.planContext ?? x.context).includes(n.path) && (!x.context.includes(n.path) || back)
+    return !!x.skillsOff?.includes(n.skill!) || back
+  }
   const perTask = Math.max(sc.quiet ? 1.5 : 5, (basis.minutes * 0.6) / Math.max(1, plan.length))
   // Each step costs its farmer's model rate. The plan's estimate fixes the unit; a model you changed since moves its share.
   const rateOf = (model?: string) => MODELS.find((m) => m.model === model)?.rate ?? 1
@@ -211,6 +245,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
   // The hard cases of a task, as their own task, before the end-to-end check and the release.
   const restOf = (task: PlanTask): PlanTask => ({ id: `${task.id}-rest`, name: 'Hard cases', farmer: 'builder', doneWhen: `The cases left out of ${lower(task.name)} pass their own tests`, gate: false })
   const addRest = (rest: PlanTask) => {
+    if (plan.some((t) => t.id === rest.id)) return
     const gateAt = plan.findIndex((t) => t.gate || t.id === 'e2e-check')
     plan = [...plan.slice(0, gateAt < 0 ? plan.length : gateAt), rest, ...plan.slice(gateAt < 0 ? plan.length : gateAt)]
     const e2e = queue.findIndex((t) => t.id === 'e2e-check')
@@ -351,6 +386,8 @@ export function simulateRun(input: SimInput): RunEvent[] {
             alternatives: [raise, 'Stop it here'],
           })
           c = choose(id, suggested)
+          // A raise you approved stays a raise when a model change moves the price it names: never a stop.
+          if (c !== raise && /^Raise its limit/.test(c)) c = raise
           at(tt + 1.2, { type: 'answer', id, choice: c, by: 'human' })
           at$ = tt + 1.2
         } else {
@@ -415,6 +452,41 @@ export function simulateRun(input: SimInput): RunEvent[] {
       at(end + 1.6, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `Read ${brand} and redid the colours` })
       usage(end + 1.61, f, task.id, fix$, 'retry')
       end += 2.6
+    }
+
+    // Anything else it, or its checker, works without: the same failed check, ask and redo as the brand guide.
+    let given = true
+    for (const n of needs) {
+      if (n.task !== task.id || (n.farmer !== f && n.farmer !== checkerOf(f)) || halted(n.farmer, end) || !without(n, end + 0.4)) continue
+      const fix$ = usdPer(n.farmer) * 0.3
+      const id = needAsk(n)
+      const what = n.path ? contextName(n.path)?.toLowerCase() : undefined
+      const skill = n.skill ? SKILLS[n.farmer].find((i) => i.id === n.skill)?.name ?? n.skill : undefined
+      const fix = n.path ? `Add ${what ? `the ${what}` : n.path}` : `Turn on ${skill}`
+      at(end + 0.4, { type: 'check', task: task.id, by: checkerOf(f), pass: false, notes: n.fail, evidence: n.farmer === 'designer' ? ['evidence/screen.png'] : ['tests/report.json'] })
+      at(end + 0.5, {
+        type: 'ask', id, farmer: n.farmer, task: task.id, reason: 'anomaly', confidence: 'high', basis: n.basis,
+        question: n.path ? `${task.name} failed its check, because I can’t see ${what ? `the ${what}` : n.path}.` : `${task.name} failed its check, because ${skill} is off for me.`,
+        impact: `${n.path ? `Add ${n.path} to my context` : `Turn ${skill} back on`} and I’ll redo it. About 2 minutes and ${cents(fix$)}.`,
+        suggested: fix, alternatives: [STOP_TASK],
+        need: n.path ? { farmer: n.farmer, path: n.path } : { farmer: n.farmer, skill: n.skill },
+      })
+      const c = choose(id, fix)
+      at(end + 1.4, { type: 'answer', id, choice: c, by: 'human' })
+      if (c === STOP_TASK) {
+        at(end + 1.5, { type: 'stop', task: task.id, reason: `You stopped ${lower(task.name)}. It stays out of the pull request.` })
+        given = false
+        end += 1.6
+        break
+      }
+      at(end + 1.6, { type: 'tool', farmer: n.farmer, task: task.id, tool: 'edit', summary: n.redo })
+      usage(end + 1.61, n.farmer, task.id, fix$, 'retry')
+      end += 2.6
+    }
+    if (!given) {
+      stopped.add(task.id)
+      free[f] = end
+      continue
     }
 
     if (task === failing) {
