@@ -142,6 +142,7 @@ function Farm() {
       ) : (
         <PlannerDialogue p={p} s={s} side={side} />
       )}
+      {p.approved && <WaitingFaces s={s} current={ask?.id} />}
       {p.approved && st.pending?.pid !== p.id && d?.kind !== 'chat' && (ask || rolled || trust) && (
         <button className="btn tan planner-reach" onClick={() => store.setDrawer({ kind: 'chat' })}>
           <Ico name="chat" />
@@ -259,6 +260,13 @@ function Top({ p, s }: { p: Project; s: RunState }) {
             Paused
           </span>
         )}
+        {p.approved && !s.done && (pendingAsk(p.events, st.clock, st.viewerAnswers) || st.openRollback(p)) && (
+          // Shown only while the window that stopped the run is hidden (hud.css), so the still farm has a reason.
+          <button className="tag waiting" onClick={() => (document.querySelector('.dlg.tucked.alert .tuck-frame') as HTMLElement | null)?.click()} title="Open what's waiting on you">
+            <Ico name="alert" tone="light" />
+            Waiting on you
+          </button>
+        )}
         {p.approved && !!p.reshapes?.length && !look.hidden.includes('chips') && (
           <div className="reshapes">
             {/* A screen-only change shows its chip only while it carries Undo: the screen itself shows it. */}
@@ -289,9 +297,6 @@ function Top({ p, s }: { p: Project; s: RunState }) {
 
 // The top bar's icons by size step, -2 to 2: whole pixel scales of the 16px icons.
 const ICO_SIZE = [16, 16, 32, 32, 48]
-
-// The pixel font is for labels of three words or fewer; a longer answer reads better in the text face.
-const long = (label: string) => (label.trim().split(/\s+/).length > 3 ? ' long' : '')
 
 // dock: the plan stands on the left, full height, so the whole farm shows beside it. The Planner sits above it.
 function Dialogue({ farmer, side, dock = false, className = '', children }: { farmer: FarmerId; side: boolean; dock?: boolean; className?: string; children: React.ReactNode }) {
@@ -498,7 +503,7 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
     store.pause()
   }, [])
   return (
-    <Dialogue farmer={shipper} side={side}>
+    <Center farmer={shipper} side={side} alert thought={mine ? 'Rolled back, as you asked.' : 'I rolled the release back. Open me to see why.'}>
       <div className="who">
         <b>{s.farmers[shipper]?.label ?? 'Deployer'}</b>
         <span className="urgency red">
@@ -535,14 +540,14 @@ function RollbackDialogue({ s, side, t }: { s: RunState; side: boolean; t: numbe
           See the pull request
         </button>
       </div>
-    </Dialogue>
+    </Center>
   )
 }
 
 // Offered once, after you merged a pull request with nothing sent back. It applies from the next run.
 function TrustDialogue({ side }: { side: boolean }) {
   return (
-    <Dialogue farmer="planner" side={side}>
+    <Center farmer="planner" side={side} thought="Three clean runs in a row. Merge by itself from now on?">
       <div className="who">
         <b>Planner</b>
       </div>
@@ -557,7 +562,7 @@ function TrustDialogue({ side }: { side: boolean }) {
           Keep asking me
         </button>
       </div>
-    </Dialogue>
+    </Center>
   )
 }
 
@@ -664,18 +669,18 @@ function PrReview({ s, ask, holding, hold }: { s: RunState; ask: Ask; holding: b
           </button>
         </form>
       ) : (
-        <div className="row">
-          <button className={`btn${long(merge)}`} onClick={() => store.answer(ask.id, merge)} autoFocus>
+        <div className="row answer-chips">
+          <button className="btn xs long" onClick={() => store.answer(ask.id, merge)} autoFocus>
             <Ico name="check" />
             {merge}
           </button>
-          <button className="btn tan" onClick={() => setWriting(true)}>
+          <button className="btn chip xs long" onClick={() => setWriting(true)}>
             {SEND_BACK}
           </button>
           {rest
             .filter((a) => !(holding && /^not yet/i.test(a)))
             .map((a) => (
-              <button key={a} className={`btn tan${long(a)}`} onClick={() => (/^not yet/i.test(a) ? hold() : store.answer(ask.id, a))}>
+              <button key={a} className="btn chip xs long" onClick={() => (/^not yet/i.test(a) ? hold() : store.answer(ask.id, a))}>
                 {a}
               </button>
             ))}
@@ -713,13 +718,13 @@ function OwnAsk({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
   }
   if (isShipAsk(ask))
     return (
-      <Dialogue farmer={ask.farmer} side={side}>
+      <Center farmer={ask.farmer} side={side} alert thought={holding ? 'Holding the pull request until you say so.' : 'The pull request is ready for you to review.'}>
         <PrReview s={s} ask={ask} holding={holding} hold={() => setHolding(true)} />
         <InWords ask={ask} onHold={() => setHolding(true)} />
-      </Dialogue>
+      </Center>
     )
   return (
-    <Dialogue farmer={ask.farmer} side={side}>
+    <Center farmer={ask.farmer} side={side} alert thought={holding ? 'Holding. Nothing ships until you say so.' : ask.question}>
       <div className="who">
         {/* Who stopped, and why, before anything else: the portrait alone doesn't name them. */}
         <b>{s.farmers[ask.farmer]?.label ?? 'An agent'} needs you</b>
@@ -727,18 +732,19 @@ function OwnAsk({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
           <Ico name={r.icon} tone="light" />
           {r.label}
         </span>
-        {task && (
-          <button className="plot-chip" onClick={() => store.setDrawer({ kind: 'task', id: task.id })} title="Open this task">
-            <Sign crop={cropOf(s.tasks, task.id)} />
-            {task.name}
-          </button>
-        )}
       </div>
       {holding ? (
         <p>Holding. Nothing ships until you say so.</p>
       ) : (
         <>
-          <p>{ask.question}</p>
+          {/* The question first, then the task it's about, then your answers; the reasoning waits under Why. */}
+          <p className="ask-q">{ask.question}</p>
+          {task && (
+            <button className="plot-chip ask-task" onClick={() => store.setDrawer({ kind: 'task', id: task.id })} title="Open this task">
+              <Sign crop={cropOf(s.tasks, task.id)} />
+              {task.name}
+            </button>
+          )}
           {dis && (
             <div className="sides">
               {dis.sides.map((x) => (
@@ -755,36 +761,44 @@ function OwnAsk({ s, ask, side }: { s: RunState; ask: Ask; side: boolean }) {
               ))}
             </div>
           )}
-          {ask.touches && ask.touches.length > 0 && (
-            <div className="touches">
-              <span className="sub">Reaches</span>
-              {ask.touches.map((id) => (
-                <button key={id} className="touch" onClick={() => store.setDrawer({ kind: 'task', id })}>
-                  {s.tasks.find((t) => t.id === id)?.name ?? id}
-                </button>
-              ))}
-              {ask.files ? <span className="mono">{ask.files} files</span> : null}
-            </div>
-          )}
-          {ask.impact && <p className="impact">{ask.impact}</p>}
-          <Sureness ask={ask} />
         </>
       )}
-      <div className="row">
-        <button className={`btn${long(ask.suggested)}`} onClick={() => store.answer(ask.id, ask.suggested)} autoFocus>
+      {/* Every answer a small chip in one row; the suggested one keeps its check. */}
+      <div className="row answer-chips">
+        <button className="btn xs long" onClick={() => store.answer(ask.id, ask.suggested)} autoFocus>
           <Ico name="check" />
           {ask.suggested}
         </button>
         {ask.alternatives
           .filter((a) => !(holding && /^not yet/i.test(a)))
           .map((a) => (
-            <button key={a} className={`btn tan${long(a)}`} onClick={() => pick(a)}>
+            <button key={a} className="btn chip xs long" onClick={() => pick(a)}>
               {a}
             </button>
           ))}
       </div>
+      {!holding && (ask.impact || ask.confidence || (ask.touches && ask.touches.length > 0)) && (
+        <details className="ask-why">
+          <summary>Why</summary>
+          <div className="ask-why-body">
+            {ask.touches && ask.touches.length > 0 && (
+              <div className="touches">
+                <span className="sub">Reaches</span>
+                {ask.touches.map((id) => (
+                  <button key={id} className="touch" onClick={() => store.setDrawer({ kind: 'task', id })}>
+                    {s.tasks.find((t) => t.id === id)?.name ?? id}
+                  </button>
+                ))}
+                {ask.files ? <span className="mono">{ask.files} files</span> : null}
+              </div>
+            )}
+            {ask.impact && <p className="impact">{ask.impact}</p>}
+            <Sureness ask={ask} />
+          </div>
+        </details>
+      )}
       <InWords ask={ask} onHold={() => setHolding(true)} />
-    </Dialogue>
+    </Center>
   )
 }
 
@@ -810,6 +824,9 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
   const [confirm, setConfirm] = useState<Reading | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const refocus = useRef(false)
+  const log = useRef<HTMLDivElement>(null)
+  // The field waits behind a small link until you want it; once you've talked, it stays open.
+  const [open, setOpen] = useState(false)
   useEffect(() => {
     if (!confirm && refocus.current) {
       refocus.current = false
@@ -820,6 +837,10 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
   const s = p ? st.state(p) : undefined
   const label = (f: string) => s?.farmers[f as FarmerId]?.label ?? f
   const talk = p?.talks?.[ask.id] ?? []
+  useEffect(() => {
+    const el = log.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [talk.length, busy])
   const options = [ask.suggested, ...ask.alternatives].filter((o) => !/^show me/i.test(o) && o !== SEND_BACK)
   const canSendBack = ask.alternatives.includes(SEND_BACK)
   const send = async (e: React.FormEvent) => {
@@ -918,28 +939,31 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
   return (
     <>
       {(talk.length > 0 || busy) && (
-        <div className="said talk ask-talk" aria-label="Talking it through" aria-live="polite">
-          {talk.map((l, i) =>
-            l.from === 'you' ? (
-              <span key={i} className="you">
-                You: {l.text}
-              </span>
-            ) : (
-              <span key={i} className="side-line">
-                <Swatch farmer={l.from} />
-                <span>
-                  <b>{label(l.from)}</b> {l.text}
+        // Talking it through reads like the Planner's chat: whoever asked on the left, you on the right.
+        <div className="chat-log ask-talk" ref={log} aria-label="Talking it through" aria-live="polite">
+          {talk.map((l, i) => (
+            <div key={i} className={`msg ${l.from === 'you' ? 'you' : 'planner'}`}>
+              {l.from !== 'you' && (
+                <span className="msg-who">
+                  <Swatch farmer={l.from} />
+                  {label(l.from)}
                 </span>
-              </span>
-            ),
-          )}
+              )}
+              <span className="say">{l.text}</span>
+            </div>
+          ))}
           {busy && (
-            <span className="side-line">
-              <Swatch farmer={ask.farmer} />
-              <span>
-                <b>{label(ask.farmer)}</b> is thinking…
+            <div className="msg planner">
+              <span className="msg-who">
+                <Swatch farmer={ask.farmer} />
+                {label(ask.farmer)}
               </span>
-            </span>
+              <span className="say thinking" aria-label={`${label(ask.farmer)} is thinking`}>
+                <i />
+                <i />
+                <i />
+              </span>
+            </div>
           )}
         </div>
       )}
@@ -954,10 +978,14 @@ function InWords({ ask, onHold }: { ask: Ask; onHold: () => void }) {
             No
           </button>
         </div>
+      ) : !open && !talk.length && !busy ? (
+        <button type="button" className="reply-link" onClick={() => setOpen(true)} aria-expanded={false}>
+          Reply in words
+        </button>
       ) : (
         <form className="row grow-form in-words" onSubmit={send}>
           <span className="field">
-            <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder={ask.reason === 'disagree' ? 'Ask about either way, think it through, or suggest your own' : 'Ask anything, or answer in your own words'} aria-label="Answer in your own words" />
+            <input ref={input} autoFocus={open} value={text} onChange={(e) => setText(e.target.value)} placeholder={ask.reason === 'disagree' ? 'Ask about either way, think it through, or suggest your own' : 'Ask anything, or answer in your own words'} aria-label="Answer in your own words" />
           </span>
           <button className="btn tan" type="submit" disabled={!text.trim() || busy}>
             <Ico name="chat" />
@@ -1067,7 +1095,7 @@ function ChangeCard({ side }: { side: boolean }) {
     setBusy(false)
   }
   return (
-    <Dialogue farmer="planner" side={side}>
+    <Center farmer="planner" side={side} alert thought={`Make these changes? ${pd.proposal.title}`}>
       <div className="who">
         <b>Planner</b>
         <span className="urgency honey">
@@ -1133,7 +1161,119 @@ function ChangeCard({ side }: { side: boolean }) {
           Cancel
         </button>
       </div>
-    </Dialogue>
+    </Center>
+  )
+}
+
+// Every window in the middle of the screen can be hidden, so you can watch the farm. Hidden, only the speaker's
+// portrait stays, in the bottom-left corner where the window sits, with what they're thinking in a thought bubble;
+// click it to open the window again. Each window starts open, except the Planner's box, which remembers (keep).
+// The window stays mounted while hidden, so nothing you typed or ticked is lost. A forced window always shows,
+// and a change in wake opens a hidden one again.
+const TUCK_KEY = 'homestead:hidden'
+const tuckedSaved = (keep: string) => {
+  try {
+    return (localStorage.getItem(TUCK_KEY) ?? '').split(',').includes(keep)
+  } catch {
+    return false
+  }
+}
+const saveTucked = (keep: string, on: boolean) => {
+  try {
+    const was = (localStorage.getItem(TUCK_KEY) ?? '').split(',').filter((k) => k && k !== keep)
+    localStorage.setItem(TUCK_KEY, (on ? [...was, keep] : was).join(','))
+  } catch {
+    // Storage blocked: it still hides, it just opens again after a reload.
+  }
+}
+function Center({
+  farmer,
+  side,
+  className = '',
+  thought,
+  alert = false,
+  keep,
+  forced = false,
+  wake,
+  children,
+}: {
+  farmer: FarmerId
+  side: boolean
+  className?: string
+  thought: string
+  alert?: boolean
+  keep?: string
+  forced?: boolean
+  wake?: unknown
+  children: React.ReactNode
+}) {
+  const [tucked, setTucked] = useState(() => !!keep && tuckedSaved(keep))
+  const set = (on: boolean) => {
+    setTucked(on)
+    if (keep) saveTucked(keep, on)
+  }
+  const woke = useRef(wake)
+  useEffect(() => {
+    if (wake !== woke.current && wake) set(false)
+    woke.current = wake
+  }, [wake])
+  const hidden = tucked && !forced
+  return (
+    <>
+      {/* First, so the farm's camera measures the frame, not the hidden window. */}
+      {hidden && (
+        <section className={`dlg tucked${alert ? ' alert' : ''}`}>
+          <button className="tuck-frame" onClick={() => set(false)} title="Open this window">
+            <span className="portrait">
+              <Portrait farmer={farmer} />
+            </span>
+            <span className="puffs" aria-hidden>
+              <i />
+              <i />
+            </span>
+            <span className="thought paper">
+              {alert && <Ico name="alert" tone="light" />}
+              <span className="words">{thought}</span>
+            </span>
+          </button>
+        </section>
+      )}
+      {/* Dialogue's own markup, except that hidden it stops being a .dlg, so the farm's camera never measures it. */}
+      <section className={hidden ? 'dlg-gone' : `dlg${side ? ' with-side' : ''}${className ? ` ${className}` : ''}`}>
+        <div className="portrait">
+          <Portrait farmer={farmer} size={108} />
+        </div>
+        <div className="body paper bubble" data-tail="left">
+          {!forced && (
+            <button className="tag-btn tuck-btn" onClick={() => set(true)} title="Hide this window and keep watching the farm" aria-label="Hide this window">
+              <Ico name="minus" />
+              Hide
+            </button>
+          )}
+          {children}
+        </div>
+      </section>
+    </>
+  )
+}
+
+// Anyone else who needs you, beyond the window in the corner: one small face each, stacked above it. Each opens
+// the inbox, where every open question waits in order.
+function WaitingFaces({ s, current }: { s: RunState; current?: string }) {
+  const others = s.asks.filter((a) => !a.answer && a.id !== current)
+  const faces = [...new Map(others.map((a) => [a.farmer, a])).values()]
+  if (!faces.length) return null
+  return (
+    <div className="waiting-faces" aria-label={`${others.length} more need${others.length === 1 ? 's' : ''} you`}>
+      {faces.map((a) => (
+        <button key={a.farmer} className="waiting-face" onClick={() => store.setDrawer({ kind: 'inbox' })} title={`${s.farmers[a.farmer]?.label ?? 'An agent'} needs you: ${a.question}`}>
+          <span className="portrait">
+            <Portrait farmer={a.farmer} size={48} />
+          </span>
+          <Ico name="alert" tone="light" />
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -1144,12 +1284,19 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
   const st = useStore()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
-  const [all, setAll] = useState(false)
   // A reading said back before it applies: Yes applies it, No leaves things as they are.
   const [confirm, setConfirm] = useState<{ yes: () => void } | null>(null)
+  // The end-of-run card shows one line until you ask for More.
+  const [more, setMore] = useState(false)
   const chat = st.chat[p.id] ?? []
-  const SHOWN = 3
-  const lines = all ? chat : chat.slice(-SHOWN)
+  // The whole conversation scrolls in its own window, newest at the bottom, and follows each new line.
+  const log = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = log.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [chat.length, busy, !!confirm])
+  // Hidden, the Planner thinks its last line.
+  const lastSaid = [...chat].reverse().find((l) => l.from !== 'you')?.text
   const plannerModel = plannerModelOf(p, s)
   const input = useRef<HTMLInputElement>(null)
   const you = (t: string) => store.chatTo(p.id, { from: 'you', text: clip(t) })
@@ -1219,13 +1366,21 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
   // The release bug the last run rolled back on, fixed in this one, and how far this run counts toward merging by itself.
   const fixed = s.done ? fixLineOf(p, s.deploy.some((d) => d.stage === 'rollback')) : null
   return (
-    <Dialogue farmer="planner" side={side} className={s.done ? 'done' : ''}>
+    <Center
+      farmer="planner"
+      side={side}
+      className={`chat${s.done ? ' done' : ''}`}
+      keep="planner"
+      forced={!!onClose}
+      wake={!!s.done}
+      thought={s.done ? 'All done. Open me to see how the run went.' : lastSaid ?? 'Ask me anything about the run, or tell me what to change.'}
+    >
       <div className="who">
         <b>Planner</b>
         {s.done ? <span className="tag green">Done</span> : <span className="tag grey">Message the agents</span>}
       </div>
       {s.done ? (
-        <div className="done-text">
+        <div className={`done-text${more ? '' : ' folded'}`}>
           <p>
             {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}{plannedLine(p, s)}. {caughtLine(s)}, and you made {answered} call{answered === 1 ? '' : 's'}.
           </p>
@@ -1240,29 +1395,32 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
           )}
         </div>
       ) : null}
-      {(lines.length > 0 || chat.length > SHOWN) && (
-        <div className={`said talk${all ? ' all' : ''}`}>
-          {chat.length > SHOWN && (
-            <button className="tag-btn" onClick={() => setAll(!all)} aria-expanded={all}>
-              {all ? 'Show less' : `Show earlier (${chat.length - SHOWN})`}
-            </button>
-          )}
-          {lines.map((l, i) => (
-            <span key={all ? i : chat.length - lines.length + i} className={l.from === 'you' ? 'you' : ''}>
-              {l.from === 'you' ? `You: ${l.text}` : l.text}
+      {s.done && (
+        <button type="button" className="reply-link" onClick={() => setMore(!more)} aria-expanded={more}>
+          {more ? 'Less' : 'More'}
+        </button>
+      )}
+      {/* Like any chat: the Planner on the left, you on the right, each in its own bubble. */}
+      <div className="chat-log" ref={log} role="log" aria-label="Your chat with the Planner">
+        {chat.map((l, i) => (
+          <div key={i} className={`msg ${l.from === 'you' ? 'you' : 'planner'}`}>
+            <span className="say">
+              {l.text}
               {l.closest && <span className="closest">{l.closest}</span>}
-              {l.chips && i === lines.length - 1 && !confirm && (
-                <span className="offers">
-                  {l.chips.map((c) => (
-                    <button key={c.label} className="tag-btn" disabled={busy} onClick={() => send(c.request)}>
-                      {c.label}
-                    </button>
-                  ))}
-                </span>
-              )}
             </span>
-          ))}
-          {confirm && (
+            {l.chips && i === chat.length - 1 && !confirm && (
+              <span className="offers">
+                {l.chips.map((c) => (
+                  <button key={c.label} className="tag-btn" disabled={busy} onClick={() => send(c.request)}>
+                    {c.label}
+                  </button>
+                ))}
+              </span>
+            )}
+          </div>
+        ))}
+        {confirm && (
+          <div className="msg planner">
             <span className="offers">
               <button
                 className="tag-btn"
@@ -1285,47 +1443,54 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
                 No
               </button>
             </span>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+        {busy && (
+          <div className="msg planner">
+            <span className="say thinking" aria-label="The Planner is thinking">
+              <i />
+              <i />
+              <i />
+            </span>
+          </div>
+        )}
+      </div>
       {s.done && (
-        <div className="row">
+        <div className="row done-actions">
           <button className="btn" onClick={() => store.setDrawer({ kind: 'summary' })}>
             <Ico name="star" />
             See the pull request
           </button>
-          <button className="btn tan" onClick={() => store.setDrawer({ kind: 'usage' })}>
+          <button className="btn chip xs long" onClick={() => store.setDrawer({ kind: 'usage' })}>
             Spend
           </button>
-          <button className="btn tan" onClick={() => store.runAgain()}>
+          <button className="btn chip xs long" onClick={() => store.runAgain()}>
             Run again
           </button>
           <ExportButtons p={p} s={s} />
         </div>
       )}
-      <div className="row">
-        <form
-          className="row grow-form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            send()
-          }}
-        >
-          <span className="field">
-            <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder={s.done ? 'Ask about the run, or change how the next one runs' : 'Ask the Planner anything, or change how this project runs'} aria-label="Message the Planner" />
-          </span>
-          <button className="btn" type="submit" disabled={busy}>
-            <Ico name="chat" />
-            {busy ? '...' : 'Send'}
+      <form
+        className="chat-input"
+        onSubmit={(e) => {
+          e.preventDefault()
+          send()
+        }}
+      >
+        <span className="field">
+          <input ref={input} value={text} onChange={(e) => setText(e.target.value)} placeholder={s.done ? 'Ask about the run, or change how the next one runs' : 'Ask the Planner anything, or change how this project runs'} aria-label="Message the Planner" />
+        </span>
+        <button className="btn sm" type="submit" disabled={busy}>
+          <Ico name="chat" />
+          Send
+        </button>
+        {onClose && (
+          <button className="btn tan sm" type="button" onClick={onClose}>
+            Back
           </button>
-          {onClose && (
-            <button className="btn tan" type="button" onClick={onClose}>
-              Back
-            </button>
-          )}
-        </form>
-      </div>
-    </Dialogue>
+        )}
+      </form>
+    </Center>
   )
 }
 
