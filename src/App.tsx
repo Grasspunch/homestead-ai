@@ -13,6 +13,7 @@ import { discuss, getLiveMode, isFallbackNote, reshapeRead, route, setLiveMode }
 import type { Scope } from './run/reshape'
 import { planInto } from './run/planning'
 import { shortDate } from './run/recorded'
+import { ExportButtons } from './hud/Export'
 import { scenario } from './run/simPlan'
 import { pendingAsk } from './run/reduce'
 import { clip, store, useStore, type Project } from './run/store'
@@ -1058,6 +1059,7 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
           </form>
         )}
       </div>
+      {s.done && <ExportButtons p={p} s={s} />}
     </Dialogue>
   )
 }
