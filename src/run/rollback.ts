@@ -58,7 +58,7 @@ export function rollBack(events: RunEvent[], t0: number, askId: string, choice?:
   const at = (dm: number) => Math.round(t0 + dm * MIN)
   // The run was stopped at its budget: it comes down, and nothing ships again.
   if (stopped || events.some((e) => e.type === 'stop' && e.t <= t0 && /^You stopped the run at its budget/.test(e.reason)))
-    return withDone([...events, { t: at(0), type: 'deploy', stage: 'rollback', reason: BY_YOU }])
+    return withDone([...events.filter((e) => !(e.t > t0 && (e.type === 'monitor' || (e.type === 'deploy' && e.stage === 'rollback')))), { t: at(0), type: 'deploy', stage: 'rollback', reason: BY_YOU }])
   // Healthy: it comes down, and the Deployer asks whether to ship again.
   const before = events.filter((e) => e.t <= t0 || !rollout(e))
   const added: RunEvent[] = [
