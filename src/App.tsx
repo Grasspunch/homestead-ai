@@ -1002,6 +1002,14 @@ const plannerModelOf = (p: Project, s: RunState) => (s.farmers.planner ? applyEd
 // The last dozen lines of the Planner chat, for the Planner to answer in context.
 const historyOf = (pid: string) => (store.chat[pid] ?? []).slice(-12).map((l) => ({ from: l.from, text: l.text }))
 
+// What the plan said when you approved it, so the actual total reads against it, not as a constant.
+function plannedLine(p: Project, s: RunState) {
+  const f = p.run?.forecast?.crew
+  if (!f || !s.done) return ''
+  if (Math.abs(f.usd - s.done.usd) < 0.5 && Math.abs(f.minutes - s.done.minutes) < 1) return ', as planned'
+  return `, against ${usd(f.usd)} and ${mins(f.minutes)} planned`
+}
+
 // Your request, read into changes: one row each, all on, and you take off any you want kept as it is.
 // You can talk it through too: ask what a row does, keep only some, set how long, or ask for something else.
 function ChangeCard({ side }: { side: boolean }) {
@@ -1216,7 +1224,7 @@ function PlannerDialogue({ p, s, side, onClose }: { p: Project; s: RunState; sid
       {s.done ? (
         <div className="done-text">
           <p>
-            {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}. {caughtLine(s)}, and you made {answered} call{answered === 1 ? '' : 's'}.
+            {doneLead(s)} {usd(s.done.usd)} in {mins(s.done.minutes)}{plannedLine(p, s)}. {caughtLine(s)}, and you made {answered} call{answered === 1 ? '' : 's'}.
           </p>
           {skippedLine(s) && <p className="impact">{skippedLine(s)}</p>}
           {outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
