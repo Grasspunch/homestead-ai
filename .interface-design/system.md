@@ -108,6 +108,15 @@ Direction (concept v3): the farm is Sprout Lands pixel art and carries the statu
 - The top bar's "N of M tasks done" counts every plot on the farm, the release included, so it always matches what you see. (Replaces the Checkpoint 16 count of work tasks only.)
 - A change the Planner can't make gets one short line, "I can’t change that yet.", then, when something is near, a bold "Closest I can do: …" line, then up to three suggestion chips (cream, small, ruled), nearest first. A chip sends its request and opens the change card. In the talk bar every line sits on its own: yours first, the Planner's under it.
 
+## Changing the screen
+- The same card changes the screen: hide or bring back a part, move a top bar button, make a part bigger or smaller, rename a button, or recolour one. One row per change, in plain words: "Move the inbox button to the left", "Rename “Pull request” to “Review”", "Make the plot labels bigger", "Make the spend counter green". Every farm is the suggested scope.
+- The top bar is one ordered row: the left group (home), the title, then the right group. A button moves to the start or end of the right group, to the left beside home, or before or after another button. Run again stays just left of Pull request.
+- Sizes go two steps each way from as it ships. Top bar buttons are 34, 42, 56, 64 or 72px tall with 16, 16, 32, 32 or 48px icons. Plot labels, speech bubbles and check pop-ups only grow, two steps: labels 15 and 17px, pop-ups at body and lead size, bubbles at 1.5x and 2x. Nothing goes under 13px.
+- Colours are the pack's button only: white, cream, tan, brown, and btn_leaf, btn_berry, btn_sky, btn_gold, which are btn_white with its shades swapped for the tokens' ramps (`scripts/tint-buttons.py`). Any other colour gets the list. Never free CSS.
+- A renamed icon button shows its name beside the icon, in the pixel font; the aria-label follows. Names are 20 characters at most.
+- The latest change per part and property wins; this farm's changes come before Your flow. "Put the inbox back" or "reset the inbox" takes every property of that part back. Play and settings can't be hidden.
+- A screen change shows its chip only while it carries Undo: the screen itself shows what changed.
+
 ## A mixed crew
 - Models are grouped by maker wherever you pick one: "Claude" first, then "OpenAI (Codex)". In the plan's select that's an optgroup; on the farmer page each group has a small bold meta heading over its own grid of model buttons.
 - The farmer page names the agent under the farmer's name, in meta ink: "GPT-6.1 Sol on Codex", "Claude Sonnet 5 on Claude Code".

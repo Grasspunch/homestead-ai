@@ -10,6 +10,7 @@ import { AUTONOMY_PRESETS } from './types'
 import { OWN, confirmOwn, isOwnWay, ownText, ownWayOf, type TalkLine } from './discuss'
 import { applyEdit, emptyEdit, type KitEdit } from './kit'
 import { key, readChanges, reshapedOf, shortOf, type Change, type FlowItem, type Proposal, type Scope, type Suggestion } from './reshape'
+import { isUi, propOf, uiLookOf, type UiId, type UiLook } from './ui'
 
 export const SAMPLE_GOAL = 'Build an AI support assistant that answers customer questions from our help docs, and hands off to a person when it is not sure'
 
@@ -254,12 +255,14 @@ class Store {
   private lastAsk: string | null = null
   private listeners = new Set<() => void>()
 
-  // Whether you asked the Planner to hide a part of the screen. This farm's changes come first, then Your flow,
-  // so a part you hid for every farm is hidden on farms you made before, too. The latest change wins.
-  uiHidden(el: string, p = this.project()): boolean {
-    const mine = (p?.reshapes ?? []).flatMap((r) => r.changes).filter((c) => c.kind === 'ui' && c.el === el)
-    const last = mine[mine.length - 1] ?? [...this.flow].reverse().find((f) => f.on && f.change.kind === 'ui' && f.change.el === el)?.change
-    return !!last && last.kind === 'ui' && !last.show
+  // How the screen looks after what you asked the Planner: hidden, moved, resized, renamed or recoloured parts.
+  // This farm's changes come first, then Your flow, so a change for every farm reaches farms you made before,
+  // too. The latest change wins, per part and per property.
+  uiLook(p = this.project()): UiLook {
+    return uiLookOf((p?.reshapes ?? []).flatMap((r) => r.changes), this.flow.filter((f) => f.on).map((f) => f.change))
+  }
+  uiHidden(el: UiId, p = this.project()): boolean {
+    return this.uiLook(p).hidden.includes(el)
   }
 
   say(text: string) {
@@ -944,6 +947,7 @@ class Store {
       tasks: (s?.tasks ?? []).map((k) => ({ id: k.id, name: k.name, farmer: k.farmer, gate: k.gate, status: k.status })),
       farmers: Object.values(s?.farmers ?? {}).filter((f): f is NonNullable<typeof f> => !!f).map((f) => f.id),
       active: (p.reshapes ?? []).flatMap((r) => r.changes),
+      ui: this.uiLook(p),
     }
   }
 
@@ -994,17 +998,21 @@ class Store {
     // Every-farm changes join Your flow, replacing one that does the same thing.
     if (every.length) {
       const name = (id: string) => this.reshapeCtx(p).tasks.find((t) => t.id === id)?.name ?? id
-      const adds: FlowItem[] = every.map((x, i) => ({ id: `fl-${Date.now().toString(36)}-${i}`, change: x.change, label: x.label, short: shortOf(x.change, name), on: true, from: r.id, notify: x.change.kind === 'notifyOn' ? notify : undefined }))
-      const keys = new Set(adds.map((a) => key(a.change)))
-      this.flow = [...this.flow.filter((f) => !keys.has(key(f.change))), ...adds]
+      // A screen change replaces the one for the same part and property; a reset takes the part out of it.
+      const slot = (c: Change) => (isUi(c) ? `ui:${c.el}:${propOf(c)}` : key(c))
+      const resets = new Set(every.flatMap((x) => (x.change.kind === 'uiReset' ? [x.change.el] : [])))
+      const kept = this.flow.filter((f) => !(isUi(f.change) && resets.has(f.change.el)))
+      const adds: FlowItem[] = every.filter((x) => x.change.kind !== 'uiReset').map((x, i) => ({ id: `fl-${Date.now().toString(36)}-${i}`, change: x.change, label: x.label, short: shortOf(x.change, name), on: true, from: r.id, notify: x.change.kind === 'notifyOn' ? notify : undefined }))
+      const keys = new Set(adds.map((a) => slot(a.change)))
+      this.flow = [...kept.filter((f) => !keys.has(slot(f.change))), ...adds]
     }
     this.pending = null
     // Run again, or a finished run: the changes start with the next run, and the finished one stays as it was.
-    const screenOnly = rows.every((x) => x.change.kind === 'ui')
+    const screenOnly = rows.every((x) => isUi(x.change))
     if (!done && p.approved && !screenOnly) this.rebuild(p)
     const n = rows.length
     const flowNote = every.length ? (every.length === n ? ' It’s in your flow for every new farm.' : ` ${every.length} of them ${every.length === 1 ? 'is' : 'are'} in your flow for every new farm.`) : ''
-    if (screenOnly) this.chatTo(p.id, { from: 'planner', text: `Done: ${rows.map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join(', ')}${every.length ? ', on every farm' : ' on this farm'}. Ask me to bring it back any time.` })
+    if (screenOnly) this.chatTo(p.id, { from: 'planner', text: `Done: ${rows.map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join(', ')}${every.length ? ', on every farm' : ' on this farm'}. Ask me to put it back any time.` })
     else this.chatTo(p.id, { from: 'planner', text: (done ? `${r.title} is on from the next run: ${n} change${n === 1 ? '' : 's'}.` : `${r.title} is on: ${n} change${n === 1 ? '' : 's'}, from now.`) + flowNote })
     // No toast: it would cover the plots. The new chip carries Undo for a few seconds instead.
     this.fresh = { id: r.id, until: Date.now() + Store.FRESH_MS }
@@ -1088,7 +1096,9 @@ class Store {
   }
 
   newProject(goal: string): Project {
-    const id = `own-${Date.now().toString(36)}`
+    // Two farms made in the same millisecond still get their own ids.
+    let id = `own-${Date.now().toString(36)}`
+    while (this.project(id)) id += 'x'
     const p: Project = { id, name: 'New project', goal, kind: 'own', events: [{ t: 0, type: 'goal', text: goal }], approved: false, planning: true, level: 'matters', autonomy: { ...AUTONOMY_PRESETS.matters } }
     // A new farm starts with Your flow.
     const flow = this.flow.filter((f) => f.on)

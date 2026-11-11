@@ -2,8 +2,9 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { simulatePlan } from '../simPlan'
 import { simulateRun } from '../simulate'
 import { reduce } from '../reduce'
-import { changesFromLive, readChanges, reshapedOf, type Change, type Ctx } from '../reshape'
+import { changesFromLive, readChanges, reshapeSchema, reshapedOf, type Change, type Ctx } from '../reshape'
 import { SAMPLE_GOAL, store, type Project } from '../store'
+import { COLOR_LIST, UI_CAN, uiLookOf } from '../ui'
 import type { RunEvent } from '../types'
 
 beforeAll(() => {
@@ -345,12 +346,218 @@ describe('changing the screen', () => {
   it('a part it already hid says so, and one it doesn’t know gets the list', () => {
     const r = readChanges('remove the pull request button', { ...ctx, active: [{ kind: 'ui', el: 'pr', show: false }] })
     expect(r.kind === 'none' && r.reply).toMatch(/already hidden/)
-    const u = readChanges('move the settings button to the left', ctx)
-    expect(u.kind === 'none' && u.reply).toMatch(/I can hide or bring back/)
+    const u = readChanges('move the search bar to the left', ctx)
+    expect(u.kind === 'none' && u.reply).toBe(UI_CAN)
   })
   it('the live Planner can hide a part too', () => {
     const p = changesFromLive({ changes: [{ kind: 'ui', el: 'inbox', show: false }, { kind: 'ui', el: 'nope', show: false }] }, ctx)
     expect(p?.rows.map((r) => r.change)).toEqual([{ kind: 'ui', el: 'inbox', show: false }])
     expect(p?.rows[0].scope).toBe('every')
+  })
+})
+
+describe('moving, resizing, renaming and recolouring the screen', () => {
+  const read = (text: string, c = ctx) => {
+    const r = readChanges(text, c)
+    return r.kind === 'changes' ? r.proposal.rows.map((x) => x.change) : r.kind === 'none' ? r.reply : r.kind
+  }
+  const labels = (text: string, c = ctx) => {
+    const r = readChanges(text, c)
+    return r.kind === 'changes' ? r.proposal.rows.map((x) => x.label) : []
+  }
+  const on = (...active: Change[]): Ctx => ({ ...ctx, active })
+
+  it('moves a top bar button', () => {
+    expect(read('move the inbox to the left')).toEqual([{ kind: 'uiMove', el: 'inbox', to: 'left' }])
+    expect(read('put the spend counter first')).toEqual([{ kind: 'uiMove', el: 'spend', to: 'start' }])
+    expect(read('put the spend counter last')).toEqual([{ kind: 'uiMove', el: 'spend', to: 'end' }])
+    expect(read('move settings next to home')).toEqual([{ kind: 'uiMove', el: 'settings', to: 'after', of: 'home' }])
+    expect(read('can you move the spend counter to the left of the pull request button?')).toEqual([{ kind: 'uiMove', el: 'spend', to: 'before', of: 'pr' }])
+    expect(read('can you move the inbox to the left of the spend counter?')).toBe('The inbox button is already there.')
+    expect(read('I want the pull request button on the right')).toEqual([{ kind: 'uiMove', el: 'pr', to: 'end' }])
+    expect(labels('move the inbox to the left')).toEqual(['Move the inbox button to the left'])
+    expect(labels('move settings next to home')).toEqual(['Move the settings button next to the home button'])
+    expect(labels('put the spend counter first')).toEqual(['Put the spend counter first'])
+  })
+  it('a move that changes nothing says so', () => {
+    expect(read('put the pull request button first')).toBe('The pull request button is already there.')
+    expect(read('move the inbox to the left', on({ kind: 'uiMove', el: 'inbox', to: 'left' }))).toBe('The inbox button is already there.')
+  })
+  it('resizes in steps, two at most each way', () => {
+    expect(read('make the plot labels bigger')).toEqual([{ kind: 'uiSize', el: 'plotLabels', size: 1 }])
+    expect(labels('make the plot labels bigger')).toEqual(['Make the plot labels bigger'])
+    expect(read('make the plot labels bigger', on({ kind: 'uiSize', el: 'plotLabels', size: 1 }))).toEqual([{ kind: 'uiSize', el: 'plotLabels', size: 2 }])
+    expect(read('make the plot labels much bigger')).toEqual([{ kind: 'uiSize', el: 'plotLabels', size: 2 }])
+    expect(read('make the plot labels bigger', on({ kind: 'uiSize', el: 'plotLabels', size: 2 }))).toBe('The plot labels are as big as they go.')
+    expect(read('make the plot labels smaller')).toBe('The plot labels are as small as they go.')
+    expect(read('make the inbox button smaller')).toEqual([{ kind: 'uiSize', el: 'inbox', size: -1 }])
+    expect(read('make the speech bubbles bigger')).toEqual([{ kind: 'uiSize', el: 'bubbles', size: 1 }])
+    expect(read('make the check pop-ups larger')).toEqual([{ kind: 'uiSize', el: 'proofPops', size: 1 }])
+    expect(read('put the plot labels back to the normal size', on({ kind: 'uiSize', el: 'plotLabels', size: 2 }))).toEqual([{ kind: 'uiSize', el: 'plotLabels', size: 0 }])
+    expect(read('make the chickens bigger')).toMatch(/^I can’t resize the chickens\. I can resize the /)
+  })
+  it('renames a button in your own words', () => {
+    expect(read('rename Pull request to Review')).toEqual([{ kind: 'uiLabel', el: 'pr', label: 'Review' }])
+    expect(labels('rename Pull request to Review')).toEqual(['Rename “Pull request” to “Review”'])
+    expect(read('call the inbox Questions')).toEqual([{ kind: 'uiLabel', el: 'inbox', label: 'Questions' }])
+    expect(read('Rename the pull request button to "Ship it".')).toEqual([{ kind: 'uiLabel', el: 'pr', label: 'Ship it' }])
+    expect(read('change the spend counter label to Budget')).toEqual([{ kind: 'uiLabel', el: 'spend', label: 'Budget' }])
+    expect(read('rename the inbox to Questions and answers for the crew today')).toMatch(/too long/)
+    expect(read('rename the chickens to Hens')).toMatch(/^I can’t rename the chickens/)
+    expect(read('call the inbox Questions', on({ kind: 'uiLabel', el: 'inbox', label: 'Questions' }))).toBe('The inbox button already says “Questions”.')
+    expect(labels('call the inbox Mail', on({ kind: 'uiLabel', el: 'inbox', label: 'Questions' }))).toEqual(['Rename “Questions” to “Mail”'])
+  })
+  it('recolours from the HUD palette only', () => {
+    expect(read('make the spend counter green')).toEqual([{ kind: 'uiColor', el: 'spend', color: 'leaf' }])
+    expect(labels('make the spend counter green')).toEqual(['Make the spend counter green'])
+    expect(read('turn the inbox button red')).toEqual([{ kind: 'uiColor', el: 'inbox', color: 'berry' }])
+    expect(read('make the home button blue')).toEqual([{ kind: 'uiColor', el: 'home', color: 'sky' }])
+    expect(read('make the inbox purple')).toBe(`I can’t make it purple. ${COLOR_LIST}`)
+    expect(read('make the spend counter white')).toBe('The spend counter is already white.')
+  })
+  it('two changes in one request, the second by “it”', () => {
+    expect(read('move the inbox to the left and make it green')).toEqual([
+      { kind: 'uiMove', el: 'inbox', to: 'left' },
+      { kind: 'uiColor', el: 'inbox', color: 'leaf' },
+    ])
+    expect(read('rename pull request to Review, then make it gold')).toEqual([
+      { kind: 'uiLabel', el: 'pr', label: 'Review' },
+      { kind: 'uiColor', el: 'pr', color: 'gold' },
+    ])
+  })
+  it('puts a part back as it was', () => {
+    expect(read('put the inbox back', on({ kind: 'uiMove', el: 'inbox', to: 'left' }, { kind: 'uiColor', el: 'inbox', color: 'leaf' }))).toEqual([{ kind: 'uiReset', el: 'inbox' }])
+    expect(labels('reset the inbox', on({ kind: 'uiColor', el: 'inbox', color: 'leaf' }))).toEqual(['Put the inbox button back as it was'])
+    // Only hidden: bringing it back is the change.
+    expect(read('reset the inbox', on({ kind: 'ui', el: 'inbox', show: false }))).toEqual([{ kind: 'ui', el: 'inbox', show: true }])
+    expect(read('reset the inbox')).toBe('The inbox button is already as it was.')
+  })
+  it('keeps the old requests and the review apart', () => {
+    expect(read('remove the pull request button')).toEqual([{ kind: 'ui', el: 'pr', show: false }])
+    expect(has(kinds('skip the pull request review'), 'setAutonomy')).toBe(true)
+    expect(read('hide the settings button')).toBe('The settings button stays, so Your flow is always one click away.')
+    expect(read('hide the inbox, the spend counter and the chickens')).toEqual([
+      { kind: 'ui', el: 'inbox', show: false },
+      { kind: 'ui', el: 'spend', show: false },
+      { kind: 'ui', el: 'chickens', show: false },
+    ])
+    // A run change beside a screen change: both.
+    const both = kinds('hide the chickens, and skip the deployer')
+    expect(has(both, 'ui') && has(both, 'removeFarmer')).toBe(true)
+  })
+  it('the live Planner can move, resize, rename, recolour and reset, checked against what each part allows', () => {
+    const p = changesFromLive(
+      {
+        changes: [
+          { kind: 'uiMove', el: 'inbox', to: 'left', of: 'none' },
+          { kind: 'uiMove', el: 'spend', to: 'after', of: 'spend' },
+          { kind: 'uiMove', el: 'chickens', to: 'start', of: 'none' },
+          { kind: 'uiSize', el: 'plotLabels', size: 'bigger' },
+          { kind: 'uiSize', el: 'plotLabels', size: 'smaller' },
+          { kind: 'uiLabel', el: 'pr', label: '  Review everything the crew did today  ' },
+          { kind: 'uiLabel', el: 'play', label: 'Go' },
+          { kind: 'uiColor', el: 'spend', color: 'green' },
+          { kind: 'uiColor', el: 'spend', color: 'purple' },
+          { kind: 'uiReset', el: 'home' },
+          { kind: 'ui', el: 'settings', show: false },
+        ],
+      },
+      ctx,
+    )
+    expect(p?.rows.map((r) => r.change)).toEqual([
+      { kind: 'uiMove', el: 'inbox', to: 'left' },
+      { kind: 'uiSize', el: 'plotLabels', size: 1 },
+      { kind: 'uiLabel', el: 'pr', label: 'Review everything th' },
+      { kind: 'uiColor', el: 'spend', color: 'leaf' },
+    ])
+    expect(p?.rows.every((r) => r.scope === 'every')).toBe(true)
+  })
+  it('the schema names every kind', () => {
+    const s = reshapeSchema(ctx) as { properties: { changes: { items: { anyOf: { properties: { kind: { enum: string[] } } }[] } } } }
+    const k = s.properties.changes.items.anyOf.map((x) => x.properties.kind.enum[0])
+    expect(k).toEqual(expect.arrayContaining(['ui', 'uiMove', 'uiSize', 'uiLabel', 'uiColor', 'uiReset']))
+  })
+})
+
+describe('the screen as it looks', () => {
+  it('latest wins per part and property, this farm before Your flow, and a reset takes a part back', () => {
+    const flow: Change[] = [{ kind: 'uiColor', el: 'inbox', color: 'sky' }, { kind: 'uiMove', el: 'spend', to: 'start' }]
+    const farm: Change[] = [{ kind: 'uiColor', el: 'inbox', color: 'leaf' }, { kind: 'uiLabel', el: 'pr', label: 'Review' }, { kind: 'uiColor', el: 'inbox', color: 'gold' }]
+    let l = uiLookOf(farm, flow)
+    expect(l.color).toEqual({ inbox: 'gold' })
+    expect(l.label).toEqual({ pr: 'Review' })
+    expect(l.order).toEqual(['home', 'title', 'spend', 'pr', 'inbox', 'play', 'skip', 'settings'])
+    const reset: Change[] = [...farm, { kind: 'uiReset', el: 'inbox' }, { kind: 'uiReset', el: 'spend' }]
+    l = uiLookOf(reset, flow)
+    expect(l.color).toEqual({})
+    expect(l.order).toEqual(['home', 'title', 'pr', 'inbox', 'spend', 'play', 'skip', 'settings'])
+    const next: Change[] = [{ kind: 'uiMove', el: 'settings', to: 'after', of: 'home' }]
+    expect(uiLookOf(next).order).toEqual(['home', 'settings', 'title', 'pr', 'inbox', 'spend', 'play', 'skip'])
+  })
+})
+
+describe('applying screen changes in the store', () => {
+  const mem = new Map<string, string>()
+  beforeAll(() => {
+    ;(globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => void mem.set(k, v),
+      removeItem: (k: string) => void mem.delete(k),
+    }
+  })
+  const farm = () => {
+    const p = store.newProject(goal)
+    store.setPlan(p.id, plan.name, plan.farmers, plan.tasks, plan.estimate, plan.singleAgentEstimate)
+    store.approve(p.id)
+    store.open(p.id)
+    store.pause()
+    p.clock = 60_000
+    return p
+  }
+  const ask = async (p: Project, text: string, scope?: 'farm' | 'every') => {
+    expect(await store.proposeChanges(p.id, text)).toBe('card')
+    const rows = store.pending!.proposal.rows
+    await store.applyChanges(rows.map((r) => r.id), scope ? Object.fromEntries(rows.map((r) => [r.id, scope])) : {})
+  }
+
+  it('applies, the latest change wins, and a reset puts it back, without touching the run', async () => {
+    store.flow = []
+    const p = farm()
+    const before = structuredClone(p.events)
+    await ask(p, 'move the inbox to the left and make it green', 'farm')
+    expect(p.events).toEqual(before)
+    let l = store.uiLook(p)
+    expect(l.order.slice(0, 3)).toEqual(['home', 'inbox', 'title'])
+    expect(l.color.inbox).toBe('leaf')
+    await ask(p, 'make the inbox gold', 'farm')
+    expect(store.uiLook(p).color.inbox).toBe('gold')
+    await ask(p, 'put the inbox back', 'farm')
+    l = store.uiLook(p)
+    expect(l.color.inbox).toBeUndefined()
+    expect(l.order).toEqual(['home', 'title', 'pr', 'inbox', 'spend', 'play', 'skip', 'settings'])
+    expect(store.flow).toEqual([])
+  })
+
+  it('every farm: it joins Your flow, reaches farms made before, and a farm’s own change wins there', async () => {
+    store.flow = []
+    const p = farm()
+    const older = farm()
+    store.open(p.id)
+    await ask(p, 'rename Pull request to Review')
+    expect(store.flow.map((f) => f.short)).toEqual(['pull request button called “Review”'])
+    expect(store.uiLook(older).label.pr).toBe('Review')
+    // A new label replaces the old one in Your flow.
+    await ask(p, 'rename the pull request button to Ship')
+    expect(store.flow.map((f) => f.short)).toEqual(['pull request button called “Ship”'])
+    expect(store.uiLook(older).label.pr).toBe('Ship')
+    store.open(older.id)
+    await ask(older, 'rename the pull request button to Mine', 'farm')
+    expect(store.uiLook(older).label.pr).toBe('Mine')
+    expect(store.uiLook(p).label.pr).toBe('Ship')
+    // Reset for every farm takes it out of Your flow.
+    store.open(p.id)
+    await ask(p, 'reset the pull request button')
+    expect(store.flow).toEqual([])
+    expect(store.uiLook(p).label.pr).toBeUndefined()
   })
 })

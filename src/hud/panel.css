@@ -366,3 +366,11 @@ button.crew-x:hover { opacity: 1; }
 .ask-menu li span { font-size: var(--t-meta); color: var(--bark-3); white-space: normal; }
 .ask-menu li.at { background: rgba(74, 52, 38, .1); }
 .ask-menu li.on b::after { content: ' ✓'; color: var(--leaf); }
+
+/* Map parts you asked the Planner to make bigger: the reading sizes, a step at a time. */
+.plot-label.s1 { min-height: 34px; }
+.plot-label.s2 { min-height: 38px; }
+.proof-pop.s1 { width: 280px; font-size: var(--t-body); }
+.proof-pop.s2 { width: 320px; font-size: var(--t-lead); }
+.proof-pop.s1 .pp-head b, .proof-pop.s1 .pp-by, .proof-pop.s1 .pp-line .mono { font-size: var(--t-body); }
+.proof-pop.s2 .pp-head b, .proof-pop.s2 .pp-by, .proof-pop.s2 .pp-line .mono { font-size: var(--t-lead); }

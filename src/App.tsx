@@ -15,6 +15,7 @@ import { planInto } from './run/planning'
 import { scenario } from './run/simPlan'
 import { pendingAsk } from './run/reduce'
 import { clip, store, useStore, type Project } from './run/store'
+import { isUi, type UiId } from './run/ui'
 import { SEND_BACK } from './run/simulate'
 import { BY_YOU } from './run/rollback'
 import type { Ask, FarmerId, RunState } from './run/types'
@@ -100,6 +101,7 @@ function Farm() {
         onCoins={() => store.setDrawer({ kind: 'usage' })}
         onChest={() => store.setDrawer({ kind: 'summary' })}
         hide={{ proofPops: st.uiHidden('proofPops'), bubbles: st.uiHidden('bubbles'), plotLabels: st.uiHidden('plotLabels'), chickens: st.uiHidden('chickens') }}
+        size={{ proofPops: st.uiLook(p).size.proofPops, bubbles: st.uiLook(p).size.bubbles, plotLabels: st.uiLook(p).size.plotLabels }}
       />
       <Top p={p} s={s} />
       <InboxYields win={st.settingsOpen ? 'settings' : st.pending?.pid === p.id ? 'change' : ask ? `ask:${ask.id}` : rolled ? `rollback:${rolled.t}` : trust ? 'trust' : null} />
@@ -145,20 +147,90 @@ function Top({ p, s }: { p: Project; s: RunState }) {
   const left = work.filter((t) => t.status !== 'accepted').length
   const where = ({ '100%': 'Live', '10%': 'Live for 10%', rollback: 'Rolled back' } as Record<string, string>)[s.deploy[s.deploy.length - 1]?.stage ?? ''] ?? 'Not shipped'
   const sub = !p.approved ? (p.planning ? 'Planning' : 'Plan, not started') : s.done ? (left ? `${where}, ${work.length - left} of ${work.length} tasks` : `Done, ${where.toLowerCase()}`) : `${workDone} of ${work.length} tasks done`
+  const look = st.uiLook(p)
+  // A button you asked the Planner to change: its colour from the HUD's own buttons, its size in whole steps,
+  // and its name, which the aria-label follows.
+  const cls = (id: UiId, extra = '') => `btn ${look.color[id] ?? 'white'} top-ico${look.size[id] ? ` s${look.size[id]}` : ''}${look.label[id] ? ' named' : ''}${extra ? ` ${extra}` : ''}`
+  const ico = (id: UiId) => ICO_SIZE[(look.size[id] ?? 0) + 2]
+  const named = (id: UiId) => look.label[id] && <span className="top-name">{look.label[id]}</span>
+  const runAgain = p.approved && s.done && (
+    <button key="again" className="btn white top-ico top-pr" onClick={() => store.runAgain()}>
+      Run again
+    </button>
+  )
+  const parts: Partial<Record<UiId, React.ReactNode>> = {
+    home: (
+      <button key="home" className={cls('home')} onClick={() => store.home()} aria-label={look.label.home ?? 'Your farms'}>
+        <Ico name="home" size={ico('home')} />
+        {named('home')}
+      </button>
+    ),
+    settings: (
+      <button
+        key="settings"
+        className={cls('settings')}
+        aria-label={look.label.settings ?? 'Settings'}
+        onClick={() => {
+          store.settingsOpen = !store.settingsOpen
+          store.notify()
+        }}
+      >
+        <Ico name="gear" size={ico('settings')} />
+        {named('settings')}
+      </button>
+    ),
+  }
+  if (p.approved) {
+    parts.pr = (
+      <button key="pr" className={cls('pr', 'top-pr')} onClick={() => store.setDrawer({ kind: 'summary' })}>
+        {look.label.pr ?? 'Pull request'}
+      </button>
+    )
+    parts.inbox = (
+      <button key="inbox" className={cls('inbox', 'inbox-btn')} onClick={() => store.setDrawer({ kind: 'inbox' })} aria-label={`${look.label.inbox ?? 'Inbox'}${open ? `, ${open} need you` : ''}`}>
+        <i className="mail-ico" />
+        {named('inbox')}
+        {open > 0 && <span className="badge">{open}</span>}
+      </button>
+    )
+    parts.spend = (
+      <button key="spend" className={cls('spend', 'top-coin')} onClick={() => store.setDrawer({ kind: 'usage' })} aria-label={`${look.label.spend ?? 'Spend so far'}, ${usd(s.usage.usd)}`}>
+        <i className="coin" />
+        {named('spend')}
+        <b>{usd(s.usage.usd)}</b>
+      </button>
+    )
+    parts.play = (
+      <button key="play" className={cls('play')} disabled={!!s.done} onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
+        <Ico name={st.playing ? 'pause' : 'play'} size={ico('play')} />
+      </button>
+    )
+    // Always in the same place, so Play/Pause never moves under the cursor.
+    parts.skip = (
+      <button key="skip" className={cls('skip')} disabled={!st.canSkip(p)} onClick={() => store.skipToNext()} aria-label={look.label.skip ?? 'Skip to the next thing that needs you'} title={look.label.skip ?? 'Skip to the next thing that needs you'}>
+        <Ico name="skip" size={ico('skip')} />
+        {named('skip')}
+      </button>
+    )
+  }
+  const shown = (id: UiId) => (look.hidden.includes(id) ? null : parts[id] ?? null)
+  const at = look.order.indexOf('title')
+  const leftSide = look.order.slice(0, at) as UiId[]
+  const rightSide = look.order.slice(at + 1) as UiId[]
+  // Run again has its own place, never the one Play or skip was in, so a fast click can't restart the run:
+  // just left of Pull request, or first on the right when that isn't there.
+  const prRight = rightSide.includes('pr') && !!shown('pr')
   return (
     <header className="top">
-      {!st.uiHidden('home') && (
-        <button className="btn white top-ico" onClick={() => store.home()} aria-label="Your farms">
-          <Ico name="home" size={32} />
-        </button>
-      )}
+      {leftSide.map(shown)}
       <div className="title paper">
         <b>{p.name}</b>
-        {!st.uiHidden('progress') && <span>{sub}</span>}
+        {!look.hidden.includes('progress') && <span>{sub}</span>}
         {p.approved && !s.done && !st.playing && !pendingAsk(p.events, st.clock, st.viewerAnswers) && !st.openRollback(p) && <span className="tag grey">Paused</span>}
-        {p.approved && !!p.reshapes?.length && !st.uiHidden('chips') && (
+        {p.approved && !!p.reshapes?.length && !look.hidden.includes('chips') && (
           <div className="reshapes">
-            {p.reshapes.map((r) => (
+            {/* A screen-only change shows its chip only while it carries Undo: the screen itself shows it. */}
+            {p.reshapes.filter((r) => !r.changes.every(isUi) || (st.fresh?.id === r.id && Date.now() < st.fresh.until)).map((r) => (
               <span key={r.id} className={`tag gold reshape-chip${st.fresh?.id === r.id && Date.now() < st.fresh.until ? ' fresh' : ''}`} title={r.changes.length + ' changes you asked for: ' + r.request}>
                 {r.title}
                 {st.fresh?.id === r.id && Date.now() < st.fresh.until ? (
@@ -174,7 +246,7 @@ function Top({ p, s }: { p: Project; s: RunState }) {
             ))}
           </div>
         )}
-        {st.uiHidden('sampleTag') ? null : p.kind === 'sample' ? (
+        {look.hidden.includes('sampleTag') ? null : p.kind === 'sample' ? (
           <span className="tag gold" title="Simulated: every run plays out the same way">
             Simulated sample
           </span>
@@ -183,49 +255,14 @@ function Top({ p, s }: { p: Project; s: RunState }) {
         )}
       </div>
       <div className="spacer" />
-      {p.approved && (
-        <>
-          {/* Run again has its own place, never the one Play or skip was in, so a fast click can't restart the run. */}
-          {s.done && (
-            <button className="btn white top-ico top-pr" onClick={() => store.runAgain()}>
-              Run again
-            </button>
-          )}
-          {!st.uiHidden('pr') && (
-            <button className="btn white top-ico top-pr" onClick={() => store.setDrawer({ kind: 'summary' })}>
-              Pull request
-            </button>
-          )}
-          {!st.uiHidden('inbox') && <button className="btn white top-ico inbox-btn" onClick={() => store.setDrawer({ kind: 'inbox' })} aria-label={open ? `Inbox, ${open} need you` : 'Inbox'}>
-            <i className="mail-ico" />
-            {open > 0 && <span className="badge">{open}</span>}
-          </button>}
-          {!st.uiHidden('spend') && <button className="btn white top-ico top-coin" onClick={() => store.setDrawer({ kind: 'usage' })} aria-label={`Spend so far, ${usd(s.usage.usd)}`}>
-            <i className="coin" />
-            <b>{usd(s.usage.usd)}</b>
-          </button>}
-          <button className="btn white top-ico" disabled={!!s.done} onClick={() => store.togglePlay()} aria-label={st.playing ? 'Pause' : 'Play'}>
-            <Ico name={st.playing ? 'pause' : 'play'} size={32} />
-          </button>
-          {/* Always in the same place, so Play/Pause never moves under the cursor. */}
-          {!st.uiHidden('skip') && <button className="btn white top-ico" disabled={!st.canSkip(p)} onClick={() => store.skipToNext()} aria-label="Skip to the next thing that needs you" title="Skip to the next thing that needs you">
-            <Ico name="skip" size={32} />
-          </button>}
-        </>
-      )}
-      <button
-        className="btn white top-ico"
-        aria-label="Settings"
-        onClick={() => {
-          store.settingsOpen = !store.settingsOpen
-          store.notify()
-        }}
-      >
-        <Ico name="gear" size={32} />
-      </button>
+      {!prRight && runAgain}
+      {rightSide.flatMap((id) => (id === 'pr' && prRight ? [runAgain, shown(id)] : [shown(id)]))}
     </header>
   )
 }
+
+// The top bar's icons by size step, -2 to 2: whole pixel scales of the 16px icons.
+const ICO_SIZE = [16, 16, 32, 32, 48]
 
 // The pixel font is for labels of three words or fewer; a longer answer reads better in the text face.
 const long = (label: string) => (label.trim().split(/\s+/).length > 3 ? ' long' : '')
