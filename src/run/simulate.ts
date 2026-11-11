@@ -190,9 +190,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
   let lastBuilt = 0
   let askN = 0
   const queue = [...build]
-  // A split keeps its promise: the first part ends on its budget and the hard cases on their own share.
-  type Split = { task: string; after: number; budget: number; rest: string; rest$: number }
-  let split = null as Split | null
+  // A split keeps its promise in the run itself: the steps left on the first part, and the hard cases' steps,
+  // are sized so each ends on its own share, counting the check still to come on it.
+  const sized: Record<string, number> = {}
+  const checkRead = (t: PlanTask) => usdPer(checkerOf(t.farmer)) * (t.farmer === 'designer' ? 0.12 : 0.07)
   // A task limit you raised raises its farmer's limit by as much, so the same money is never asked about twice.
   const bumps: { f: FarmerId; t: number; by: number }[] = []
 
@@ -244,7 +245,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       at(tt, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: line })
       // The pricey task burns through its share more than twice as fast as planned; how much faster varies by task.
       const burn = i === 0 ? 2.4 : 2.4 * (0.8 + ((hash(goal + task.id + 'burn') % 1000) / 1000) * 0.5)
-      const cost = (usdPer(f) / lines.length) * (task === pricey && i < 2 ? burn : 1)
+      const cost = sized[task.id] !== undefined && (task !== pricey || i > 1) ? sized[task.id] : (usdPer(f) / lines.length) * (task === pricey && i < 2 ? burn : 1)
       stepCosts.push(cost)
       spent += cost
       usage(tt + 0.01, f, task.id, cost, i === 0 ? 'read' : 'write')
@@ -338,7 +339,10 @@ export function simulateRun(input: SimInput): RunEvent[] {
           const e2e = queue.findIndex((t) => t.id === 'e2e-check')
           queue.splice(e2e < 0 ? queue.length : e2e, 0, rest)
           extra += 1.3
-          split = { task: task.id, after: at$ * MIN, budget, rest: rest.id, rest$ }
+          const asked = asks('cost') ? usdPer(lead) * 0.03 : 0
+          const left = lines.length - i - 1
+          if (left > 0) sized[task.id] = Math.max(0, budget - spent - asked - checkRead(task)) / left
+          sized[rest.id] = Math.max(0, rest$ - checkRead(rest)) / steps(rest, rest.farmer).length
         } else if (c === raise) {
           // Kept whole: it finishes, at the price it was heading for.
           at(at$ + 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `Kept going under a ${money(projected)} limit` })
@@ -642,30 +646,14 @@ export function simulateRun(input: SimInput): RunEvent[] {
   usage(0.04, lead, plan[0]?.id ?? '', usdPer(lead) * 0.15, 'read')
   for (const e of [...ev]) {
     if (e.type === 'check') usage(e.t / MIN - 0.02, e.by, e.task, usdPer(e.by) * (e.proof?.kind === 'screens' ? 0.12 : 0.07), 'read')
-    if (e.type === 'replan') usage(e.t / MIN - 0.02, lead, plan[0]?.id ?? '', usdPer(lead) * 0.1, 'read')
+    // Re-planning is the lead's own work, not any one task's.
+    if (e.type === 'replan') usage(e.t / MIN - 0.02, lead, '', usdPer(lead) * 0.1, 'read')
     if (e.type === 'ask') usage(e.t / MIN - 0.02, e.farmer, e.task ?? '', usdPer(e.farmer) * 0.03, 'read')
   }
   // When the changes you asked for took effect: what they took out and changed, for the farm to show.
   if (rs) {
     const nameOf = (id: string) => input.tasks.find((k) => k.id === id)?.name ?? (/-rest$/.test(id) ? 'Hard cases' : id)
     ev.push({ t: Math.max(rs.at, Math.round(0.06 * MIN)), type: 'reshape', titles: rs.titles, removed: [...rs.skip], skipped: rs.skip.map(nameOf), off: rs.noDeployer ? ['deployer'] : [], owner, doneWhen, renamed, synthetics: rs.synthetics, everyone: rs.everyone, noReview: rs.noReview })
-  }
-  const sp = split as Split | null
-  if (sp) {
-    const scaleTo = (pick: (e: Extract<RunEvent, { type: 'usage' }>) => boolean, fixed: number, to: number) => {
-      const them = ev.filter((e): e is Extract<RunEvent, { type: 'usage' }> => e.type === 'usage' && pick(e))
-      const sum = them.reduce((n, e) => n + e.usd, 0)
-      const k = sum > 0 ? Math.max(0, to - fixed) / sum : 1
-      for (const e of them) {
-        e.usd = +(e.usd * k).toFixed(3)
-        e.tokensIn = Math.round(e.tokensIn * k)
-        e.tokensOut = Math.round(e.tokensOut * k)
-      }
-    }
-    // What the task had spent before the split (the plan's own reading comes before its tasks exist).
-    const before = ev.reduce((n, e) => n + (e.type === 'usage' && e.task === sp.task && e.t > 0.05 * MIN && e.t <= sp.after ? e.usd : 0), 0)
-    scaleTo((e) => e.task === sp.task && e.t > sp.after, before, sp.budget)
-    scaleTo((e) => e.task === sp.rest, 0, sp.rest$)
   }
   ev.sort((a, b) => a.t - b.t)
   // Spend limits, the same rule for every farmer at every level: the Planner pauses a farmer before the step that

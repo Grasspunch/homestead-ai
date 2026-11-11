@@ -42,6 +42,23 @@ describe('money is asked about once', () => {
   })
 })
 
+describe('the split’s numbers come from the run', () => {
+  for (const goal of GOALS) {
+    it(`${goal.slice(0, 32)}: the first part ends on its budget and the hard cases on their share, as the run plays`, () => {
+      const plan = planned(goal)
+      const ev = simulateRun({ goal, ...plan })
+      const a = moneyAsks(ev)[0]
+      if (!a || a.type !== 'ask') return
+      const m = /caps this part at \$(\d+\.\d+) and gives the hard cases \$(\d+\.\d+)/.exec(a.impact ?? '')!
+      const of = (task: string) => ev.reduce((n, e) => n + (e.type === 'usage' && e.task === task && e.t > 0.05 * 60_000 ? e.usd : 0), 0)
+      expect(Math.abs(of(a.task!) - Number(m[1]))).toBeLessThan(0.02)
+      expect(Math.abs(of(`${a.task}-rest`) - Number(m[2]))).toBeLessThan(0.02)
+      // Every step of the split is a step the run took at that price: none at zero, none rewritten.
+      for (const e of ev) if (e.type === 'usage' && (e.task === a.task || e.task === `${a.task}-rest`)) expect(e.usd).toBeGreaterThan(0)
+    })
+  }
+})
+
 describe('no stop for small change', () => {
   it('a farmer that would pass its limit by under a dollar is raised by the lead and told, not asked', () => {
     for (const goal of GOALS) {
