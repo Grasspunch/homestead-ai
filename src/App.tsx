@@ -1199,8 +1199,12 @@ function Center({
             <span className="portrait">
               <Portrait farmer={farmer} />
             </span>
-            <span className={`thought${alert ? ' alert' : ''}`}>
-              {alert && <Ico name="alert" tone="light" />}
+            <span className="puffs" aria-hidden>
+              <i />
+              <i />
+            </span>
+            <span className="thought paper">
+              {alert && <Ico name="alert" />}
               <span className="words">{thought}</span>
             </span>
           </button>

@@ -408,32 +408,36 @@ h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacin
 .dlg.done .done-text p.scale-line { margin-top: 2px; }
 .dlg.done .row { flex-wrap: nowrap; }
 
-/* Windows in the middle sit in the bottom-left corner, so hiding one leaves its speaker where they were. */
+/* Windows in the middle sit in the bottom-left corner, with the speaker's portrait at the bottom, so hiding one
+   leaves the portrait exactly where it was. The bubble's tail points at the portrait's middle. */
 .dlg:not(.dock):not(.home) { left: 16px; transform: none; }
+.dlg:not(.dock):not(.home) > .portrait { align-self: flex-end; }
+.dlg:not(.dock):not(.home) > .bubble[data-tail='left']::before { top: auto; bottom: 30px; }
 .dlg.gone { display: none; }
 .dlg .body > .tuck-btn { position: absolute; top: -32px; right: 14px; display: inline-flex; align-items: center; gap: 6px; z-index: 1; }
-/* Hidden: the portrait in its frame, and what they're thinking in a cloud beside it. */
+/* Hidden: the portrait in its frame, and what they're thinking in the game's own text box, joined to the
+   portrait by the pack's dots, the ones the Planner thinks with. */
 .dlg.tucked { width: auto; max-width: calc(100% - 32px); }
-.tuck-frame { all: unset; cursor: pointer; display: flex; align-items: flex-start; gap: 6px; }
+.tuck-frame { all: unset; cursor: pointer; display: flex; align-items: flex-end; }
 .tuck-frame:focus-visible { outline: 3px solid var(--leaf); outline-offset: 4px; border-radius: 6px; }
-.tuck-frame .portrait { transition: transform .12s; }
-.tuck-frame:hover .portrait { transform: translateY(-3px); }
-.tuck-frame .thought { position: relative; align-self: flex-start; margin: 4px 0 0 14px; max-width: 300px; padding: 10px 14px; border-radius: 22px; background: var(--cream); border: 3px solid var(--bark-3);
-  box-shadow: 0 3px 0 rgba(60, 40, 25, .25); display: flex; gap: 8px; align-items: flex-start; font: 600 var(--t-body)/1.35 var(--ui); color: var(--bark); }
+.tuck-frame .puffs { align-self: flex-end; display: flex; align-items: flex-end; gap: 3px; margin: 0 4px 0 6px; height: 132px; }
+.tuck-frame .puffs i { display: block; image-rendering: pixelated; background: url(/ui/dot_1.png) no-repeat; }
+.tuck-frame .puffs i:first-child { width: 12px; height: 14px; background-size: 32px 32px; background-position: -10px -8px; margin-bottom: 52px; }
+.tuck-frame .puffs i:last-child { width: 18px; height: 21px; background-size: 48px 48px; background-position: -15px -12px; margin-bottom: 66px; }
+.tuck-frame .thought { align-self: flex-end; margin-bottom: 60px; max-width: 320px; padding: 2px 6px; display: flex; gap: 8px; align-items: flex-start; font: 600 var(--t-body)/1.35 var(--ui); color: var(--bark); }
 .tuck-frame .thought .words { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-/* The two small puffs that make it a thought, not speech, trailing back to the portrait. */
-.tuck-frame .thought::before, .tuck-frame .thought::after { content: ""; position: absolute; background: var(--cream); border: 3px solid var(--bark-3); border-radius: 50%; }
-.tuck-frame .thought::before { width: 16px; height: 16px; left: -16px; bottom: 2px; }
-.tuck-frame .thought::after { width: 9px; height: 9px; left: -27px; bottom: -8px; }
-.tuck-frame .thought.alert { border-color: var(--berry); }
-.tuck-frame .thought.alert::before, .tuck-frame .thought.alert::after { border-color: var(--berry); }
-.tuck-frame .thought.alert .ico { flex: none; background-color: var(--berry); border-radius: 4px; margin-top: 1px; }
-.tuck-frame:hover .thought { border-color: var(--leaf); }
+.tuck-frame .thought .ico { flex: none; margin-top: 2px; }
+.tuck-frame .portrait { transition: transform .12s; }
+.tuck-frame:hover .portrait, .tuck-frame:hover .thought { transform: translateY(-3px); }
+.tuck-frame .thought { transition: transform .12s; }
 @media (max-width: 900px) {
   .dlg.tucked { left: 10px; right: auto; }
   .dlg.tucked .portrait { display: block; width: 72px; height: 72px; border-width: 10px; border-image-width: 12px; }
   .dlg.tucked .portrait canvas { inset: 2px; width: 48px !important; height: 48px !important; }
-  .tuck-frame .thought { max-width: calc(100vw - 140px); }
+  .tuck-frame .puffs { height: 72px; }
+  .tuck-frame .puffs i:first-child { margin-bottom: 22px; }
+  .tuck-frame .puffs i:last-child { margin-bottom: 32px; }
+  .tuck-frame .thought { margin-bottom: 30px; max-width: calc(100vw - 130px); }
 }
 .export-group { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
 .export-label { font-size: var(--t-meta); color: var(--bark-3); margin-right: 2px; }
