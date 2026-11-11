@@ -234,6 +234,8 @@ button.chip:hover { color: var(--bark); text-decoration: underline; }
 .row:has(> .btn.long) > .btn, .row:has(> .btn.long) > form > .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
 .vs .vs-out { margin: 4px 0 8px; font-size: var(--t-body); color: var(--bark); font-weight: 700; }
 .dlg p.gain-line { color: var(--leaf); font-weight: 700; }
+.dlg p.scale-line { font-size: var(--t-meta); color: var(--bark-3); }
+.dlg p.scale-line .tag { margin-right: 4px; vertical-align: 1px; }
 
 /* The plan, docked: full height on the left, so every plot shows beside it. The Planner sits above, the tail points up at it. */
 .dlg.dock { left: 16px; right: auto; transform: none; top: 80px; bottom: 16px; width: 560px; flex-direction: column; align-items: flex-start; gap: 30px; }

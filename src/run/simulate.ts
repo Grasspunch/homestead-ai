@@ -117,6 +117,8 @@ export interface SimInput {
   // Changes you asked the Planner for (reshape.ts): skipped tasks, no review, no Deployer, straight to everyone,
   // synthetic tests as the rollout's measure. They change what the crew does, not just its labels.
   reshape?: Reshaped
+  // Tasks an earlier run of this farm split mid-run, which this run plans in two from the start.
+  presplit?: string[]
 }
 
 export const SEND_BACK = 'Send back'
@@ -196,6 +198,23 @@ export function simulateRun(input: SimInput): RunEvent[] {
   const checkRead = (t: PlanTask) => usdPer(checkerOf(t.farmer)) * (t.farmer === 'designer' ? 0.12 : 0.07)
   // A task limit you raised raises its farmer's limit by as much, so the same money is never asked about twice.
   const bumps: { f: FarmerId; t: number; by: number }[] = []
+  // The hard cases of a task, as their own task, before the end-to-end check and the release.
+  const restOf = (task: PlanTask): PlanTask => ({ id: `${task.id}-rest`, name: 'Hard cases', farmer: 'builder', doneWhen: `The cases left out of ${lower(task.name)} pass their own tests`, gate: false })
+  const addRest = (rest: PlanTask) => {
+    const gateAt = plan.findIndex((t) => t.gate || t.id === 'e2e-check')
+    plan = [...plan.slice(0, gateAt < 0 ? plan.length : gateAt), rest, ...plan.slice(gateAt < 0 ? plan.length : gateAt)]
+    const e2e = queue.findIndex((t) => t.id === 'e2e-check')
+    queue.splice(e2e < 0 ? queue.length : e2e, 0, rest)
+    sized[rest.id] = Math.max(0, usdPer(rest.farmer) * 0.9 - checkRead(rest)) / steps(rest, rest.farmer).length
+  }
+  // Learned from an earlier run of this farm: the task that ran over is planned in two from the start, so its
+  // first part runs at the plan's rate and nobody is asked about it.
+  const learned = !!pricey && !!input.presplit?.includes(pricey.id) && !rs?.skip.includes(`${pricey.id}-rest`)
+  if (learned) {
+    addRest(restOf(pricey!))
+    const pe = ev.find((e) => e.type === 'plan')
+    if (pe && pe.type === 'plan') pe.tasks = plan
+  }
 
   const usage = (min: number, f: FarmerId, task: string, usd0: number, kind: 'read' | 'write' | 'retry') => {
     const from = input.modelFrom?.[f]
@@ -245,7 +264,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
       at(tt, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: line })
       // The pricey task burns through its share more than twice as fast as planned; how much faster varies by task.
       const burn = i === 0 ? 2.4 : 2.4 * (0.8 + ((hash(goal + task.id + 'burn') % 1000) / 1000) * 0.5)
-      const cost = sized[task.id] !== undefined && (task !== pricey || i > 1) ? sized[task.id] : (usdPer(f) / lines.length) * (task === pricey && i < 2 ? burn : 1)
+      const cost = sized[task.id] !== undefined && (task !== pricey || learned || i > 1) ? sized[task.id] : (usdPer(f) / lines.length) * (task === pricey && !learned && i < 2 ? burn : 1)
       stepCosts.push(cost)
       spent += cost
       usage(tt + 0.01, f, task.id, cost, i === 0 ? 'read' : 'write')
@@ -296,7 +315,7 @@ export function simulateRun(input: SimInput): RunEvent[] {
         }
       }
 
-      if (task === pricey && i === 1) {
+      if (task === pricey && !learned && i === 1) {
         // Too expensive: about half done, most of its money gone. The Planner asks what to do.
         const budget = Math.ceil(spent * 1.15 * 20) / 20
         // The steps left cost what the last one did, twice over: the hard cases are in them.
@@ -332,17 +351,13 @@ export function simulateRun(input: SimInput): RunEvent[] {
           note = 'Split in two; the hard cases were skipped when you changed the plan'
           extra += 0.4
         } else if (c === suggested) {
-          const rest: PlanTask = { id: `${task.id}-rest`, name: 'Hard cases', farmer: 'builder', doneWhen: `The cases left out of ${lower(task.name)} pass their own tests`, gate: false }
-          const gateAt = plan.findIndex((t) => t.gate || t.id === 'e2e-check')
-          plan = [...plan.slice(0, gateAt < 0 ? plan.length : gateAt), rest, ...plan.slice(gateAt < 0 ? plan.length : gateAt)]
+          const rest = restOf(task)
+          addRest(rest)
           at(at$ + 0.05, { type: 'replan', reason: `Split ${lower(task.name)} in two, so the first part stays on budget`, tasks: plan })
-          const e2e = queue.findIndex((t) => t.id === 'e2e-check')
-          queue.splice(e2e < 0 ? queue.length : e2e, 0, rest)
           extra += 1.3
           const asked = asks('cost') ? usdPer(lead) * 0.03 : 0
           const left = lines.length - i - 1
           if (left > 0) sized[task.id] = Math.max(0, budget - spent - asked - checkRead(task)) / left
-          sized[rest.id] = Math.max(0, rest$ - checkRead(rest)) / steps(rest, rest.farmer).length
         } else if (c === raise) {
           // Kept whole: it finishes, at the price it was heading for.
           at(at$ + 0.1, { type: 'tool', farmer: f, task: task.id, tool: 'edit', summary: `Kept going under a ${money(projected)} limit` })

@@ -5,6 +5,7 @@ import { LIMIT_RAISED, SEND_BACK, fitLimits, simulateRun } from './simulate'
 import { liveStage, rollBack } from './rollback'
 import { simulatePlan } from './simPlan'
 import { soloFromRun } from './compare'
+import { lessonFrom, lessonLine, type Lesson } from './learn'
 import type { Autonomy, AutonomyLevel, FarmerId, FarmerSetup, PlanTask, RunEvent, RunState, Estimate } from './types'
 import { AUTONOMY_PRESETS } from './types'
 import { OWN, confirmOwn, isOwnWay, ownText, ownWayOf, type TalkLine } from './discuss'
@@ -52,10 +53,11 @@ export interface Project {
   // Fixed when the run starts, so a finished run never changes: what it meets, your farmers and rules, and its forecast.
   notes?: Record<string, string> // answers you gave in your own words, by ask id
   talks?: Record<string, (TalkLine | { from: 'you'; text: string })[]> // talking a disagreement through, by ask id
-  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean }
+  run?: { bugFixed: boolean; kit: Partial<Record<FarmerId, KitEdit>>; autonomy: Autonomy; forecast?: Forecast; counted?: boolean; seq?: number; lesson?: Lesson } // seq: which run of this farm, from 1
   // Changes you asked the Planner for. Each lasts for the farm until you turn it off; Undo restores the run
   // exactly as it was before it. A change for every farm also goes to Your flow, and new farms start with it.
   reshapes?: ReshapeOn[]
+  lesson?: Lesson // what the last run that ran over taught the Planner: the next run plans that task in two
 }
 
 export interface ReshapeOn {
@@ -517,8 +519,10 @@ class Store {
     for (const k of [...this.seen]) if (k.startsWith(`${p.id}:`)) this.seen.delete(k)
     // Changes you asked for last for the farm: from the start of this run, with nothing earlier to undo to.
     p.reshapes = (p.reshapes ?? []).map((r) => ({ ...r, at: 0, before: undefined }))
-    p.run = { bugFixed: this.nextBugFixed(p), kit: structuredClone(this.kit[p.id] ?? {}), autonomy: { ...p.autonomy }, forecast: this.forecast(p) ?? undefined }
+    p.run = { bugFixed: this.nextBugFixed(p), kit: structuredClone(this.kit[p.id] ?? {}), autonomy: { ...p.autonomy }, forecast: this.forecast(p) ?? undefined, seq: (p.run?.seq ?? 0) + 1, lesson: p.lesson }
     this.rebuild(p)
+    // What it learned from the last run, said as the run starts, with this run's forecast against that run.
+    if (p.lesson) this.chatTo(p.id, { from: 'planner', text: lessonLine(p.lesson, p.events) })
     if (this.project()?.id === p.id) this.play()
     this.notify()
   }
@@ -703,7 +707,7 @@ class Store {
   }
 
   // The simulation's input for this farm's plan, with the given farmers' changes, rules and answers.
-  private inputFor(p: Project, kit: Partial<Record<FarmerId, KitEdit>>, autonomy: Autonomy, answers: Record<string, string>, sendBacks: Project['sendBacks'], bugFixed: boolean, modelFrom: Partial<Record<FarmerId, number>> = {}) {
+  private inputFor(p: Project, kit: Partial<Record<FarmerId, KitEdit>>, autonomy: Autonomy, answers: Record<string, string>, sendBacks: Project['sendBacks'], bugFixed: boolean, modelFrom: Partial<Record<FarmerId, number>> = {}, lesson?: Lesson) {
     const plan = p.events.find((e) => e.type === 'plan')
     if (!plan || plan.type !== 'plan') return null
     const planned = p.events.filter((e): e is Extract<RunEvent, { type: 'farmer' }> => e.type === 'farmer').map(({ t: _t, type: _ty, ...f }) => f)
@@ -712,7 +716,7 @@ class Store {
     const plannedModels = Object.fromEntries(planned.map((f) => [f.id, f.plannedModel ?? f.model]))
     const deployAsks = kit.deployer?.rules.deploy === false
     const basis = plan.basis ?? plan.estimate
-    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []) } }
+    return { planned, farmers, input: { goal: p.goal, farmers, tasks: plan.tasks, estimate: basis, basis, singleAgentEstimate: plan.singleAgentEstimate, autonomy, choices: answers, deployAsks, plannedModels, sendBacks, bugFixed, modelFrom, reshape: reshapedOf(p.reshapes ?? []), presplit: lesson ? [lesson.task] : undefined } }
   }
 
   // What the plan will cost and take, by simulating it on its default path with your current farmers and rules,
@@ -721,9 +725,9 @@ class Store {
   forecast(p: Project): Forecast | null {
     const kit = this.kit[p.id] ?? {}
     const bugFixed = this.nextBugFixed(p)
-    const built = this.inputFor(p, kit, p.autonomy, {}, {}, bugFixed)
+    const built = this.inputFor(p, kit, p.autonomy, {}, {}, bugFixed, {}, p.lesson)
     if (!built) return null
-    const key = JSON.stringify([p.id, built.input.farmers, built.input.tasks, p.autonomy, bugFixed, built.input.basis, built.input.reshape])
+    const key = JSON.stringify([p.id, built.input.farmers, built.input.tasks, p.autonomy, bugFixed, built.input.basis, built.input.reshape, p.lesson])
     const hit = this.forecasts.get(key)
     if (hit) return hit
     const events = simulateRun(built.input)
@@ -740,7 +744,7 @@ class Store {
     const kit = run.kit
     const answers = p.answers ?? {}
     // Steps a farmer took before you changed its model were paid at the old rate.
-    const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed, this.kitAt[p.id] ?? {})
+    const built = this.inputFor(p, kit, run.autonomy, answers, p.sendBacks, run.bugFixed, this.kitAt[p.id] ?? {}, run.lesson)
     if (!built) return
     // What really happened so far: each farmer's spend, the raises you approved, and the limit asks it had.
     const t0 = p.clock ?? 0
@@ -878,6 +882,9 @@ class Store {
     if (!s?.done) return
     p.run.counted = true
     p.runs = (p.runs ?? 0) + 1
+    // A task that ran over is planned in two from the start next time.
+    const lesson = lessonFrom(p.events, p.runs)
+    if (lesson) p.lesson = lesson
     const rolled = s.deploy.some((d) => d.stage === 'rollback')
     const clean = !rolled && !s.asks.some((a) => a.answer?.choice === SEND_BACK) && !s.tasks.some((t) => t.stopped)
     p.cleanRuns = clean ? (p.cleanRuns ?? 0) + 1 : 0

@@ -18,6 +18,8 @@ import { clip, store, useStore, type Project } from './run/store'
 import { isUi, type UiId } from './run/ui'
 import { SEND_BACK } from './run/simulate'
 import { BY_YOU } from './run/rollback'
+import { lessonLine } from './run/learn'
+import { scaleLine } from './run/scale'
 import type { Ask, FarmerId, RunState } from './run/types'
 import { FARMER_ORDER } from './run/types'
 import { MODELS, MODEL_GROUPS, applyEdit } from './run/kit'
@@ -91,6 +93,7 @@ function Farm() {
     <>
       <FarmView
         state={s}
+        run={`${p.id}:${p.run?.seq ?? 0}`}
         planning={!p.approved}
         side={side}
         selected={sel}
@@ -983,6 +986,12 @@ function PlannerDialogue({ p, s, side }: { p: Project; s: RunState; side: boolea
       ) : null}
       {s.done && skippedLine(s) && <p className="impact">{skippedLine(s)}</p>}
       {s.done && outcome(s) && <p className="impact gain-line">{outcome(s)!.value}</p>}
+      {s.done && p.run?.lesson && <p className="impact learned-line">{lessonLine(p.run.lesson, p.events, true)}</p>}
+      {s.done && scaleLine(s) && (
+        <p className="impact scale-line">
+          <span className="tag grey">Projection</span> {scaleLine(s)}
+        </p>
+      )}
       {!s.done && (
         lines.length > 0 && (
           <div className="said talk">
