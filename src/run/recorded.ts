@@ -13,9 +13,10 @@ export interface Recorded {
   model?: string
 }
 
-// The goals worth keeping a live answer for: the sample's goal and the starters on Home.
+// The goals worth keeping a live answer for: the sample's goal, the agent dashboard run and the starters on Home.
 export const DEMO_GOALS: string[] = data.goals
-export const EXAMPLE_GOALS = DEMO_GOALS.slice(1)
+// The agent dashboard run isn't a starter: you type it.
+export const EXAMPLE_GOALS = DEMO_GOALS.slice(2)
 
 const KEY = 'homestead.recorded-plans'
 const norm = (g: string) => g.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[.!]+$/, '')

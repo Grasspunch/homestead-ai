@@ -81,7 +81,6 @@ export function Home() {
   const input = useRef<HTMLInputElement>(null)
   const [L, setL] = useState<Layout>({ s: 3, cols: 3, x: 0, y: 0 })
   const list = minis(st.projects, L.cols)
-  const needs = list.filter((m) => m.emote === 'alert').length
   // The one project worth a look for money: over its budget, or within a tenth of it.
   const tight = [...list].filter((m) => m.spent >= m.budget * 0.9).sort((a, b) => b.spent / b.budget - a.spent / a.budget)[0]
   const tightLine = tight
@@ -205,11 +204,7 @@ export function Home() {
           <div className="home-title">
             <h1 className="homehead">Your projects</h1>
           </div>
-          <p className="home-who">For an engineer handing a feature to a crew of AI agents: you stay in charge of cost and risk without watching every step.</p>
-          <p className="home-why">
-            <span>Agent spend goes unseen until the bill, and agent work is hard to undo.</span>
-            <span>A PR and Slack don’t budget each agent, flag outliers, or let trust grow with use.</span>
-          </p>
+          <p className="home-who">For builders: hand a product to AI agents and stay in charge of cost and risk.</p>
         </header>
         <section className="dlg home">
           <div className="portrait">
@@ -218,12 +213,6 @@ export function Home() {
           <div className="body paper bubble" data-tail="left">
             <div className="who">
               <b>Planner</b>
-              {needs > 0 && (
-                <span className="aside">
-                  <Ico name="alert" size={18} />
-                  {needs} project{needs > 1 ? 's' : ''} need{needs > 1 ? '' : 's'} you
-                </span>
-              )}
             </div>
             {tightLine && (
               <p className="impact budget-line">
@@ -232,8 +221,8 @@ export function Home() {
                 </button>
               </p>
             )}
-            <p>Tell me what to build. I’ll split it into tasks and pick a crew of AI agents to do them. They work on their own and come to you when a decision is yours.</p>
-            <p className="legend">On the map, each project is a farm, each task is a plot, and each agent is a farmer.</p>
+            <p>Tell me what to build. I’ll plan the tasks and pick the agents.</p>
+            <p className="legend">Each farm is a project, each plot a task, each farmer an agent.</p>
             <form
               className="row"
               onSubmit={(e) => {
@@ -242,7 +231,7 @@ export function Home() {
               }}
             >
               <span className="field">
-                <input ref={input} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Describe an app or feature, for example a chatbot for a shop’s help pages" aria-label="What should the agents build?" />
+                <input ref={input} value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Describe an app or feature" aria-label="What should the agents build?" />
               </span>
               <button className="btn" type="submit" disabled={!goal.trim()}>
                 <Ico name="sprout" />
