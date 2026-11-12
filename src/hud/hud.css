@@ -1,0 +1,414 @@
+/* Homestead HUD: the concept v3 look. Sprout Lands nine-slice wood and paper over the farm,
+   the pixel font for names and buttons, Atkinson Hyperlegible Next for anything you read. */
+/* The pixel fonts' metrics are rebalanced so their capitals sit in the middle of the line box,
+   like the reading font's do: anything centred in a flex row is then centred to the eye. */
+@font-face { font-family: px7; src: url(/ui/px7.ttf); font-display: block; ascent-override: 89%; descent-override: 11%; line-gap-override: 0%; }
+@font-face { font-family: px4; src: url(/ui/px4.ttf); font-display: block; ascent-override: 89%; descent-override: 11%; line-gap-override: 0%; }
+
+:root {
+  --bark: #4a3426;      /* ink */
+  --bark-2: #6a4a34;    /* secondary ink */
+  --bark-3: #8a6a50;    /* meta */
+  --bark-4: #a08a78;    /* muted */
+  --paper: #f3dfbd;     /* inset on the panel */
+  --leaf: #4f8f3f;      /* go */
+  --leaf-wash: #e3efcf;
+  --berry: #c4615a;     /* failed only */
+  --berry-wash: #f6dcd4;
+  --sky: #2d5da8;       /* reaches people outside */
+  --sky-wash: #e8eefa;
+  --honey: #d0a03c;     /* cost */
+  --honey-deep: #b98322; /* honey under cream type: the urgency tag, the simulated tag */
+  --honey-ink: #8a5a10; /* honey as text */
+  --grass: #8fc77a;
+  --cream: #fff6e4;     /* type on coloured tags; the chosen half of a segment */
+  --paper-hi: #f7e6c6;  /* a section on the farmer page's wood */
+  --edge: #c9a27a;      /* scrollbars, hovered outlines */
+  --edge-soft: #e2cba6; /* resting outlines on cream cards */
+  --rule: rgba(106, 74, 52, .16);  /* the 1px line between rows */
+  --tint: rgba(106, 74, 52, .07);  /* a grouped block inside paper */
+  --track: rgba(106, 74, 52, .14); /* the empty part of a bar or a segmented control */
+  --shadow: rgba(46, 34, 26, .3);  /* the one drop under a raised object */
+  --scrim: rgba(46, 34, 26, .38);
+  /* Kinds of context and work: categorical, used only as swatches. */
+  --k-skill: #7a5ea8; --k-tool: #4a7fae; --k-connector: #c27a3a; --k-file: #8a7058;
+  --k-read: #98c2dc; --k-write: #a9cf86;
+  --ui: 'Atkinson Hyperlegible Next', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  /* Type: three sizes for reading text, nothing between them. */
+  --t-meta: 13px;   /* why-lines, hints, timestamps */
+  --t-body: 15px;   /* rows, fields, panel text */
+  --t-lead: 17px;   /* the one sentence a dialogue leads with */
+  --t-big: 34px;    /* big numbers and page titles */
+  --t-hero: 40px;   /* the one gain on the spend panel */
+  /* The pixel font's sizes: names, titles, tags and buttons only. */
+  --px-tag: 13px;   /* tags, section heads, plot labels */
+  --px-xs: 15px;    /* xs buttons */
+  --px-sm: 17px;    /* sm buttons, top bar words */
+  --px-btn: 20px;   /* buttons */
+  --px-name: 21px;  /* a dialogue's speaker */
+  --px-title: 24px; /* panel and top bar titles */
+  /* Corners: square pixel corners on the pack's art; these for the few flat CSS shapes. */
+  --r-s: 2px;  /* bars and dots */
+  --r: 4px;    /* tags, chips, swatches */
+  --r-m: 6px;  /* segmented controls, inset blocks */
+  /* Fields: one sunk well for every value you can change. */
+  --field-h: 36px;
+  --field-ink: #e2c79c;
+}
+
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--grass); color: var(--bark); font: var(--t-body)/1.45 var(--ui); overflow: hidden; }
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--leaf); outline-offset: 2px; }
+
+.stage { position: fixed; inset: 0; cursor: url(/cursor-paw.png) 4 2, default; }
+.stage button, .stage [role=button] { cursor: url(/cursor-paw-point.png) 6 2, pointer; }
+.map-layer { position: absolute; inset: 0; }
+
+/* ---- nine-slices ---- */
+.px { font-family: px7; font-weight: 400; letter-spacing: .5px; }
+.px-s { font-family: px4; font-weight: 400; letter-spacing: .5px; }
+
+/* ---- buttons ---- */
+.btn { display: inline-flex; align-items: center; gap: 8px; height: 52px; padding: 0 6px; border: 12px solid transparent;
+  border-image: url(/ui/btn_cream.png) 6 fill / 15px stretch; image-rendering: pixelated; font-family: px7; font-size: var(--px-btn);
+  color: var(--bark); white-space: nowrap; transition: transform 80ms ease-out, filter 120ms; }
+.btn:hover { filter: brightness(1.05); }
+.btn:active { transform: translateY(2px); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.tan { border-image-source: url(/ui/btn_tan.png); }
+/* A suggestion you can tap: flat face, outline and lip only, so it reads lighter than an answer button. */
+.btn.chip { border-image-source: url(/ui/btn_chip.png); }
+.btn.chip:hover { filter: none; border-image-source: url(/ui/btn_cream.png); }
+.btn.white { border-image-source: url(/ui/btn_white.png); }
+.btn.brown { border-image-source: url(/ui/btn_brown.png); color: var(--cream); }
+.btn.sm { height: 42px; font-size: var(--px-sm); border-width: 10px; }
+.btn.xs { height: 34px; font-size: var(--px-xs); border-width: 8px; gap: 6px; }
+.btn.long { font: 700 var(--t-body, 15px)/1.2 var(--ui); letter-spacing: 0; }
+.btn small { font-family: var(--ui); font-size: var(--t-meta); color: var(--bark-2); letter-spacing: 0; }
+
+.ico { display: inline-block; vertical-align: middle; flex: none; image-rendering: pixelated; background-image: url(/ui/icons.png); }
+
+/* ---- top bar ---- */
+.top { position: absolute; left: 16px; right: 16px; top: 14px; display: flex; gap: 10px; align-items: center; pointer-events: none; z-index: 5; }
+.top > * { pointer-events: auto; }
+.top .title { height: 56px; padding: 0 4px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.top .title b { font-family: px7; font-weight: 400; font-size: var(--px-title); white-space: nowrap; }
+.top .title span:not(.tag) { font-size: var(--t-body); color: var(--bark-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top .spacer { flex: 1; pointer-events: none; }
+.pill { height: 56px; padding: 0 6px; display: flex; align-items: center; gap: 8px; }
+.pill b { font-family: px7; font-weight: 400; font-size: var(--px-btn); font-variant-numeric: tabular-nums; }
+.pill .coin { width: 33px; height: 33px; background: url(/ui/coin.png) 0 0 / 33px 33px; image-rendering: pixelated; }
+.pill .mail { width: 22px; height: 44px; background: url(/ui/mailbox.png) 0 0 / 22px 44px; image-rendering: pixelated; }
+.pill .mail.on { background-image: url(/ui/mailbox_letter.png); }
+.badge { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--berry); color: var(--cream); font: 700 var(--t-meta)/22px var(--ui); text-align: center; }
+.badge.calm { background: var(--bark-3); }
+
+/* ---- dialogue (the Planner and asks) ---- */
+.dlg { position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px; width: min(1100px, calc(100% - 32px)); display: flex; gap: 14px; align-items: stretch; z-index: 6; }
+.dlg.with-side { left: 16px; transform: none; width: calc(100% - 490px); }
+.portrait { width: 132px; height: 132px; flex: none; border: 18px solid transparent; border-image: url(/ui/portrait.png) 7 fill / 21px stretch; image-rendering: pixelated; position: relative; }
+.portrait canvas { position: absolute; inset: -6px; width: 108px; height: 108px; image-rendering: pixelated; }
+.dlg .body { position: relative; flex: 1; min-width: 0; padding: 4px 10px 6px; display: flex; flex-direction: column; gap: 10px; }
+.who { display: flex; align-items: center; gap: 10px; min-height: 28px; }
+.who b { font-family: px7; font-weight: 400; font-size: var(--px-name); }
+.who .model { font-size: var(--t-meta); color: var(--bark-3); }
+.who .aside { margin-left: auto; font-size: var(--t-meta); color: var(--bark-3); display: flex; align-items: center; gap: 6px; }
+.tag { font-family: px4; font-size: var(--px-tag); padding: 3px 8px 2px; border-radius: var(--r); background: var(--bark-4); color: var(--cream); letter-spacing: .5px; white-space: nowrap; }
+.tag.sky { background: var(--sky); } .tag.gold { background: var(--honey); } .tag.green { background: var(--leaf); } .tag.grey { background: var(--bark-4); } .tag.red { background: var(--berry); }
+.dlg p { margin: 0; font-size: var(--t-lead); line-height: 1.45; }
+.dlg p.impact { font-size: var(--t-body); color: var(--bark-2); }
+/* A teammate's ask, read only: the options as flat ruled rows, not buttons. */
+.ask-options { list-style: none; margin: 0; padding: 0; font-size: var(--t-body); color: var(--bark-2); }
+.ask-options li { padding: 6px 0; border-top: 1px solid rgba(106,74,52,.16); }
+.ask-options li:last-child { border-bottom: 1px solid rgba(106,74,52,.16); }
+.ask-options li.suggested { color: var(--bark); font-weight: 700; }
+.ask-options .sub { font-weight: 400; color: var(--bark-3); font-size: var(--t-meta); }
+.dlg p.view-only-note { font-size: var(--t-meta); color: var(--bark-3); }
+.dlg p.legend { font-size: var(--t-meta); color: var(--bark-2); margin-top: 2px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row .end { margin-left: auto; }
+.said { font-size: var(--t-body); color: var(--bark-2); display: flex; gap: 8px; align-items: center; }
+.said .you { color: var(--bark-3); }
+/* The talk bar: each line on its own, yours first, the Planner's under it. */
+.said.talk { flex-direction: column; align-items: flex-start; gap: 4px; }
+.said.talk > span { display: flex; flex-direction: column; gap: 4px; }
+.said.talk .closest { color: var(--bark); font-weight: 600; }
+.said.talk .offers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.said.talk.all { max-height: 240px; overflow-y: auto; align-self: stretch; }
+/* Reaching the Planner while a question, a rollback or the trust offer waits. */
+.planner-reach { position: absolute; left: 16px; top: 82px; z-index: 7; }
+.tag-btn { border: 2px solid rgba(106, 74, 52, .25); background: var(--cream); color: var(--bark); border-radius: var(--r-m); padding: 3px 10px; font: 600 var(--t-meta)/1.3 var(--ui); cursor: pointer; }
+.tag-btn:hover { border-color: var(--leaf); }
+.tag-btn:disabled { opacity: .5; cursor: default; }
+.thinking i { display: inline-block; width: 7px; height: 8px; margin: 0 2px; background: url(/ui/dot_1.png) -5px -4px; image-rendering: pixelated; animation: bob 900ms ease-in-out infinite; }
+.thinking i:nth-child(2) { animation-delay: 150ms; } .thinking i:nth-child(3) { animation-delay: 300ms; }
+@keyframes bob { 50% { transform: translateY(-4px); } }
+
+.vs { font-size: var(--t-body); color: var(--bark-2); }
+.vs b { color: var(--bark); font-variant-numeric: tabular-nums; }
+
+/* ---- side panel ---- */
+.side { position: absolute; right: 14px; top: 84px; bottom: 14px; width: 440px; z-index: 6; display: flex; flex-direction: column; }
+.side .scroll { flex: 1; overflow: auto; padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 14px; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+.side .close { position: absolute; right: 4px; top: 0; z-index: 1; }
+.side h2 { font-family: px7; font-weight: 400; font-size: var(--px-title); line-height: 1.15; margin: 0; padding-right: 44px; }
+.side h3 { font-family: px4; font-weight: 400; font-size: var(--px-tag); color: var(--bark-3); letter-spacing: .6px; margin: 0 0 6px; text-transform: uppercase; }
+.side .sum { font-size: var(--t-body); background: var(--paper); border-radius: var(--r-m); padding: 8px 10px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--t-body); color: var(--bark-2); align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; }
+button.chip:hover { color: var(--bark); text-decoration: underline; }
+.sw { width: 12px; height: 12px; border-radius: var(--r); display: inline-block; vertical-align: middle; flex: none; }
+.mono { font-family: var(--mono); font-size: var(--t-meta); }
+.list { display: flex; flex-direction: column; }
+.list > * { display: flex; gap: 8px; align-items: flex-start; padding: 7px 2px; border-top: 1px solid var(--rule); font-size: var(--t-body); text-align: left; }
+.list > *:first-child { border-top: 0; }
+.list .grow { flex: 1; min-width: 0; }
+.list .sub { display: block; font-size: var(--t-meta); color: var(--bark-3); }
+.list button:hover { background: rgba(255, 246, 228, .5); }
+.when { background: var(--paper); border-radius: var(--r-m); padding: 8px 10px; font-size: var(--t-body); }
+.when textarea { width: 100%; border: 0; background: transparent; resize: none; outline: none; font-size: var(--t-body); }
+.ok { color: var(--leaf); } .bad { color: var(--berry); }
+.slots { display: flex; flex-wrap: wrap; gap: 6px; }
+.slot { height: 30px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; background: var(--tint); border: 0; border-radius: 0; }
+.rule { display: flex; gap: 8px; align-items: center; font-size: var(--t-body); padding: 3px 0; }
+.bar { height: 10px; border-radius: var(--r); background: var(--track); overflow: hidden; display: flex; }
+.bar > i { display: block; height: 100%; }
+.big { font-family: px7; font-size: var(--t-big); line-height: 1; font-variant-numeric: tabular-nums; }
+.stat { display: flex; align-items: baseline; gap: 10px; }
+.stat span { color: var(--bark-2); font-size: var(--t-body); }
+.fix { background: var(--tint); border: 0; border-radius: 0; padding: 8px 10px; display: flex; gap: 10px; align-items: center; }
+.fix .grow { flex: 1; font-size: var(--t-body); }
+.fix .sub { display: block; font-size: var(--t-meta); color: var(--bark-3); }
+.toggle { display: flex; align-items: center; gap: 10px; text-align: left; }
+.box { width: 26px; height: 26px; flex: none; border: 7px solid transparent; border-image: url(/ui/textbox_plain.png) 5 fill / 8px stretch; image-rendering: pixelated; position: relative; }
+.box.on::after { content: ""; position: absolute; inset: -8px; background: url(/ui/checkmark.png) center / 28px 28px no-repeat; image-rendering: pixelated; }
+.ship { display: flex; gap: 0; align-items: stretch; }
+.ship > div { flex: 1; padding: 6px 8px; border-left: 3px solid var(--track); font-size: var(--t-meta); }
+.ship > div.on { border-color: var(--leaf); }
+.ship > div.back { border-color: var(--berry); }
+.ship b { display: block; font-family: px7; font-weight: 400; font-size: var(--px-sm); }
+
+/* ---- settings popover ---- */
+.pop { position: absolute; right: 16px; top: 80px; width: 340px; z-index: 8; padding: 6px 8px; display: flex; flex-direction: column; gap: 12px; }
+.pop .toggle span { font-size: var(--t-body); }
+.pop .toggle small { display: block; font-size: var(--t-meta); color: var(--bark-3); }
+.pop .flow { display: flex; flex-direction: column; gap: 8px; border-top: 2px solid var(--track); padding-top: 10px; }
+.pop .flow h4 { margin: 0; }
+.pop .flow-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.pop .flow-remove { border: 0; background: none; color: var(--bark-3); font: 700 var(--t-lead)/1 var(--ui); cursor: pointer; padding: 2px 6px; }
+.pop .flow-remove:hover { color: var(--berry); }
+
+/* ---- home ---- */
+.homehead { position: absolute; left: 24px; top: 18px; z-index: 5; font-family: px7; font-size: var(--t-big); color: var(--bark); }
+.farm-tag { position: absolute; transform: translate(-50%, 0); height: 30px; padding: 0 4px; display: flex; align-items: center; gap: 6px; border: 8px solid transparent;
+  border-image: url(/ui/btn_cream.png) 6 fill / 10px stretch; image-rendering: pixelated; font-family: px4; font-size: var(--px-tag); color: var(--bark); white-space: nowrap; z-index: 4; }
+.farm-tag.ghost { border-image-source: url(/ui/btn_white.png); opacity: .9; }
+
+/* ---- toast ---- */
+.toast { position: absolute; left: 50%; top: 84px; transform: translateX(-50%); z-index: 9; padding: 2px 8px; font-size: var(--t-body); animation: toast 2600ms ease-out forwards; }
+@keyframes toast { 0% { opacity: 0; transform: translate(-50%, -6px); } 8%, 85% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
+
+@media (max-width: 900px) {
+  .dlg, .dlg.with-side { left: 10px; right: 10px; width: auto; transform: none; bottom: 10px; }
+  .portrait { display: none; }
+  .side { left: 10px; right: 10px; width: auto; top: auto; bottom: 10px; max-height: 62vh; }
+  .top { left: 10px; right: 10px; top: 10px; gap: 6px; }
+  .top .title { height: 46px; } .top .title b { font-size: var(--px-sm); } .top .title span:not(.tag) { display: none; }
+  .pill { height: 46px; } .pill b { font-size: var(--px-sm); }
+  .btn { height: 46px; font-size: var(--px-sm); }
+  .dlg p { font-size: var(--t-body); }
+  .homehead { font-size: var(--px-name); left: 12px; top: 12px; }
+  .pop { left: 10px; right: 10px; width: auto; top: 64px; }
+}
+@media (max-width: 520px) { .top .title { display: none; } .top .spacer { flex: 1; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; } }
+/* inbox: the envelope alone, the count pinned to its corner */
+.inbox-btn { position: relative; }
+.mail-ico { width: 26px; height: 16px; background: url(/ui/mail_icon.png) 0 0 / 26px 16px; image-rendering: pixelated; display: block; }
+.inbox-btn .badge { position: absolute; top: -18px; right: -18px; }
+
+/* Alignment: every row that mixes an icon and text centres them on one line. */
+.tag, .badge { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.tag { height: 22px; padding: 0 8px; }
+.pill { line-height: 1; }
+/* Rows that may wrap: everything lines up on the first line's centre (a 20px line). */
+.list > * { line-height: 20px; }
+.list .sub { line-height: 18px; }
+.list > * > .sw { margin-top: 4px; }
+.list > * > .ico { margin-top: calc((20px - var(--ico, 16px)) / 2); }
+.list > * > .mark { margin-top: 1.5px; }
+.list > * > .sub, .list > * > .mono { margin-top: 1px; }
+/* top bar icon buttons: as tall as the pills, the icon at 2x */
+.top .top-ico { height: 56px; min-width: 56px; justify-content: center; padding: 0; border-width: 12px; }
+.top .top-coin { padding: 0 4px; gap: 8px; }
+.top .top-coin .coin { width: 22px; height: 22px; flex: none; background: url(/ui/coin.png) 0 0 / 22px 22px; image-rendering: pixelated; }
+.top .top-coin b { font-family: px7; font-weight: 400; font-size: var(--px-btn); font-variant-numeric: tabular-nums; line-height: 1; }
+.top .top-ico .mail-ico { width: 39px; height: 24px; background-size: 39px 24px; }
+.inbox-btn .badge { top: -20px; right: -20px; }
+/* an ask's header: which plot it's about, then how urgent */
+.plot-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0; font: 400 var(--px-name)/1 px7; letter-spacing: .5px; color: var(--bark); background: none; border: 0; }
+.plot-chip:hover { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
+.plot-chip .sign-ico { image-rendering: pixelated; display: block; }
+/* On an ask, the task is the second line of the header: who needs you and why come first. */
+.dlg .who:has(.plot-chip) { flex-wrap: wrap; row-gap: 2px; }
+.dlg .who .plot-chip { margin-left: auto; height: 28px; font: 600 var(--t-meta)/1 var(--ui); letter-spacing: 0; color: var(--bark-2); }
+.urgency { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 6px; font: 400 var(--px-tag)/1 px4; letter-spacing: .5px; color: var(--cream); border-radius: var(--r); white-space: nowrap; }
+.urgency.red { background: var(--berry); }
+.urgency.honey { background: var(--honey-deep); }
+.urgency.calm { background: var(--bark-3); }
+
+/* The pull request review: the commits scroll inside the bubble; the send-back form is one row. */
+.dlg .pr-commits { max-height: 150px; overflow-y: auto; }
+.dlg .pr-commits .tag { margin-left: 8px; vertical-align: 1px; }
+.dlg .send-back { flex-wrap: nowrap; }
+.dlg .send-back select.field-box { width: 220px; flex: none; }
+.dlg .send-back select.field-box { height: 44px; }
+/* One font per button row: when one label is too long for the pixel font, the whole row reads in the body font. */
+.row:has(> .btn.long) > .btn, .row:has(> .btn.long) > form > .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
+.vs .vs-out { margin: 4px 0 8px; font-size: var(--t-body); color: var(--bark); font-weight: 700; }
+.dlg p.gain-line { color: var(--leaf); font-weight: 700; }
+.dlg p.scale-line { font-size: var(--t-meta); color: var(--bark-3); text-wrap: pretty; }
+.dlg p.scale-line .tag { margin-right: 4px; vertical-align: 1px; }
+
+/* The plan, docked: full height on the left, so every plot shows beside it. The Planner sits above, the tail points up at it. */
+.dlg.dock { left: 16px; right: auto; transform: none; top: 80px; bottom: 16px; width: 560px; flex-direction: column; align-items: flex-start; gap: 30px; }
+.dlg.dock .portrait { width: 72px; height: 72px; border-width: 10px; border-image-width: 12px; }
+.dlg.dock .portrait canvas { inset: 2px; }
+.dlg.dock .approve small { display: none; }
+.dlg.dock .body { flex: 1; min-height: 0; width: 100%; --tail-at: 8px; } /* the tail's tip under the portrait's centre */
+.dlg.dock .crew-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.dlg.dock .crew { grid-template-columns: minmax(0, 1fr) 168px 80px 24px; grid-auto-flow: row dense; column-gap: 10px; }
+.dlg.dock .crew-head span:nth-child(2) { display: none; }
+.dlg.dock .crew-row .why { grid-column: 1 / -1; border-top: 0; min-height: 0; display: block; white-space: normal; line-height: 1.35; padding: 0 0 0 20px; margin-bottom: 8px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.dlg.dock .plan-foot { flex-wrap: nowrap; gap: 10px; }
+.dlg.dock .plan-foot .plan-setting > span:first-child { display: none; }
+/* Short screens: every agent and the Approve row fit without scrolling. */
+@media (max-height: 800px) {
+  .dlg.dock { gap: 8px; }
+  .dlg.dock .crew-head span { padding-bottom: 2px; }
+  .dlg.dock .crew-row .why { -webkit-line-clamp: 1; margin-bottom: 2px; }
+  .dlg.dock .crew-row > :not(.why) { min-height: var(--field-h); }
+  .dlg.dock .crew-row > select, .dlg.dock .crew-row > .limit-field { margin: 2px 0; }
+}
+.dlg.dock .plan-foot .approve { margin-left: auto; }
+.vs .vs-note { margin: 0 0 8px; font-size: var(--t-meta); color: var(--bark-3); }
+.top .top-pr { padding: 0 6px; font-size: var(--px-sm); }
+.side .pr-rollback { margin-top: 10px; }
+/* Digits never in the small pixel font: its 6 reads as an E. */
+h3 .num, .side h3 .num { font-family: var(--ui); font-weight: 700; letter-spacing: 0; }
+.dlg .send-back .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
+.dlg .pr-commits { max-height: none; }
+.dlg .pr-commits .picked { background: rgba(79, 143, 63, .14); }
+.dlg .pr-commits .more { color: var(--bark-2); font-weight: 700; }
+/* How sure a farmer is of its suggestion: a word, then what it rests on. Green only when sure. */
+.dlg p.sureness { font-size: var(--t-meta); color: var(--bark-2); }
+.dlg p.sureness b { color: var(--bark); margin-right: 4px; }
+.dlg p.sureness.high b { color: var(--leaf); }
+.dlg .in-words { margin-top: 2px; }
+.dlg .in-words > .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
+/* One font for every button in a dialogue: the reading font. The pixel font stays on the top bar and titles. */
+.dlg .btn { font: 700 var(--t-body)/1.2 var(--ui); letter-spacing: 0; }
+
+/* The change card: one row per change, a checkbox, what it does, and what it costs in safety. */
+.change-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.change-rows li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding-right: 8px; border-radius: var(--r-m); background: var(--tint); }
+.change-rows li label { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 10px; align-items: center; padding: 6px 10px; cursor: pointer; font: 600 var(--t-body)/1.3 var(--ui); }
+.change-rows li:not(.on) label { color: var(--bark-4); }
+.change-rows li:not(.on) .what { text-decoration: line-through; }
+.change-rows input { width: 18px; height: 18px; margin: 0; accent-color: var(--leaf); }
+.change-rows .loss { grid-column: 2; font: 400 var(--t-meta)/1.3 var(--ui); color: var(--berry); }
+.change-rows li:not(.on) .loss { color: var(--bark-4); }
+.change-rows .loss.still { color: var(--bark-2); } /* where a hidden part still is: a note, not a loss */
+/* The changes you asked for hang under the title, so the title keeps its status. */
+.top .title { position: relative; }
+.top .title .reshapes { position: absolute; top: calc(100% + 18px); left: -12px; display: flex; gap: 6px; }
+.change-rows .scope { display: flex; border-radius: var(--r-m); background: var(--tint); padding: 2px; }
+.change-rows .scope button { border: 0; background: none; border-radius: var(--r); padding: 3px 8px; font: 600 var(--t-meta)/1.2 var(--ui); color: var(--bark-3); cursor: pointer; white-space: nowrap; }
+.change-rows .scope button.on { background: var(--cream); color: var(--bark); box-shadow: 0 1px 0 rgba(74, 52, 38, .25); }
+.change-rows .scope button:disabled { cursor: default; opacity: .5; }
+.reshape-chip { gap: 6px; }
+.reshape-chip .chip-undo { margin-left: 2px; padding: 1px 6px; border-radius: var(--r); background: var(--cream); color: var(--leaf); font: 700 var(--t-meta)/1.2 var(--ui); text-transform: none; letter-spacing: 0; }
+.reshape-chip.fresh { animation: chip-in 600ms ease-out; }
+@keyframes chip-in { 0% { transform: scale(.8); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .reshape-chip.fresh { animation: none; } }
+.reshape-chip button { border: 0; background: none; color: inherit; font: inherit; padding: 0 0 0 2px; cursor: pointer; line-height: 1; }
+.toast.with-undo { display: flex; gap: 10px; align-items: center; animation-duration: 6000ms; }
+.toast-undo { border: 0; background: none; color: var(--leaf); font: 700 var(--t-body)/1.2 var(--ui); cursor: pointer; padding: 0; text-decoration: underline; }
+.said.ask-talk .side-line { flex-direction: row; align-items: flex-start; gap: 6px; }
+.said.ask-talk .side-line .sw { margin-top: 5px; flex: none; }
+
+/* The top bar as you asked the Planner to change it. Colours are the pack's own button, its five shades
+   swapped for the tokens' ramps (scripts/tint-buttons.py). Sizes step in whole pixel scales: icons 16, 32 or 48. */
+.btn.leaf { border-image-source: url(/ui/btn_leaf.png); }
+.btn.berry { border-image-source: url(/ui/btn_berry.png); }
+.btn.sky { border-image-source: url(/ui/btn_sky.png); }
+.btn.gold { border-image-source: url(/ui/btn_gold.png); }
+.top .top-ico.named { padding: 0 6px; gap: 8px; }
+.top .top-name { font-size: var(--px-sm); line-height: 1; white-space: nowrap; }
+.top .top-ico.s-2 { height: 34px; min-width: 34px; border-width: 8px; }
+.top .top-ico.s-1 { height: 42px; min-width: 42px; border-width: 10px; }
+.top .top-ico.s1 { height: 64px; min-width: 64px; }
+.top .top-ico.s2 { height: 72px; min-width: 72px; }
+.top .top-pr.s-2, .top .top-pr.s-1, .top .s-2 .top-name, .top .s-1 .top-name, .top .top-coin.s-2 b { font-size: var(--px-xs); }
+.top .top-coin.s-1 b { font-size: var(--px-sm); }
+.top .top-pr.s1, .top .s1 .top-name { font-size: var(--px-btn); }
+.top .top-coin.s1 b, .top .top-pr.s2, .top .s2 .top-name { font-size: var(--px-title); }
+.top .top-coin.s2 b { font-size: var(--t-big); }
+.top .s-2 .mail-ico, .top .s-1 .mail-ico { width: 26px; height: 16px; background-size: 26px 16px; }
+.top .s2 .mail-ico { width: 52px; height: 32px; background-size: 52px 32px; }
+.top .top-coin.s2 .coin { width: 44px; height: 44px; background-size: 44px 44px; }
+
+/* ---- home: the intro and the Planner on the left, your farms or the team on the right ---- */
+.stage { --home-side: clamp(580px, 42vw, 640px); --home-pad: max(24px, calc((100vw - 1680px) / 2)); } /* wide screens keep the whole home centred */
+.home-side { position: absolute; left: var(--home-pad); top: 24px; bottom: 24px; width: var(--home-side); display: flex; flex-direction: column; justify-content: center; gap: 18px; z-index: 6; pointer-events: none; }
+.home-side > * { pointer-events: auto; }
+.home-intro { padding: 4px 10px 8px; display: flex; flex-direction: column; gap: 8px; }
+.home-title { display: flex; align-items: center; gap: 14px; }
+.home-title .homehead { position: static; margin: 0; line-height: 1; }
+.view-switch { margin-left: auto; display: flex; gap: 4px; }
+.home-who { margin: 0; font-size: var(--t-body); line-height: 1.4; font-weight: 700; color: var(--bark); }
+.home-why { margin: 0; font-size: var(--t-meta); line-height: 1.45; color: var(--bark-2); }
+.home-why span { display: block; }
+.dlg.home { position: static; transform: none; width: auto; }
+.dlg.home .portrait { width: 96px; height: 96px; border-width: 13px; border-image-width: 15px; }
+.dlg.home .portrait canvas { inset: -1px; }
+.team-room { position: absolute; left: calc(var(--home-pad) + var(--home-side) + 24px); right: var(--home-pad); top: 16px; bottom: 16px; display: flex; align-items: center; justify-content: center; z-index: 5; pointer-events: none; }
+.team-room > * { pointer-events: auto; }
+
+/* ---- one simulated tag ----
+   Everything not real wears the same tag: Simulated, Simulated sample, Simulated run, Simulated team, Projection. */
+.tag.sim, .tag.gold { background: var(--honey-deep); }
+
+/* ---- quiet states: empty, nothing stands out, a failed call ----
+   One bold line and at most one meta line on the flat tint, an icon first. Berry only for a failure. */
+.quiet { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: var(--tint); font-size: var(--t-body); color: var(--bark); line-height: 1.35; }
+.quiet > .ico { margin-top: 2px; opacity: .7; }
+.quiet b { display: block; font-weight: 700; }
+.quiet .quiet-sub { display: block; margin-top: 2px; font-size: var(--t-meta); color: var(--bark-3); }
+.quiet.bad { background: var(--berry-wash); }
+.quiet.bad b { color: var(--berry); }
+.quiet.bad .quiet-sub { color: var(--bark-2); font-family: var(--mono); overflow-wrap: anywhere; }
+
+/* ---- paused: the tag carries a pause glyph, and the farm's colour drains a little until you press Play ---- */
+.tag.paused { display: inline-flex; align-items: center; gap: 5px; background: var(--bark-2); }
+.tag.paused i { width: 7px; height: 8px; margin-top: -1px; border-left: 2px solid var(--cream); border-right: 2px solid var(--cream); }
+.stage .map-layer canvas { transition: filter 400ms ease-out; }
+.stage:has(.top .tag.paused) .map-layer canvas { filter: saturate(.55) brightness(1.03); }
+@media (prefers-reduced-motion: reduce) { .stage .map-layer canvas { transition: none; } }
+
+/* ---- Done: one calm block. The lead, then the supporting lines close under it, then one row of actions
+   with the downloads as a quiet group at its end. ---- */
+.dlg.done .body { gap: 8px; }
+.dlg.done .done-text { display: flex; flex-direction: column; gap: 4px; }
+.dlg.done .done-text p.impact { line-height: 1.4; }
+.dlg.done .done-text p.scale-line { margin-top: 2px; }
+.dlg.done .row { flex-wrap: nowrap; }
+.export-group { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.export-label { font-size: var(--t-meta); color: var(--bark-3); margin-right: 2px; }
+.export-group .btn.xs { font: 700 var(--t-meta)/1 var(--ui); letter-spacing: 0; }
+.side .inbox-control { align-self: flex-start; }
+.top .title > .tag { padding: 3px 6px 2px; }

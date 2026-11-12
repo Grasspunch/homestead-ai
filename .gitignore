@@ -1,0 +1,8 @@
+node_modules
+dist
+*.local
+.DS_Store
+# Sprout Lands art is licensed for use, not redistribution: keep it out of git.
+public/assets/sprout-lands/*
+!public/assets/sprout-lands/README.md
+*.tsbuildinfo

@@ -1,0 +1,418 @@
+// The simulated Planner: a plan and a crew for any goal, and message routing, with no model call.
+// Used when Live mode is off (the default). Live mode sends the same requests to the real Planner.
+
+import { CREW } from '../agent/agents'
+import { MODELS } from './kit'
+import type { PlanOut, RouteInput, RouteOut } from '../agent/agents'
+import type { Estimate, FarmerId, FarmerSetup, PlanTask, Screen } from './types'
+
+// The moments every simulated run passes through, written for one kind of project, so the text a farmer
+// says fits the goal. A goal that matches no template runs the generic one, marked as a demo scenario.
+export interface Side { position: string; why: string; option: string; tool: string; check: string; shot: 'ok' | 'alt' }
+export interface Script {
+  screen: Screen
+  // A small change runs clean: no money ask, no failed check, no release bug. Those moments fit real features.
+  quiet?: boolean
+  // It ships straight to everyone once you merge, with no 10% stage: a line of copy doesn't need a canary.
+  direct?: boolean
+  refactor: { what: string; line: string }
+  // A brand guide the plan leaves out of the Designer's context, so its screens come out off-brand until you add it.
+  brand?: string
+  // Files the plan gives a farmer that a task fails without: turn one off and that task's check fails, the
+  // farmer asks for it back, and redoes the work once it has it, the same as the sample's brand guide.
+  needs?: ContextNeed[]
+  dispute: { topic: string; failNote: string; impact: string; designer: Side; builder: Side }
+  rollout: { peak: number; bug: string; cause: string; fix: string; check: string; file: string; tests: string[] }
+  // A part of this app the run really changes once its release reaches you: 'agents' swaps the cost button
+  // for the agent dashboard.
+  ships?: 'agents'
+}
+
+export interface ContextNeed {
+  farmer: FarmerId
+  path: string
+  task: string // the task whose check fails without it
+  fail: string // the check's note
+  basis: string // the farmer's own line on why, in its words
+  redo: string // the tool line once it has it again
+}
+
+interface Draft {
+  name: string
+  tasks: (Omit<PlanTask, 'gate'> & { gate?: boolean; mins: number; usd: number; after?: string[] })[]
+  context: Partial<Record<FarmerId, string[]>>
+  // Why this project needs each farmer, in the project's own terms.
+  why?: Partial<Record<FarmerId, string>>
+  script: Script
+  matched: boolean
+  // The crew this goal needs by default, when it isn't everyone with a task plus the Tester and Planner.
+  // Anyone left off can be added back in the crew picker; their tasks fall to the Builder until then.
+  crew?: FarmerId[]
+  // The Tester's own check, when a full end-to-end run is more than the goal needs.
+  check?: { name: string; doneWhen: string; mins: number; usd: number }
+  // What each handoff costs, in the same small units as the tasks. A small change hands off a line, not a summary.
+  handoff?: number
+}
+
+const SUPPORT: Script = {
+  screen: 'chat',
+  brand: 'docs/brand.md',
+  needs: [
+    { farmer: 'builder', path: 'docs/help/', task: 'docs-index', fail: 'No help docs to index: docs/help/ isn’t in the Builder’s context', basis: 'docs/help/ isn’t in my context, so there was nothing to index.', redo: 'Read docs/help/ and indexed every page' },
+    { farmer: 'builder', path: 'eval/questions.jsonl', task: 'answer-api', fail: '7 of 10 eval questions get a cited answer, under the 90% it needs: eval/questions.jsonl isn’t in the Builder’s context', basis: 'I can’t see eval/questions.jsonl, so I couldn’t tune the answers against it.', redo: 'Read eval/questions.jsonl and tuned the answers' },
+    { farmer: 'tester', path: 'eval/questions.jsonl', task: 'answer-api', fail: 'Can’t check the 90% goal: eval/questions.jsonl isn’t in the Tester’s context', basis: 'eval/questions.jsonl isn’t in my context, so I have nothing to score the answers against.', redo: 'Scored the answers against eval/questions.jsonl' },
+    { farmer: 'designer', path: 'docs/help/', task: 'chat-widget', fail: '2 source links in the widget go to help pages that don’t exist: docs/help/ isn’t in the Designer’s context', basis: 'I can’t see docs/help/, so I guessed the page names.', redo: 'Read docs/help/ and fixed the source links' },
+  ],
+  refactor: { what: 'move how answers are routed into one module', line: 'Moved answer routing into one module' },
+  dispute: {
+    topic: 'how the sources fit in the chat panel',
+    failNote: 'The sources cover the reply box',
+    impact: 'People get either a tidy panel with one click to see sources, or every source at once in smaller text.',
+    designer: { position: 'Fold the sources into one click-to-open chip', why: 'In the 380 px chat panel the three sources take 180 px and cover the reply box. A chip keeps the box clear, and the task’s goal asks for the sources without getting in the way. The cost is one extra click for people who want them.', option: 'Fold into a chip', tool: 'Folded the sources into a chip', check: 'The sources fold into a chip, and the reply box is clear', shot: 'ok' },
+    builder: { position: 'List them under the answer in smaller text', why: 'Support answers are only trusted when the source is visible, and a chip hides it. Listing the sources at 12 px under the answer clears the reply box. It is a two-line change with no new component to test.', option: 'Smaller text', tool: 'Listed the sources under the answer at 12 px', check: 'Every source shows under the answer, and the reply box is clear', shot: 'alt' },
+  },
+  rollout: { peak: 0.031, bug: 'the timeout bug', cause: 'long questions time out after 10 s', fix: 'Shortened long questions before answering, added a timeout fallback', check: 'Long questions answer in under 4 s', file: 'tests/long-questions.test.ts', tests: ['a 2,000-word question answers in under 4 s', 'a timeout falls back to a person', 'short questions are unchanged', 'the fallback keeps the chat', 'no answer is cut mid-sentence'] },
+}
+
+const CHECKOUT: Script = {
+  screen: 'app',
+  needs: [{ farmer: 'designer', path: 'docs/brand.md', task: 'checkout-ui', fail: 'Off-brand: the colours don’t follow docs/brand.md, which isn’t in the Designer’s context', basis: 'docs/brand.md isn’t in my context, so I guessed the colours.', redo: 'Read docs/brand.md and redid the colours' }, { farmer: 'builder', path: 'docs/pricing.md', task: 'pricing-model', fail: '3 prices don’t match the pricing doc: docs/pricing.md isn’t in the Builder’s context', basis: 'docs/pricing.md isn’t in my context, so I guessed the prices.', redo: 'Read docs/pricing.md and fixed the prices' }],
+  refactor: { what: 'move every price calculation into one pricing module', line: 'Moved price calculation into one module' },
+  dispute: {
+    topic: 'where the cookie notice goes on the checkout screen',
+    failNote: 'The cookie notice covers the pay button',
+    impact: 'Buyers get either a clear checkout with the notice asked earlier, or the notice kept on checkout as a slim strip.',
+    designer: { position: 'Ask about cookies once, before checkout', why: 'On short windows the notice covers the pay button, and people leave a checkout they can’t finish. Asking once on the page before keeps checkout clear.', option: 'Ask before checkout', tool: 'Moved the cookie notice before checkout', check: 'Nothing covers the pay button', shot: 'ok' },
+    builder: { position: 'Keep it on checkout as a slim strip on top', why: 'Consent should show where the card is entered. A slim strip above the form keeps it there and clears the pay button, with no new page to build.', option: 'Slim strip on top', tool: 'Made the cookie notice a slim strip above the form', check: 'The notice sits above the form, and the pay button is clear', shot: 'alt' },
+  },
+  rollout: { peak: 0.027, bug: 'the slow-payment timeout', cause: 'card payments time out after 10 s when the provider is slow', fix: 'Waited for the provider’s answer instead of timing out, and made retries charge once', check: 'Slow card payments complete, and a retry never charges twice', file: 'tests/billing/slow-provider.test.ts', tests: ['a slow provider answer still completes the order', 'a retried payment charges once', 'a declined card shows a clear error', 'a timeout leaves no half-paid order', 'refunds still post to the account'] },
+}
+
+const DASHBOARD: Script = {
+  screen: 'dash',
+  needs: [{ farmer: 'builder', path: 'db/schema.sql', task: 'metrics-query', fail: '2 metrics read the wrong table: db/schema.sql isn’t in the Builder’s context', basis: 'db/schema.sql isn’t in my context, so I guessed the table names.', redo: 'Read db/schema.sql and fixed the queries' }],
+  refactor: { what: 'compute every metric in one shared query layer', line: 'Moved the metric queries into one shared layer' },
+  dispute: {
+    topic: 'where the week-over-week changes go',
+    failNote: 'The legend covers the signups chart',
+    impact: 'People get either every change in a row under the charts, or clean charts with the changes on hover.',
+    designer: { position: 'Put the changes in a row under the charts', why: 'The floating legend hides the first chart at most widths. A row under the charts keeps every number visible and reads left to right with the cards.', option: 'A row under the charts', tool: 'Moved the changes into a row under the charts', check: 'Every chart is clear, and the changes sit in a row under them', shot: 'alt' },
+    builder: { position: 'Show the legend only on hover', why: 'The charts carry the story and the changes are secondary. A hover legend is a two-line change and keeps the board quiet.', option: 'Only on hover', tool: 'Showed the legend on hover only', check: 'Every chart is clear, and the changes show on hover', shot: 'ok' },
+  },
+  rollout: { peak: 0.024, bug: 'the large-account timeout', cause: 'the metrics API takes over 3 s on the largest accounts, so their boards time out', fix: 'Cached each metric for a minute and paged the largest accounts', check: 'Every metric loads in under 300 ms on the largest account', file: 'tests/metrics/large-account.test.ts', tests: ['the largest account loads in under 300 ms', 'a cached metric refreshes after a minute', 'paging returns every row once', 'an empty account shows zeroes', 'a slow query falls back to the cache'] },
+}
+
+const GENERIC: Script = {
+  screen: 'app',
+  needs: [{ farmer: 'designer', path: 'docs/brand.md', task: 'screens', fail: 'Off-brand: the colours don’t follow docs/brand.md, which isn’t in the Designer’s context', basis: 'docs/brand.md isn’t in my context, so I guessed the colours.', redo: 'Read docs/brand.md and redid the colours' }, { farmer: 'builder', path: 'package.json', task: 'core', fail: 'The build fails: package.json isn’t in the Builder’s context, so it used the wrong start script', basis: 'package.json isn’t in my context, so I guessed how the app starts.', redo: 'Read package.json and fixed the start script' }],
+  refactor: { what: 'move the shared data code into one module', line: 'Moved the shared data code into one module' },
+  dispute: {
+    topic: 'where the notice goes on the main screen',
+    failNote: 'A notice covers the main button',
+    impact: 'People get either a clear main screen with the notice asked earlier, or the notice kept as a slim strip.',
+    designer: { position: 'Ask once, before the main screen', why: 'On short windows the notice covers the main button. Asking once on the page before keeps the main screen clear.', option: 'Ask before', tool: 'Moved the notice before the main screen', check: 'Nothing covers the main button', shot: 'ok' },
+    builder: { position: 'Keep it as a slim strip on top', why: 'A slim strip above the form keeps the notice where it applies and clears the button, with no new page to build.', option: 'Slim strip on top', tool: 'Made the notice a slim strip above the form', check: 'The notice sits above the form, and the button is clear', shot: 'alt' },
+  },
+  rollout: { peak: 0.029, bug: 'the timeout under load', cause: 'requests time out under load after 10 s', fix: 'Added a timeout fallback and paged the slow query', check: 'Every request answers in under 1 s under load', file: 'tests/load.test.ts', tests: ['a busy minute answers in under 1 s', 'a timeout falls back cleanly', 'paging returns every row once', 'a restart keeps the data', 'an empty list shows a clear message'] },
+}
+
+// The demo run: swap the top bar's cost button for a dashboard of every agent on the farm. What the crew builds
+// is real: once the release reaches you, the coins in the top bar become the Agents button (see App's Top).
+const AGENT_DASH: Script = {
+  screen: 'agents',
+  ships: 'agents',
+  refactor: { what: 'move every agent’s run state into one selector that the farm and the dashboard both read', line: 'Moved agent state into one shared selector' },
+  dispute: {
+    topic: 'how the dashboard fits beside the farm',
+    failNote: 'The agent cards cover the ask window',
+    impact: 'You get either a side panel with one row per agent and the farm in view, or cards over the farm with more detail and less farm.',
+    designer: { position: 'Open it as a side panel, one row per agent', why: 'Five agent cards across the bottom cover the ask window, which is the one thing that must never be hidden. A 360 px side panel fits every agent in a row each: what it is on, its last step and its spend, with the farm still in view. The cost is less room for each agent’s detail, one click away on its page.', option: 'Side panel, one row each', tool: 'Moved the agents into a side panel, one row each', check: 'Every agent shows its task, last step and spend, and nothing covers the ask window', shot: 'ok' },
+    builder: { position: 'Keep the cards, and float them above the ask', why: 'Cards show more of each agent at once, and people asked to see the agents on the farm. Raising them 120 px clears the ask window, and it is a one-line change with nothing new to test.', option: 'Float the cards higher', tool: 'Raised the agent cards above the ask window', check: 'The agent cards sit above the ask window, and nothing covers it', shot: 'alt' },
+  },
+  rollout: { peak: 0.026, bug: 'the busy-farm slowdown', cause: 'the dashboard asks every agent for its status each second, and on farms with many agents the calls pile up and time out', fix: 'Pushed each agent’s status when it changes instead of asking every second, and drew only the rows in view', check: 'A farm of 40 busy agents updates the dashboard in under 200 ms', file: 'tests/dashboard/busy-farm.test.ts', tests: ['40 busy agents update in under 200 ms', 'a status change shows within a second', 'a paused agent says what it is waiting on', 'a stopped agent stays listed, marked stopped', 'the farm keeps 60 fps with the dashboard open'] },
+}
+
+// A small change gives the Builder src/ alone, so nothing the generic feature needs applies.
+const SMALL: Script = { ...GENERIC, quiet: true, direct: true, needs: undefined }
+
+// A small change: one line of copy, a label, a colour, a typo, a config value. It needs the Builder to make it and
+// run the existing tests, and you to look at the pull request. Not a Tester, a Designer, a Planner or a staged rollout. Short goals only, that say what to change
+// and name something small, or quote the new text.
+const SMALL_VERB = /^(please |can you |could you )?(change|update|fix|rename|replace|reword|edit|tweak|correct|swap|set|make|bump|remove|delete|recolou?r|capitali[sz]e|lowercase|uppercase)\b/
+const SMALL_THING = /\b(text|copy|wording|words?|typos?|spelling|labels?|titles?|headings?|headlines?|subtitles?|captions?|tooltips?|placeholders?|strings?|links?|urls?|colou?rs?|fonts?|icons?|emojis?|year|dates?|version|email address|phone number|footer|tagline|slogan|greeting|sentence|line|button text|error message|(red|orange|yellow|green|blue|purple|pink|black|white|grey|gray)\b)/
+const ONE_LINER = /\b(one[- ]?liner|one[- ]line|single[- ]line|tiny change|small change|quick fix)\b/
+const QUOTED = /["“‘'][^"”’']{1,60}["”’']/
+// Work that is never small, however short the goal.
+const NOT_SMALL = /\b(build|create|integrate|migrat\w*|database|schema|api|endpoint|auth\w*|log ?in|sign ?up flow|redesign|rewrite|refactor|new (page|feature|screen|flow|app)|pages|screens|every (page|screen)|everywhere|across the (app|site))\b/
+
+export function isSmallChange(goal: string): boolean {
+  const g = goal.trim().toLowerCase()
+  if (!g || g.split(/\s+/).length > 25 || NOT_SMALL.test(g)) return false
+  if (ONE_LINER.test(g)) return true
+  return SMALL_VERB.test(g) && (/^(please |can you |could you )?(rename|reword|retitle|recolou?r)\b/.test(g) || SMALL_THING.test(g) || QUOTED.test(goal))
+}
+
+// The demo goal: a dashboard of the agents themselves, in place of the cost button. Never a metrics dashboard
+// and never a small change, however it is worded.
+export const AGENT_DASH_GOAL = 'Replace the cost button with an agent dashboard that shows each agent on the farm and what it’s working on'
+export const isAgentDashboard = (goal: string) =>
+  /\b(agents?|farmers?|crew|workers?)\b.{0,40}\b(dashboard|board|overview|status (panel|view)|panel)\b|\b(dashboard|board|overview)\b.{0,40}\b(each|every|all( the)?|of the) (agents?|farmers?|crew)\b/i.test(goal)
+
+// Whether the goal touches what people see, so a Designer has real work.
+const UI = /\b(screens?|pages?|ui|ux|layout|design|buttons?|forms?|modals?|dialogs?|menus?|nav\w*|sidebar|widget|onboarding|dark mode|theme|mobile|responsive|landing|homepage|dashboard|look|style|css|copy|flows?)\b/
+
+// Which template a goal runs, and whether it really matched one.
+export function scenario(goal: string): { script: Script; matched: boolean; name: string } {
+  const d = draft(goal)
+  return { script: d.script, matched: d.matched, name: d.name }
+}
+
+const USD_SCALE = 15
+// Drafts list minutes for a small slice of work; real agent tasks run 20 to 60 minutes.
+const MIN_SCALE = 3
+// One agent alone, against a crew: a fair single agent on Claude Sonnet 5, doing every task in a row,
+// with no checker and nothing charged for checks. It rereads one growing context, which slows every step
+// and costs a little more (caching keeps the rereads cheap, not fast). These are the only two assumptions.
+export const SOLO = { model: 'Claude Sonnet 5', contextTime: 1.35, contextCost: 1.1 }
+// Each handoff between farmers costs a little: a summary written and read.
+const HANDOFF = 0.25
+// Which model each farmer runs on, and its price per token relative to Claude Opus 5.5 (the model picker's rates).
+// A mixed crew: the Planner on Opus 5.5 and the Designer on Sonnet 5; the Builder codes on Codex. The Tester and
+// Deployer take the cheaper of Haiku 4.5 ($1 in, $5 out) and GPT-6 Luna ($0.10, $0.50): Luna, at a tenth of the price.
+const MODEL_OF: Record<FarmerId, string> = { planner: 'Claude Opus 5.5', designer: 'Claude Sonnet 5', builder: 'GPT-6.1 Sol', tester: 'GPT-6 Luna', deployer: 'GPT-6 Luna' }
+const rateOf = (model: string) => MODELS.find((m) => m.model === model)?.rate ?? 1
+const SHIP = { id: 'ship', name: 'Ship to users', farmer: 'deployer' as FarmerId, doneWhen: 'Live for 10% with errors under 2%, then for everyone', gate: true, mins: 8, usd: 0.3 }
+
+function draft(goal: string): Draft {
+  const g = goal.toLowerCase()
+  const short = goal.replace(/[.!?]+$/, '').split(/\s+/).slice(0, 4).join(' ')
+  const title = short.charAt(0).toUpperCase() + short.slice(1)
+  // The demo run comes first: "replace the cost button" reads like a small change, and "dashboard" like metrics.
+  if (isAgentDashboard(goal))
+    return {
+      name: 'Agent dashboard',
+      tasks: [
+        { id: 'agent-status', name: 'Track each agent', farmer: 'builder', doneWhen: 'Each agent’s task, last step and spend update as the run plays', mins: 11, usd: 0.8 },
+        { id: 'swap-button', name: 'Swap the cost button', farmer: 'builder', doneWhen: 'The top-bar button opens the dashboard, and the coins on the farm still open your spend', mins: 7, usd: 0.5, after: ['agent-status'] },
+        { id: 'live-rows', name: 'Keep it live', farmer: 'builder', doneWhen: 'The dashboard follows the run without slowing the farm', mins: 8, usd: 0.6, after: ['swap-button'] },
+        { id: 'dash-design', name: 'Design the dashboard', farmer: 'designer', doneWhen: 'Every agent’s task, last step and spend read at a glance, and nothing covers the ask window', mins: 12, usd: 0.8 },
+        { ...SHIP, doneWhen: 'Live for 10% with errors under 2%, then for everyone' },
+      ],
+      script: AGENT_DASH,
+      matched: true,
+      context: { builder: ['src/hud/', 'src/run/store.ts'], designer: ['src/hud/', 'docs/brand.md'], tester: ['tests/hud/'] },
+      why: {
+        planner: 'Keeps the dashboard and the top-bar swap in step, and passes your notes on.',
+        builder: 'Tracks what each agent is doing, swaps the cost button for the dashboard and keeps it live.',
+        designer: 'The dashboard sits beside the farm, so it designs rows that read at a glance without covering it. It works from the brand guide.',
+        tester: 'Runs a farm with agents busy, paused and stopped, so the dashboard never shows a wrong status.',
+        deployer: 'Ships to 10% first, so if the dashboard slows the farm it rolls back on its own.',
+      },
+    }
+  // Small first: "Fix the typo on the checkout page" is a typo, not a checkout.
+  if (isSmallChange(goal))
+    return {
+      name: title,
+      tasks: [
+        { id: 'change', name: 'Make the change', farmer: 'builder', doneWhen: 'The change shows as asked, and the existing tests still pass', mins: 1, usd: 0.04 },
+        // The release is still the Deployer's when you add it back; until then the Builder ships, after you merge.
+        { ...SHIP, name: 'Ship it', doneWhen: 'Merged by you and live for everyone', mins: 0.7, usd: 0.02 },
+      ],
+      script: SMALL,
+      matched: false,
+      // The Builder alone. Your look at the pull request is the review; add a Tester if you want a second pair of eyes.
+      crew: ['builder'],
+      check: { name: 'Check the change', doneWhen: 'The change shows as asked, and the existing tests still pass', mins: 0.7, usd: 0.02 },
+      handoff: 0.02,
+      context: { builder: ['src/'], tester: ['tests/'] },
+      why: {
+        builder: 'Makes the change, runs the existing tests and ships it once you merge.',
+        tester: 'Looks at the change once, so the Builder never grades its own work.',
+        deployer: 'Ships it once you merge.',
+      },
+    }
+  if (/\b(support|assistant|chat ?bots?|help ?desk|answers?)\b/.test(g))
+    return {
+      name: 'Support assistant',
+      tasks: [
+        { id: 'docs-index', name: 'Index the help docs', farmer: 'builder', doneWhen: 'Every help doc is searchable, and a test finds the refunds page', mins: 10, usd: 0.6 },
+        { id: 'answer-api', name: 'Answer from the docs', farmer: 'builder', doneWhen: '90% of eval questions get an answer with a cited doc', mins: 16, usd: 1.4, after: ['docs-index'] },
+        { id: 'handoff', name: 'Hand off when unsure', farmer: 'builder', doneWhen: 'Unsure answers go to a person with the chat attached', mins: 9, usd: 0.7, after: ['answer-api'] },
+        { id: 'chat-widget', name: 'Chat widget', farmer: 'designer', doneWhen: 'The widget answers and shows its sources without covering the reply box', mins: 12, usd: 0.8 },
+        SHIP,
+      ],
+      script: SUPPORT,
+      matched: true,
+      context: { builder: ['src/', 'docs/help/', 'eval/questions.jsonl'], designer: ['src/widget/', 'docs/help/'], tester: ['tests/', 'eval/questions.jsonl'] },
+      why: {
+        planner: "Keeps the answers and the widget in step, and passes your notes on.",
+        builder: "Indexes the help docs, answers from them and hands off when unsure.",
+        designer: "The widget is what customers see, so it keeps sources visible and the reply box clear.",
+        tester: "Runs the eval questions against every answer, so a wrong one never reaches a customer.",
+        deployer: "Wrong answers reach real customers, so it ships to 10% first and rolls back on its own.",
+      },
+    }
+  if (/\b(checkout|payments?|stripe|billing|subscriptions?|pricing)\b/.test(g))
+    return {
+      name: 'Checkout',
+      tasks: [
+        { id: 'pricing-model', name: 'Model plans and prices', farmer: 'builder', doneWhen: 'Plans and prices load from one config, with tests', mins: 8, usd: 0.5 },
+        { id: 'checkout-api', name: 'Checkout API', farmer: 'builder', doneWhen: 'A test card completes a purchase in test mode', mins: 14, usd: 1.2, after: ['pricing-model'] },
+        { id: 'webhooks', name: 'Handle payment webhooks', farmer: 'builder', doneWhen: 'Paid, failed and refunded events update the account', mins: 10, usd: 0.8, after: ['checkout-api'] },
+        { id: 'checkout-ui', name: 'Checkout screens', farmer: 'designer', doneWhen: 'Checkout works with clear errors and nothing covering the pay button', mins: 12, usd: 0.8 },
+        { ...SHIP, doneWhen: 'Live for 10% of buyers with no failed payments, then for everyone' },
+      ],
+      script: CHECKOUT,
+      matched: true,
+      context: { builder: ['src/billing/', 'docs/pricing.md'], designer: ['src/checkout/', 'docs/brand.md'], tester: ['tests/billing/'] },
+      why: {
+        planner: "Keeps prices, payments and screens reading from one plan config.",
+        builder: "Prices, the checkout API and webhooks are one chain of money code.",
+        designer: "Buyers leave at confusing errors, so it owns the checkout screens and their copy. It works from the brand guide.",
+        tester: "Runs test-card purchases and refunds against every task’s goal, so nobody is charged wrong.",
+        deployer: "Payments can't be half broken, so 10% of buyers first, rolled back at the first failed payment.",
+      },
+    }
+  // Whole words only, and not "report": an expense report tool is not a metrics dashboard.
+  if (/\b(dashboards?|analytics|metrics|charts?|kpis?)\b/.test(g))
+    return {
+      name: 'Metrics dashboard',
+      tasks: [
+        { id: 'metrics-query', name: 'Query the metrics', farmer: 'builder', doneWhen: 'Each metric matches a hand count on sample data', mins: 12, usd: 0.9 },
+        { id: 'metrics-api', name: 'Metrics API', farmer: 'builder', doneWhen: 'The API returns every metric in under 300 ms', mins: 10, usd: 0.7, after: ['metrics-query'] },
+        { id: 'dashboard-ui', name: 'Dashboard screens', farmer: 'designer', doneWhen: 'Charts read clearly at a glance', mins: 14, usd: 0.9 },
+        SHIP,
+      ],
+      script: DASHBOARD,
+      matched: true,
+      context: { builder: ['src/metrics/', 'db/schema.sql'], designer: ['src/dashboard/'], tester: ['tests/metrics/'] },
+      why: {
+        planner: "Keeps the queries and the charts agreeing on what each metric means.",
+        builder: "Writes the metric queries and the API.",
+        designer: "Charts only help if they read at a glance, so it designs them on their own. It works from the brand guide.",
+        tester: "Checks every metric against a hand count, so the dashboard never shows a wrong number.",
+        deployer: "Ships to 10% first and rolls back if the API slows down or errors.",
+      },
+    }
+  // Anything else: a feature. The Designer joins only when the goal touches what people see.
+  return {
+    name: title,
+    tasks: [
+      { id: 'core', name: 'Build the core', farmer: 'builder', doneWhen: 'The main flow works end to end in a test', mins: 15, usd: 1.2 },
+      { id: 'data', name: 'Store the data', farmer: 'builder', doneWhen: 'Data survives a restart, with a migration test', mins: 9, usd: 0.6, after: ['core'] },
+      ...(UI.test(g) ? [{ id: 'screens', name: 'Design the screens', farmer: 'designer' as FarmerId, doneWhen: 'Every screen works, with nothing covering its main button', mins: 12, usd: 0.8 }] : []),
+      SHIP,
+    ],
+    script: GENERIC,
+    matched: false,
+    context: { builder: ['src/', 'package.json'], designer: ['src/ui/', 'docs/brand.md'], tester: ['tests/'] },
+  }
+}
+
+const PRIORITY: FarmerId[] = ['builder', 'tester', 'planner', 'designer', 'deployer']
+
+const WHY: Record<FarmerId, string> = {
+  planner: 'Splits the work, prices it and passes your messages on.',
+  builder: 'Writes most of the code.',
+  designer: 'Owns the screens and copy, from the brand guide.',
+  tester: 'Checks the others’ work against each task’s goal, so nobody grades its own work.',
+  deployer: 'The only one that may ship. Goes to 10% first and rolls back on its own.',
+}
+
+function setup(id: FarmerId, d: Draft, usd: number, minutes: number, solo: boolean, ships = false): FarmerSetup {
+  const label = CREW[id].label
+  const model = solo ? 'Claude Opus 5.5' : MODEL_OF[id]
+  const base: Record<FarmerId, { context: string[]; constraints: string[] }> = {
+    planner: { context: ['docs/', 'README.md'], constraints: ['Read only', 'May not deploy'] },
+    builder: { context: d.context.builder ?? ['src/'], constraints: solo || ships ? ['Waits for you before shipping', 'No network calls to production'] : ['May not deploy', 'No network calls to production'] },
+    designer: { context: d.context.designer ?? ['src/ui/'], constraints: ['Changes only its own screens', 'May not deploy'] },
+    tester: { context: d.context.tester ?? ['tests/'], constraints: ['May not change src/', 'Runs tests only'] },
+    deployer: { context: ['deploy/', '.env.example'], constraints: ['Ships to 10% first', 'Rolls back if errors pass 2%'] },
+  }
+  return {
+    id,
+    label: solo ? 'Builder' : label,
+    agent: MODELS.find((m) => m.model === model)?.agent ?? 'claude-code',
+    model,
+    context: base[id].context,
+    constraints: base[id].constraints,
+    limits: { usd: Math.ceil(usd * 1.3), minutes: Math.ceil((minutes * 1.3) / 5) * 5 },
+    why: solo ? 'Does everything in a row. Cheapest to run, slowest to finish.' : d.why?.[id] ?? WHY[id],
+  }
+}
+
+export function simulatePlan(goal: string, crewSize?: number | FarmerId[]): PlanOut {
+  const d = draft(goal)
+  // Default crew, sized to the goal: everyone with work, plus the Tester and Planner who check it. A small change
+  // is the Builder and the Tester alone. You can add anyone back in the crew picker.
+  const wanted = new Set<FarmerId>(d.crew ?? ['builder', 'tester', 'planner', ...d.tasks.map((t) => t.farmer)])
+  let crew = PRIORITY.filter((id) => wanted.has(id))
+  if (Array.isArray(crewSize)) crew = PRIORITY.filter((id) => id === 'builder' || crewSize.includes(id))
+  else if (crewSize !== undefined) crew = PRIORITY.slice(0, Math.max(1, Math.min(5, Math.round(crewSize))))
+  // One agent you chose is the general agent doing everything. The Builder alone on a small change is just the Builder.
+  const solo = crew.length === 1 && crewSize !== undefined
+  const fallback = (f: FarmerId): FarmerId => (crew.includes(f) ? f : 'builder')
+
+  // Drafts price each task in small units; scaled, this is what the task costs on Opus.
+  const tasks = d.tasks.map((t) => ({ ...t, mins: t.mins * MIN_SCALE, usd: t.usd * USD_SCALE, farmer: fallback(t.farmer), gate: !!t.gate }))
+  // A Tester on the crew gets its own task before shipping: the end-to-end check, or a light one for a small change.
+  if (crew.includes('tester')) {
+    const i = tasks.findIndex((t) => t.gate)
+    const c = d.check ?? { name: 'Check it end to end', doneWhen: 'Every task’s goal holds in one end-to-end run', mins: 7, usd: 0.4 }
+    tasks.splice(i < 0 ? tasks.length : i, 0, { id: 'e2e-check', name: c.name, farmer: 'tester', doneWhen: c.doneWhen, gate: false, mins: c.mins * MIN_SCALE, usd: c.usd * USD_SCALE, after: tasks.filter((t) => !t.gate).map((t) => t.id) })
+  }
+
+  // Crew time: the longest chain, since farmers work in parallel. One agent: everything in a row.
+  const finish: Record<string, number> = {}
+  const busy: Partial<Record<FarmerId, number>> = {}
+  for (const t of tasks) {
+    const deps = t.gate ? tasks.filter((x) => !x.gate).map((x) => x.id) : t.after ?? []
+    const start = Math.max(busy[t.farmer] ?? 0, ...deps.map((id) => finish[id] ?? 0))
+    finish[t.id] = start + t.mins
+    busy[t.farmer] = finish[t.id]
+  }
+  const sum = (k: 'mins' | 'usd') => tasks.reduce((s, t) => s + t[k], 0)
+  // Task prices are in Opus terms; each farmer pays its own model's rate.
+  const rate = (f: FarmerId) => (solo ? 1 : rateOf(MODEL_OF[f]))
+  const crewUsd = tasks.reduce((s, t) => s + t.usd * rate(t.farmer), 0) + (d.handoff ?? HANDOFF) * USD_SCALE * (crew.length - 1)
+  // The single agent does the work, not the checks: the end-to-end check is the Tester's, so it's left out.
+  const work = tasks.filter((t) => t.id !== 'e2e-check')
+  const workSum = (k: 'mins' | 'usd') => work.reduce((n, t) => n + t[k], 0)
+  const alone: Estimate = { usd: +(workSum('usd') * rateOf(SOLO.model) * SOLO.contextCost).toFixed(2), minutes: Math.round(workSum('mins') * SOLO.contextTime) }
+  const mine: Estimate = { usd: +(sum('usd') * SOLO.contextCost).toFixed(2), minutes: Math.round(sum('mins') * SOLO.contextTime) }
+  const estimate: Estimate = solo ? mine : { usd: +crewUsd.toFixed(2), minutes: Math.round(Math.max(...Object.values(finish)) + 4) }
+  const singleAgentEstimate: Estimate = alone
+
+  const farmers = crew.map((id) => {
+    const mine = tasks.filter((t) => t.farmer === id)
+    return setup(id, d, Math.max(d.script.quiet ? 1 : 5, mine.reduce((s, t) => s + t.usd * rate(t.farmer), 0) || 5), Math.max(10, mine.reduce((s, t) => s + t.mins, 0)), solo, id === 'builder' && !crew.includes('deployer'))
+  })
+  return {
+    name: d.name,
+    farmers,
+    tasks: tasks.map(({ id, name, farmer, doneWhen, gate }) => ({ id, name, farmer, doneWhen, gate })),
+    estimate,
+    singleAgentEstimate,
+  }
+}
+
+const ROUTES: [RegExp, FarmerId, string][] = [
+  [/(colou?r|font|button|layout|screen|copy|design|look|mobile|phone|widget|friendl|tone|wording|style)/i, 'designer', 'since it is about how it looks and reads'],
+  [/(test|bug|broken|fail|check|flaky)/i, 'tester', 'since it is about whether it works'],
+  [/(deploy|ship|release|rollback|prod|live)/i, 'deployer', 'since it is about shipping'],
+  [/(code|api|endpoint|database|refactor|build|function|error)/i, 'builder', 'since it is a code change'],
+]
+
+export function simulateRoute(input: RouteInput): RouteOut {
+  const ids = input.farmers.map((f) => f.id)
+  const hit = ROUTES.find(([re, id]) => re.test(input.message) && ids.includes(id))
+  const to: FarmerId = hit ? hit[1] : ids.includes('planner') ? 'planner' : ids[0] ?? 'builder'
+  const label = input.farmers.find((f) => f.id === to)?.label ?? CREW[to].label
+  const words = input.message.toLowerCase()
+  const task = input.tasks.find((t) => t.farmer === to && words.includes(t.name.toLowerCase().split(' ').slice(-1)[0]))?.id ?? input.tasks.find((t) => t.farmer === to)?.id
+  const on = input.tasks.find((t) => t.id === task)?.name
+  const reply = hit
+    ? `Passed to the ${label}${on ? ` for “${on}”` : ''}, ${hit[2]}. It's on the ${label}'s page under Your notes.`
+    : `That's about the plan, so I've kept it myself. It's on my page under Your notes.`
+  return task ? { to, task, reply } : { to, reply }
+}

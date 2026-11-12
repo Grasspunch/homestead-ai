@@ -1,0 +1,39 @@
+/* The shared kit: paper panels, speech bubbles and fields.
+   The app and the /design library both import this file, so the two can't drift apart.
+   Every rule is scoped to its own class, and every token has a fallback, so it is safe to load anywhere. */
+
+/* ---- paper: the one surface. Straight edges, no tail. ---- */
+.paper { border: 12px solid transparent; border-image: url(/ui/textbox_plain.png) 5 fill / 15px stretch; image-rendering: pixelated; }
+.wood { border: 15px solid transparent; border-image: url(/ui/textbox_plain.png) 5 fill / 15px stretch; image-rendering: pixelated; }
+
+/* ---- bubble: paper with a tail that points at whoever is speaking ----
+   data-tail picks the side (left, right, up, down). --tail-at moves the tail along that side,
+   measured from the top (left, right) or the left (up, down). No data-tail means no speaker: plain paper. */
+.bubble { position: relative; }
+.bubble[data-tail]::before { content: ""; position: absolute; pointer-events: none; image-rendering: pixelated; background: 0 0 / 100% 100% no-repeat; }
+.bubble[data-tail='left']::before { width: 30px; height: 36px; left: -30px; top: var(--tail-at, 42px); background-image: url(/ui/tail_left.png); }
+.bubble[data-tail='right']::before { width: 30px; height: 36px; right: -30px; top: var(--tail-at, 42px); background-image: url(/ui/tail_right.png); }
+.bubble[data-tail='up']::before { width: 36px; height: 30px; top: -30px; left: var(--tail-at, 42px); background-image: url(/ui/tail_up.png); }
+.bubble[data-tail='down']::before { width: 36px; height: 30px; bottom: -30px; left: var(--tail-at, 42px); background-image: url(/ui/tail_down.png); }
+
+/* ---- fields: every value you can change is the same soft well ----
+   A pixel nine-slice: a soft outline one step darker than the paper, a lip on top, the fill one shade darker.
+   Hover darkens the outline; focus turns it leaf green. */
+.field-box, .limit-field, .add-file input, .field-area, .field {
+  border: 6px solid transparent; border-image: url(/ui/field.png) 2 / 6px stretch; image-rendering: pixelated;
+  background: var(--field-ink, #e2c79c) padding-box; border-radius: 0; box-shadow: none;
+  font: var(--t-body, 15px)/1 var(--ui, 'Atkinson Hyperlegible Next', system-ui, sans-serif); color: var(--bark, #4a3426); padding: 0 6px; }
+.field-box:hover, .limit-field:hover, .add-file input:hover, .field-area:hover, .field:hover { border-image-source: url(/ui/field_hover.png); }
+.field-box:focus, .limit-field:focus-within, .add-file input:focus, .field-area:focus, .field:focus-within { outline: none; border-image-source: url(/ui/field_focus.png); }
+.field-box, .limit-field, .add-file input { height: var(--field-h, 36px); }
+select.field-box { appearance: none; -webkit-appearance: none; padding-right: 22px; cursor: pointer;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h10v2H8v2H6v2H4V4H2V2H0z' fill='%236a4a34'/%3E%3C/svg%3E") right 6px center / 10px 6px no-repeat padding-box, var(--field-ink, #e2c79c) padding-box; }
+.limit-field { display: inline-flex; align-items: center; gap: 2px; cursor: text; color: var(--bark-3, #8a6a50); }
+.limit-field input { width: 100%; min-width: 0; border: 0; background: none; padding: 0; font: 700 var(--t-body, 15px)/1 var(--ui, system-ui); color: var(--bark, #4a3426); font-variant-numeric: tabular-nums; text-align: right; }
+.limit-field input:focus { outline: none; }
+.field-area { height: auto; min-height: calc(var(--field-h, 36px) * 2); padding: 4px 6px; line-height: 1.4; resize: vertical; width: 100%; display: block; }
+/* The talk bar and the goal: the same well, taller because they lead a dialogue. */
+.field { flex: 1; min-width: 200px; height: 44px; display: flex; align-items: center; }
+.field input { width: 100%; border: 0; background: transparent; outline: none; font: inherit; color: inherit; padding: 0 4px; }
+.review .field { height: var(--field-h, 36px); min-width: 0; }
+.paper ::placeholder, .wood ::placeholder, .field ::placeholder, .field-area::placeholder { color: var(--bark-3, #8a6a50); opacity: 1; }
