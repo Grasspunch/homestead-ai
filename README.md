@@ -36,9 +36,15 @@ Runs are simulated, and the top bar says so. A change mid-run (a model, a limit)
 
 A real crew takes hours and real money. The simulation is deterministic, priced from list prices per token. Three samples (support assistant, checkout, metrics dashboard) have their own scripts; every farm is tagged "Simulated" in the top bar, and the sample "Simulated sample".
 
+Live mode is on by default; turn it off in Settings. Open the app with `?demo` for the scripted demo the pitch video was recorded from: Live mode starts off, the support sample opens on a first visit, and a change to Live mode there lasts for that page only. Without `?demo` a first visit starts at Home, with no sample.
+
 With Live mode on, every live call, Claude or OpenAI, goes through Lovable's AI gateway with the server's `LOVABLE_API_KEY`, paid with workspace credits, Out of credits, a call falls back to your own `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for that model's maker, when set; otherwise, rate limited or a wrong model id, it is simulated, and the screen says which source answered ("Lovable AI", "your Anthropic key", "your OpenAI key" or "Simulated (out of credits)"). Locally `/api/agent` is served by the dev server; the Lovable mirror has its own route at `src/routes/api/agent.ts`.
 
-The live plan is the one real AI moment: the Planner reads your goal and proposes the crew, limits and done-whens in one call, and everything after it is simulated, which the plan and the title say. For the sample's goal and the starters on Home, a live plan is kept (in the browser, and in `src/run/recorded-plans.json` after `node scripts/record-plans.mjs <url of /api/agent>`), so if the live call fails on the day the farm shows that real plan, tagged "Planned live earlier" with its date, instead of a simulated one.
+Each visitor gets a share of live AI on the public link: 40 calls in any 10 minutes, and 3 real pull requests an hour. Past it, a call is simulated and says so. Each farm keeps what its live calls cost at list prices.
+
+At the end of a live run, the pull request offers "Open it on GitHub for real": the Builder writes the change in one live call into the repository in `GITHUB_REPO` ("owner/name") and opens a real pull request there with `GITHUB_TOKEN`, a token that may push branches and open pull requests on that repository only. The pull request says what was real, and what the farm's live AI cost. Without those two secrets the button doesn't show.
+
+The live plan is the first real AI moment: the Planner reads your goal and proposes the crew, limits and done-whens in one call, and everything after it is simulated, which the plan and the title say. For the sample's goal and the starters on Home, a live plan is kept (in the browser, and in `src/run/recorded-plans.json` after `node scripts/record-plans.mjs <url of /api/agent>`), so if the live call fails on the day the farm shows that real plan, tagged "Planned live earlier" with its date, instead of a simulated one.
 
 ```
 npm install && npm run dev

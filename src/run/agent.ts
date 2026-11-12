@@ -1,6 +1,7 @@
-// The Planner the app talks to. Simulated by default, so trying it spends no tokens.
-// Live mode (Settings) sends the same requests to the real Planner through /api/agent, which on Lovable calls
-// every model through Lovable AI, paid with workspace credits.
+// The Planner the app talks to. Live by default: requests go to the real Planner through /api/agent, which on
+// Lovable calls every model through Lovable AI, paid with workspace credits. Live mode in Settings turns it off.
+// ?demo in the address plays the scripted demo the pitch video was recorded from: Live mode starts off there, and
+// a change to it lasts for that page only, so your own choice stays as it was.
 // A failed live call, one the server can't run, or one Lovable AI refuses (credits, rate limit) falls back to the
 // simulation and says why.
 
@@ -18,19 +19,26 @@ import type { AskTalkIn, AskTalkOut, ChatIn, ChatOut } from './talk'
 
 const KEY = 'homestead.live'
 
+// Read once, when the page loads: the app changes the address as you move around, and the demo lasts the visit.
+export const DEMO = typeof location !== 'undefined' && new URLSearchParams(location.search).has('demo')
+
+// On unless you turned it off. Outside a browser (the tests) there is no server to call, so it's off.
 export function getLiveMode(): boolean {
+  if (DEMO || typeof window === 'undefined') return false
   try {
-    return localStorage.getItem(KEY) === '1'
+    return localStorage.getItem(KEY) !== '0'
   } catch {
-    return false
+    return true
   }
 }
 
 export function setLiveMode(on: boolean) {
-  try {
-    localStorage.setItem(KEY, on ? '1' : '0')
-  } catch {
-    // Private windows: the switch lasts for this page only.
+  if (!DEMO) {
+    try {
+      localStorage.setItem(KEY, on ? '1' : '0')
+    } catch {
+      // Private windows: the switch lasts for this page only.
+    }
   }
   live = on
 }
@@ -51,7 +59,7 @@ export const NO_KEY = { anthropic: 'Anthropic key not set, simulated', openai: '
 
 // Notes that say a call was simulated for an expected reason, not because it broke.
 export const isFallbackNote = (note?: string) =>
-  !!note && (Object.values(NO_KEY).includes(note) || note === new GatewayRefused('credits').message || note === new GatewayRefused('rate').message)
+  !!note && (Object.values(NO_KEY).includes(note) || note === new GatewayRefused('credits').message || note === new GatewayRefused('rate').message || note === new GatewayRefused('visitor').message)
 
 const noteOf = (e: unknown) => (e instanceof KeyMissing ? NO_KEY[e.provider] : e instanceof Error ? e.message : String(e))
 
