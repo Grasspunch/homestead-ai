@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MODEL, PLAN_SCHEMA, runAgent, type ClaudeClient } from '../../agent/agents'
-import { planGoal, probeLive, resetLiveProbe, routeMessage } from '../live'
+import { openShipLive, planGoal, probeLive, resetLiveProbe, routeMessage, writeShipLive } from '../live'
 
 function fakeClient(out: unknown) {
   const calls: Record<string, unknown>[] = []
@@ -101,5 +101,18 @@ describe('live client', () => {
     await expect(planGoal('x')).rejects.toThrow("Couldn't make a plan: ANTHROPIC_API_KEY is not set")
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed') }))
     await expect(routeMessage('hi', [], [])).rejects.toThrow('Could not reach the agent server.')
+  })
+
+  it('reads a kept-alive answer: spaces first, the status in the body', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('   {"error":"GitHub answered 403","status":500}', { status: 200 })))
+    await expect(writeShipLive({ goal: 'x', tasks: [] })).rejects.toThrow("Couldn't open the pull request: GitHub answered 403")
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('  {"error":"That\'s 3 real pull requests this hour","code":"visitor","status":429}', { status: 200 })))
+    await expect(writeShipLive({ goal: 'x', tasks: [] })).rejects.toThrow("That's 3 real pull requests this hour")
+    const fetchMock = vi.fn(async () => new Response('  {"data":{"url":"u","number":7,"title":"t","repo":"me/demo","branch":"b","files":[]},"tokens":0,"usd":0}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const draft = { id: 'i', repo: 'me/demo', base: 'main', parent: 'c1', tree: 't1', title: 't', summary: '', goal: 'x', plan: '', files: [], model: 'GPT-6.1 Sol', source: 'lovable' as const, usd: 0.01 }
+    await expect(openShipLive({ draft, sig: 's' })).resolves.toMatchObject({ url: 'u', number: 7 })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toMatchObject({ task: 'ship', input: { step: 'open', sig: 's' } })
   })
 })

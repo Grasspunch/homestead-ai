@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { chatSim, trustWords } from '../chatSim'
-import { chatTurn } from '../agent'
+import { chatTurn, setLiveMode } from '../agent'
 import { resetLiveProbe } from '../live'
 import { readChanges, type Change, type Ctx } from '../reshape'
 import { simulatePlan } from '../simPlan'
@@ -157,6 +157,15 @@ describe('chatTurn', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     resetLiveProbe()
+    setLiveMode(false)
+  })
+  it('with Live mode off, answers from the script and calls no model', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ live: true, keys: { anthropic: true, openai: true } })))
+    vi.stubGlobal('fetch', fetchMock)
+    const r = await chatTurn({ message: 'how much have we spent?', history: [], status: base })
+    expect(r.live).toBe(false)
+    expect(r.error).toBeUndefined()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
   it('falls back to the script when the server can’t run a model', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ live: false }))))
@@ -165,6 +174,7 @@ describe('chatTurn', () => {
     expect(r.data?.reply).toMatch(/\$1\.23/)
   })
   it('falls back to the script when the live call fails, and checks the live action', async () => {
+    setLiveMode(true)
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init?: RequestInit) => (init?.method === 'POST' ? new Response('{}', { status: 500 }) : new Response(JSON.stringify({ live: true })))))
     const r = await chatTurn({ message: 'put it back', history: [], status: { ...base, changesOn: [INCIDENT] } })
     expect(r.live).toBe(false)

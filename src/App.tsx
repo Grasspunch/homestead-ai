@@ -267,8 +267,8 @@ function Top({ p, s }: { p: Project; s: RunState }) {
         )}
         {p.approved && !!p.reshapes?.length && !look.hidden.includes('chips') && (
           <div className="reshapes">
-            {/* A screen-only change shows its chip only while it carries Undo: the screen itself shows it. */}
-            {p.reshapes.filter((r) => !r.changes.every(isUi) || (st.fresh?.id === r.id && Date.now() < st.fresh.until)).map((r) => (
+            {/* A screen-only change keeps its chip while it's your latest change, so it can still be undone. */}
+            {p.reshapes.filter((r, i, all) => !r.changes.every(isUi) || i === all.length - 1 || (st.fresh?.id === r.id && Date.now() < st.fresh.until)).map((r) => (
               <span key={r.id} className={`tag gold reshape-chip${st.fresh?.id === r.id && Date.now() < st.fresh.until ? ' fresh' : ''}`} title={r.changes.length + ' changes you asked for: ' + r.request}>
                 {r.title}
                 {st.fresh?.id === r.id && Date.now() < st.fresh.until ? (
@@ -1072,6 +1072,9 @@ function ChangeCard({ side }: { side: boolean }) {
     }
     setBusy(false)
   }
+  // Where the ticked rows apply, as their own switches say: one place for all of them, or each row says.
+  const picked = pd.proposal.rows.filter((r) => on[r.id]).map((r) => scope[r.id])
+  const where = picked.length && picked.every((k) => k === 'every') ? ' to every project' : picked.length && picked.every((k) => k === 'farm') ? ' to this project' : ''
   return (
     <Dialogue farmer="planner" side={side}>
       <div className="who">
@@ -1081,7 +1084,7 @@ function ChangeCard({ side }: { side: boolean }) {
           {pd.proposal.title}
         </span>
       </div>
-      <p>{pd.denied ? 'Notifications are blocked in this browser, so each stage will show here instead.' : `Make ${pd.proposal.rows.length === 1 ? 'this change' : `these ${pd.proposal.rows.length} changes`} to this project?`}</p>
+      <p>{pd.denied ? 'Notifications are blocked in this browser, so each stage will show here instead.' : `Make ${pd.proposal.rows.length === 1 ? 'this change' : `these ${pd.proposal.rows.length} changes`}${where}?`}</p>
       {pd.proposal.note && <p className="sureness">{pd.proposal.note}</p>}
       <ul className="change-rows" aria-label="Changes">
         {pd.proposal.rows.map((r) => (

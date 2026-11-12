@@ -36,7 +36,7 @@ Runs are simulated, and the top bar says so. A change mid-run (a model, a limit)
 
 A real crew takes hours and real money. The simulation is deterministic, priced from list prices per token. Three samples (support assistant, checkout, metrics dashboard) have their own scripts; every farm is tagged "Simulated" in the top bar, and the sample "Simulated sample".
 
-Live mode is on by default; turn it off in Settings. Open the app with `?demo` for the scripted demo the pitch video was recorded from: Live mode starts off, the support sample opens on a first visit, and a change to Live mode there lasts for that page only. Without `?demo` a first visit starts at Home, with no sample.
+Live mode is off by default, so a first look is quick and free; turn it on in Settings to have every answer (the plan, chat, asks, changes) come from real models. Off, nothing calls a model. Open the app with `?demo` for the scripted demo the pitch video was recorded from: Live mode starts off, the support sample opens on a first visit, and a change to Live mode there lasts for that page only. Without `?demo` a first visit starts at Home, with no sample.
 
 With Live mode on, every live call, Claude or OpenAI, goes through Lovable's AI gateway with the server's `LOVABLE_API_KEY`, paid with workspace credits, Out of credits, a call falls back to your own `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for that model's maker, when set; otherwise, rate limited or a wrong model id, it is simulated, and the screen says which source answered ("Lovable AI", "your Anthropic key", "your OpenAI key" or "Simulated (out of credits)"). Locally `/api/agent` is served by the dev server; the Lovable mirror has its own route at `src/routes/api/agent.ts`.
 
