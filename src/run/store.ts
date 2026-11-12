@@ -1173,6 +1173,9 @@ class Store {
         return 'reply'
       }
       proposal = { ...r.proposal, note }
+    } else if (liveReply && !proposal.note?.includes(liveReply)) {
+      // What the live Planner said about the change (a warning, say) goes on the card with it.
+      proposal = { ...proposal, note: [proposal.note, liveReply].filter(Boolean).join(' ') }
     }
     const wasPlaying = this.playing
     this.pause()

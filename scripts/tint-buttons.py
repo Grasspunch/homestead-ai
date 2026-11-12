@@ -9,11 +9,12 @@ src = Image.open(ui / 'btn_white.png').convert('RGBA')
 # btn_white's shades, light to dark: highlight, fill, shadow, outline, shadow outline.
 WHITE = [(251, 251, 246), (220, 224, 210), (193, 200, 185), (129, 139, 131), (87, 94, 92)]
 hexes = lambda *h: [tuple(int(x[i:i + 2], 16) for i in (1, 3, 5)) for x in h]
+# The fill is a mid shade of the token, so a red button reads red, not pink; outlines are the token itself.
 RAMPS = {
-    'leaf': hexes('#f2f8e8', '#e3efcf', '#c3daa6', '#7aa35a', '#4f8f3f'),  # --leaf-wash, tag green, --leaf
-    'berry': hexes('#fcefea', '#f6dcd4', '#e9b9ae', '#d1857c', '#c4615a'),  # --berry-wash, --berry
-    'sky': hexes('#f6f8fd', '#e8eefa', '#c4d2ee', '#7e98c8', '#2d5da8'),  # --sky-wash, --sky
-    'gold': hexes('#fbf2da', '#f5e2b0', '#e8c97c', '#d0a03c', '#a87a2a'),  # --honey
+    'leaf': hexes('#e3efcf', '#b5d68f', '#8fbf6a', '#4f8f3f', '#3a6e2e'),  # --leaf-wash .. --leaf
+    'berry': hexes('#f6dcd4', '#ec9f95', '#dc7d72', '#c4615a', '#9a463f'),  # --berry-wash .. --berry
+    'sky': hexes('#e8eefa', '#a9c0ea', '#86a4dc', '#2d5da8', '#21467f'),  # --sky-wash .. --sky
+    'gold': hexes('#f5e2b0', '#ecc96a', '#dcb04a', '#a87a2a', '#7f5b1c'),  # honey wash .. honey
 }
 for name, ramp in RAMPS.items():
     out = src.copy()

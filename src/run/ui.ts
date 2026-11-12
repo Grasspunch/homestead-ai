@@ -83,6 +83,7 @@ export const LABEL_MAX = 20
 // How the screen looks after every change you made.
 export interface UiLook {
   hidden: UiId[]
+  moved?: UiId[] // parts you moved yourself; a part shifted along by another's move isn't one
   order: BarSlot[]
   size: Partial<Record<UiId, number>>
   label: Partial<Record<UiId, string>>
@@ -122,12 +123,13 @@ export function uiLookOf(farm: { kind: string }[], flow: { kind: string }[] = []
     if (m) moves.push(m)
   }
   for (const m of moves.sort((a, b) => a.i - b.i)) if (m.c.kind === 'uiMove') look.order = moved(look.order, m.c)
+  look.moved = moves.map((m) => m.c.el)
   return look
 }
 
 // What a reset would change: nothing means the part is already as it ships.
 const changedProps = (el: UiId, look: UiLook) =>
-  [look.hidden.includes(el) && 'hide', look.order.indexOf(el) !== BAR_DEFAULT.indexOf(el) && 'move', !!look.size[el] && 'size', !!look.label[el] && 'label', !!look.color[el] && 'color'].filter((x): x is UiProp => !!x)
+  [look.hidden.includes(el) && 'hide', (look.moved ? look.moved.includes(el) && look.order.join() !== BAR_DEFAULT.join() : look.order.indexOf(el) !== BAR_DEFAULT.indexOf(el)) && 'move', !!look.size[el] && 'size', !!look.label[el] && 'label', !!look.color[el] && 'color'].filter((x): x is UiProp => !!x)
 
 // A change that would leave the screen as it is.
 export function uiNoop(c: UiChange, look: UiLook): boolean {
