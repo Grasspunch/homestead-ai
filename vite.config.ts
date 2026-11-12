@@ -21,7 +21,7 @@ function agentApi(): Plugin {
         res.setHeader('Content-Type', 'application/json')
         if (req.method === 'GET')
           return res.end(JSON.stringify({ live: !!(lovable || anthropic || openai), gateway: !!lovable, keys: { anthropic: !!(lovable || anthropic), openai: !!(lovable || openai) }, own: { anthropic: !!anthropic, openai: !!openai }, github: github?.repo ?? null }))
-        const { runAgent, errorReply } = await server.ssrLoadModule('/src/agent/agents.ts')
+        const { runAgent, errorReply, keepAlive, KEEP_ALIVE_HEADERS } = await server.ssrLoadModule('/src/agent/agents.ts')
         try {
           let body = ''
           for await (const chunk of req) body += chunk
@@ -31,7 +31,19 @@ function agentApi(): Plugin {
             const { default: Anthropic } = await import('@anthropic-ai/sdk')
             claude = new Anthropic({ apiKey: anthropic })
           }
-          res.end(JSON.stringify(await runAgent({ gateway: lovable ? { key: lovable } : undefined, claude, openai: openai ? { key: openai } : undefined }, task, input, { visitor: req.socket.remoteAddress ?? 'local', github })))
+          const run = () => runAgent({ gateway: lovable ? { key: lovable } : undefined, claude, openai: openai ? { key: openai } : undefined }, task, input, { visitor: req.socket.remoteAddress ?? 'local', github })
+          // A real pull request can run long, so its answer keeps the connection alive, as on Lovable.
+          if (task === 'ship') {
+            for (const [k, v] of Object.entries(KEEP_ALIVE_HEADERS as Record<string, string>)) res.setHeader(k, v)
+            const reader = (keepAlive(run) as ReadableStream<Uint8Array>).getReader()
+            for (;;) {
+              const { done, value } = await reader.read()
+              if (done) break
+              res.write(value)
+            }
+            return res.end()
+          }
+          res.end(JSON.stringify(await run()))
         } catch (e) {
           const r = errorReply(e)
           res.statusCode = r.status
