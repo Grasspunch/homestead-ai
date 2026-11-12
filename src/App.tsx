@@ -20,6 +20,7 @@ import { chatTurn } from './run/agent'
 import { trustWords } from './run/chatSim'
 import type { ChatOut } from './run/talk'
 import { planInto } from './run/planning'
+import { onLiveCost } from './run/live'
 import { shortDate } from './run/recorded'
 import { ExportButtons } from './hud/Export'
 import { pendingAsk } from './run/reduce'
@@ -37,6 +38,7 @@ import { MODELS, MODEL_GROUPS, applyEdit } from './run/kit'
 
 export function App() {
   const st = useStore()
+  useEffect(() => onLiveCost((usd) => store.addLiveCost(usd)), [])
   useEffect(() => {
     // The scripted sample farm is the demo's: it opens a first visit only at ?demo. Otherwise you start at Home.
     if (!st.projects.length) {

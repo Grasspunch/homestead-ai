@@ -59,7 +59,7 @@ export const NO_KEY = { anthropic: 'Anthropic key not set, simulated', openai: '
 
 // Notes that say a call was simulated for an expected reason, not because it broke.
 export const isFallbackNote = (note?: string) =>
-  !!note && (Object.values(NO_KEY).includes(note) || note === new GatewayRefused('credits').message || note === new GatewayRefused('rate').message)
+  !!note && (Object.values(NO_KEY).includes(note) || note === new GatewayRefused('credits').message || note === new GatewayRefused('rate').message || note === new GatewayRefused('visitor').message)
 
 const noteOf = (e: unknown) => (e instanceof KeyMissing ? NO_KEY[e.provider] : e instanceof Error ? e.message : String(e))
 

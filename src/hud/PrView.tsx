@@ -1,7 +1,7 @@
 // The pull request, the way GitHub shows it when you open one: the title, its state, what it merges, the lines
 // and files it changes, and its checks. Commits, Checks and Files changed open the rest, with the diffs.
 import './pr.css'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { store, type Project } from '../run/store'
 import { branchOf, prOf, type Commit, type Pr, type PrFile, type Row } from '../run/files'
 import { SEND_BACK } from '../run/simulate'
@@ -15,6 +15,9 @@ import { Rollout } from './Proof'
 import { caughtLine } from './Side'
 import { ExportButtons } from './Export'
 import { soloLine } from '../run/export'
+import { getLiveMode } from '../run/agent'
+import { probeKeys, shipLive } from '../run/live'
+import { providerOf } from '../run/kit'
 
 type Tab = 'conversation' | 'commits' | 'checks' | 'files'
 
@@ -234,6 +237,7 @@ function Conversation({ s, p, pr, state, failing, openFile }: { s: RunState; p: 
 
         <ReviewLoop s={s} p={p} pr={pr} openFile={openFile} />
         <MergeBox s={s} p={p} state={state} failing={failing} ask={ask} live={live} />
+        {s.done && state !== 'closed' && <RealPr s={s} p={p} />}
       </div>
 
       <aside className="prv-sidebar">
@@ -735,5 +739,82 @@ function GateRow({ g }: { g: Gate }) {
         {g.sub && <span className="sub">{g.sub}</span>}
       </span>
     </div>
+  )
+}
+
+// The end of a live run: the Builder writes this change for real into the server's demo repository and opens a pull
+// request there, with what the farm's live AI cost. Only in Live mode, and only when the server has a repository.
+function RealPr({ s, p }: { s: RunState; p: Project }) {
+  const [repo, setRepo] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    let on = true
+    probeKeys().then((k) => on && setRepo(k.github))
+    return () => {
+      on = false
+    }
+  }, [])
+  const real = p.realPr
+  if (!real && (!repo || !getLiveMode())) return null
+  const spent = `${usd(p.liveUsd ?? 0)} across ${plural(p.liveCalls ?? 0, 'call')}`
+  const open = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const keys = await probeKeys()
+      // The Builder's own model, if the server can run it; otherwise the everyday model it can.
+      const want = s.farmers.builder?.model
+      const model = want && keys[providerOf(want)] ? want : keys.anthropic ? 'Claude Sonnet 5' : 'GPT-6.1 Sol'
+      const r = await shipLive(
+        { goal: p.goal, name: p.name, tasks: s.tasks.map((t) => ({ name: t.name, doneWhen: t.doneWhen, farmer: t.farmer })), spent: { usd: p.liveUsd ?? 0, calls: p.liveCalls ?? 0 } },
+        model,
+      )
+      p.realPr = { url: r.url, number: r.number, title: r.title, repo: r.repo, files: r.files, usd: r.usd }
+      store.notify()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (real)
+    return (
+      <section className="prv-merge merged" aria-label="Real pull request">
+        <div className="prv-merge-row">
+          <span className="prv-merge-ico merged" aria-hidden>
+            <Ico name="check" tone="light" />
+          </span>
+          <span className="grow">
+            <b>
+              Opened for real:{' '}
+              <a href={real.url} target="_blank" rel="noreferrer">
+                {real.repo} #{real.number}
+              </a>
+            </b>
+            <span className="sub">
+              {real.title}. The Builder wrote {plural(real.files.length, 'file')} for {usd(real.usd)}. Live AI on this farm: {spent}, at list prices. The rest of the run was simulated.
+            </span>
+          </span>
+        </div>
+      </section>
+    )
+  return (
+    <section className="prv-merge" aria-label="Open a real pull request">
+      <div className="prv-merge-row">
+        <span className={`prv-merge-ico ${error ? 'bad' : 'you'}`} aria-hidden>
+          <Ico name={error ? 'cross' : 'play'} tone="light" />
+        </span>
+        <span className="grow">
+          <b>{busy ? 'The Builder is writing it…' : error ? 'No pull request opened' : 'Open it on GitHub for real'}</b>
+          <span className="sub">
+            {error ?? `The live Builder writes this change into ${repo} and opens a real pull request. Live AI on this farm so far: ${spent}.`}
+          </span>
+        </span>
+        <button className="btn sm" onClick={open} disabled={busy}>
+          {busy ? '...' : error ? 'Try again' : 'Open pull request'}
+        </button>
+      </div>
+    </section>
   )
 }

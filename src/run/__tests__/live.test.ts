@@ -34,7 +34,7 @@ describe('runAgent', () => {
   it('plan sends the model, fallbacks and schema, and parses the output', async () => {
     const { client, calls } = fakeClient(PLAN)
     const out = await runAgent(client, 'plan', { goal: 'Build a support bot' })
-    expect(out).toEqual({ data: PLAN, tokens: 150, model: MODEL, source: 'anthropic' })
+    expect(out).toEqual({ data: PLAN, tokens: 150, model: MODEL, source: 'anthropic', usd: expect.closeTo(0.0014) })
     const p = calls[0]
     expect(p.model).toBe('claude-opus-5-5')
     expect(p.betas).toEqual(['server-side-fallback-2026-07-01'])

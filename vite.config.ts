@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react'
 // Local stand-in for the server route on Lovable: POST /api/agent runs the same prompts (src/agent/agents.ts).
 // With LOVABLE_API_KEY in .env.local every model goes through Lovable's AI gateway, as on Lovable, and out of credits
 // falls back to ANTHROPIC_API_KEY or OPENAI_API_KEY. Without it, those keys are used directly.
-// GET says which models can run live, yes or no, never a key.
+// GET says which models can run live, yes or no, never a key, and which repository a real pull request goes to.
+// GITHUB_TOKEN and GITHUB_REPO ("owner/name") let the Builder open one at the end of a run.
 function agentApi(): Plugin {
   return {
     name: 'homestead-agent-api',
@@ -14,9 +15,12 @@ function agentApi(): Plugin {
         const lovable = env.LOVABLE_API_KEY || process.env.LOVABLE_API_KEY
         const anthropic = env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY
         const openai = env.OPENAI_API_KEY || process.env.OPENAI_API_KEY
+        const ghToken = env.GITHUB_TOKEN || process.env.GITHUB_TOKEN
+        const ghRepo = env.GITHUB_REPO || process.env.GITHUB_REPO
+        const github = ghToken && ghRepo ? { token: ghToken, repo: ghRepo } : undefined
         res.setHeader('Content-Type', 'application/json')
         if (req.method === 'GET')
-          return res.end(JSON.stringify({ live: !!(lovable || anthropic || openai), gateway: !!lovable, keys: { anthropic: !!(lovable || anthropic), openai: !!(lovable || openai) }, own: { anthropic: !!anthropic, openai: !!openai } }))
+          return res.end(JSON.stringify({ live: !!(lovable || anthropic || openai), gateway: !!lovable, keys: { anthropic: !!(lovable || anthropic), openai: !!(lovable || openai) }, own: { anthropic: !!anthropic, openai: !!openai }, github: github?.repo ?? null }))
         const { runAgent, errorReply } = await server.ssrLoadModule('/src/agent/agents.ts')
         try {
           let body = ''
@@ -27,7 +31,7 @@ function agentApi(): Plugin {
             const { default: Anthropic } = await import('@anthropic-ai/sdk')
             claude = new Anthropic({ apiKey: anthropic })
           }
-          res.end(JSON.stringify(await runAgent({ gateway: lovable ? { key: lovable } : undefined, claude, openai: openai ? { key: openai } : undefined }, task, input)))
+          res.end(JSON.stringify(await runAgent({ gateway: lovable ? { key: lovable } : undefined, claude, openai: openai ? { key: openai } : undefined }, task, input, { visitor: req.socket.remoteAddress ?? 'local', github })))
         } catch (e) {
           const r = errorReply(e)
           res.statusCode = r.status

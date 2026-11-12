@@ -67,9 +67,47 @@ export class GatewayError extends Error {
   }
 }
 
+// One visitor made too many live calls for now: the browser simulates the call and says so.
+export class TooMany extends Error {
+  constructor(message: string) {
+    super(message)
+  }
+}
+
+// The public link runs real models on the project's keys, so each visitor gets a share: 40 live calls in any
+// 10 minutes, and 3 real pull requests an hour. Counted in the server's memory, so a restart starts it again.
+export const LIMITS = { calls: { max: 40, ms: 10 * 60_000 }, ship: { max: 3, ms: 60 * 60_000 } }
+const seen = new Map<string, number[]>()
+
+export function checkVisitor(visitor: string, task: AgentTask, now = Date.now()) {
+  const take = (key: string, max: number, ms: number) => {
+    const times = (seen.get(key) ?? []).filter((t) => now - t < ms)
+    if (times.length >= max) {
+      seen.set(key, times)
+      return false
+    }
+    times.push(now)
+    seen.set(key, times)
+    return true
+  }
+  // Keep the map small: drop visitors with nothing in the last hour.
+  if (seen.size > 5000) for (const [k, v] of seen) if (!v.some((t) => now - t < LIMITS.ship.ms)) seen.delete(k)
+  if (task === 'ship' && !take(`ship:${visitor}`, LIMITS.ship.max, LIMITS.ship.ms))
+    throw new TooMany(`That's ${LIMITS.ship.max} real pull requests this hour, the most one visitor can open. Try again later.`)
+  if (!take(`calls:${visitor}`, LIMITS.calls.max, LIMITS.calls.ms))
+    throw new TooMany('This demo’s share of live AI calls is used up for a few minutes')
+}
+
+// For tests.
+export function resetVisitors() {
+  seen.clear()
+}
+
 // What the server sends back for an error, so both servers (Lovable and Vite) answer the same way.
 export function errorReply(e: unknown): { status: number; body: Record<string, unknown> } {
   if (e instanceof MissingKey) return { status: 503, body: { error: e.message, missing: e.provider } }
+  if (e instanceof TooMany) return { status: 429, body: { error: e.message, code: 'visitor' } }
+  if (e instanceof GitHubMissing) return { status: 503, body: { error: e.message } }
   if (e instanceof GatewayError) return { status: e.code === 'credits' ? 402 : e.code === 'rate' ? 429 : 502, body: { error: e.message, code: e.code, model: e.model } }
   return { status: 500, body: { error: e instanceof Error ? e.message : String(e) } }
 }
@@ -90,10 +128,22 @@ export interface AgentResult<T> {
   tokens: number
   model: string
   source: Source
+  usd?: number // what the call cost at list prices, from its input and output tokens
 }
+
+// A call's answer before it's priced: its input and output tokens, apart.
+type Raw<T> = AgentResult<T> & { inTokens: number; outTokens: number }
+
+// List price of a call: every rate is against Claude Opus 5.5, $4 in and $20 out per million tokens (see kit.ts).
+export const priceOf = (rate: number, inTokens: number, outTokens: number) => (rate * (inTokens * 4 + outTokens * 20)) / 1e6
 
 async function callJSON<T>(clients: Clients, system: string, user: string, schema: Record<string, unknown>, name = 'Claude Opus 5.5'): Promise<AgentResult<T>> {
   const m = modelOf(name) ?? modelOf('Claude Opus 5.5')!
+  const { inTokens, outTokens, ...r } = await rawJSON<T>(clients, system, user, schema, m)
+  return { ...r, usd: priceOf(m.rate, inTokens, outTokens) }
+}
+
+async function rawJSON<T>(clients: Clients, system: string, user: string, schema: Record<string, unknown>, m: NonNullable<ReturnType<typeof modelOf>>): Promise<Raw<T>> {
   const direct = () => (m.provider === 'openai' ? callOpenAI<T>(clients.openai!, system, user, schema, m.api) : callClaude<T>(clients.claude!, system, user, schema, m.api))
   const hasDirect = m.provider === 'openai' ? !!clients.openai : !!clients.claude
   if (clients.gateway) {
@@ -113,7 +163,7 @@ async function callJSON<T>(clients: Clients, system: string, user: string, schem
   return direct()
 }
 
-async function callClaude<T>(client: ClaudeClient, system: string, user: string, schema: Record<string, unknown>, api: string): Promise<AgentResult<T>> {
+async function callClaude<T>(client: ClaudeClient, system: string, user: string, schema: Record<string, unknown>, api: string): Promise<Raw<T>> {
   const res = await client.beta.messages.create({
     model: api,
     max_tokens: 16000,
@@ -127,11 +177,11 @@ async function callClaude<T>(client: ClaudeClient, system: string, user: string,
   if (res.stop_reason === 'max_tokens') throw new Error('The answer was cut off before it finished.')
   const text = res.content.find((b) => b.type === 'text')?.text
   if (!text) throw new Error('No text in the response.')
-  return { data: JSON.parse(text) as T, tokens: res.usage.input_tokens + res.usage.output_tokens, model: api, source: 'anthropic' }
+  return { data: JSON.parse(text) as T, tokens: res.usage.input_tokens + res.usage.output_tokens, inTokens: res.usage.input_tokens, outTokens: res.usage.output_tokens, model: api, source: 'anthropic' }
 }
 
 // The OpenAI Responses API, with the schema as a strict json_schema format: the same contract as the other calls.
-async function callOpenAI<T>(o: OpenAIClient, system: string, user: string, schema: Record<string, unknown>, model: string): Promise<AgentResult<T>> {
+async function callOpenAI<T>(o: OpenAIClient, system: string, user: string, schema: Record<string, unknown>, model: string): Promise<Raw<T>> {
   const res = await (o.fetch ?? fetch)('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${o.key}` },
@@ -157,13 +207,13 @@ async function callOpenAI<T>(o: OpenAIClient, system: string, user: string, sche
   if (body.status === 'incomplete') throw new Error('The answer was cut off before it finished.')
   const text = body.output_text ?? parts.find((c) => c.type === 'output_text')?.text
   if (!text) throw new Error('No text in the response.')
-  return { data: JSON.parse(text) as T, tokens: (body.usage?.input_tokens ?? 0) + (body.usage?.output_tokens ?? 0), model, source: 'openai' }
+  return { data: JSON.parse(text) as T, tokens: (body.usage?.input_tokens ?? 0) + (body.usage?.output_tokens ?? 0), inTokens: body.usage?.input_tokens ?? 0, outTokens: body.usage?.output_tokens ?? 0, model, source: 'openai' }
 }
 
 // Lovable's gateway speaks OpenAI's chat completions for every model. The schema goes as a strict json_schema
 // response format, the system prompt also asks for bare JSON, and the answer is checked against the schema, since
 // not every model behind the gateway enforces the format.
-async function callGateway<T>(g: GatewayClient, system: string, user: string, schema: Record<string, unknown>, model: string): Promise<AgentResult<T>> {
+async function callGateway<T>(g: GatewayClient, system: string, user: string, schema: Record<string, unknown>, model: string): Promise<Raw<T>> {
   const res = await (g.fetch ?? fetch)(GATEWAY_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${g.key}` },
@@ -203,7 +253,7 @@ async function callGateway<T>(g: GatewayClient, system: string, user: string, sc
   }
   const bad = mismatch(schema, data)
   if (bad) throw new Error(`The answer didn't match the plan's shape (${bad}).`)
-  return { data: data as T, tokens: (body.usage?.prompt_tokens ?? 0) + (body.usage?.completion_tokens ?? 0), model, source: 'lovable' }
+  return { data: data as T, tokens: (body.usage?.prompt_tokens ?? 0) + (body.usage?.completion_tokens ?? 0), inTokens: body.usage?.prompt_tokens ?? 0, outTokens: body.usage?.completion_tokens ?? 0, model, source: 'lovable' }
 }
 
 // A small check of an answer against the JSON schema subset these calls use: type, enum, required, items, anyOf.
@@ -632,15 +682,197 @@ ${input.message}
   return { ...out, data: { reply: out.data.reply, action: chatAction(out.data) } }
 }
 
+// ---- Ship: a real pull request ---------------------------------------------------------
+
+// The repository a real pull request goes to: "owner/name", and a token that may push branches and open pull
+// requests there. For tests, a stand-in for fetch.
+export interface GitHubConfig {
+  token: string
+  repo: string
+  fetch?: typeof fetch
+}
+
+export class GitHubMissing extends Error {
+  constructor() {
+    super('GitHub is not set up on the server: GITHUB_TOKEN and GITHUB_REPO are needed.')
+  }
+}
+
+export interface ShipIn {
+  goal: string
+  name?: string
+  tasks: { name: string; doneWhen: string; farmer: string }[]
+  spent?: { usd: number; calls: number } // the farm's live calls so far, for the pull request's cost line
+}
+
+export interface ShipOut {
+  url: string
+  number: number
+  title: string
+  repo: string
+  branch: string
+  files: string[]
+}
+
+async function github<T>(g: GitHubConfig, method: string, path: string, body?: unknown): Promise<T> {
+  const res = await (g.fetch ?? fetch)(`https://api.github.com/repos/${g.repo}${path}`, {
+    method,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${g.token}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'homestead-ai',
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const j = (await res.json().catch(() => ({}))) as T & { message?: string }
+  if (!res.ok) throw new Error(`GitHub answered ${res.status}${j.message ? `: ${j.message}` : ''}`)
+  return j
+}
+
+const TEXT = /\.(md|txt|json|jsonc|js|jsx|mjs|cjs|ts|tsx|css|scss|html|svelte|vue|py|rb|go|rs|java|kt|swift|toml|ya?ml|sh|sql)$/i
+const SKIP = /(^|\/)(node_modules|dist|build|out|coverage|vendor|\.git|\.github|\.next|\.vercel)\//
+const LOCK = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|poetry\.lock)$/
+
+// The files the Builder reads first: the README and manifests, then the shallowest source files, up to 60 KB.
+export function pickContext(tree: { path: string; type: string; size?: number }[]): string[] {
+  const files = tree.filter((t) => t.type === 'blob' && TEXT.test(t.path) && !SKIP.test(t.path) && !LOCK.test(t.path) && (t.size ?? 0) <= 12_000)
+  const rank = (p: string) => (/^readme/i.test(p) ? 0 : /^(package\.json|pyproject\.toml|Cargo\.toml|go\.mod)$/.test(p) ? 1 : 2 + p.split('/').length)
+  const sorted = [...files].sort((a, b) => rank(a.path) - rank(b.path) || a.path.localeCompare(b.path))
+  const out: string[] = []
+  let bytes = 0
+  for (const f of sorted) {
+    if (out.length >= 15 || bytes + (f.size ?? 0) > 60_000) continue
+    out.push(f.path)
+    bytes += f.size ?? 0
+  }
+  return out
+}
+
+const decode = (b64: string) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), (c) => c.charCodeAt(0)))
+
+// A file the Builder may write: a plain relative path, outside CI and lock files, with text that isn't huge.
+export function safeFiles(files: { path: string; content: string }[]): { path: string; content: string }[] {
+  const kept = new Set<string>()
+  return files
+    .map((f) => ({ path: String(f.path ?? '').trim().replace(/^\.\//, ''), content: String(f.content ?? '') }))
+    .filter((f) => f.path && !f.path.startsWith('/') && !f.path.split('/').includes('..') && !/^\.github\//.test(f.path) && !LOCK.test(f.path) && f.content.length <= 60_000)
+    .filter((f) => !kept.has(f.path) && !!kept.add(f.path))
+    .slice(0, 6)
+}
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'change'
+const dollars = (n: number) => `$${n.toFixed(2)}`
+
+// The one real step of a run: the Builder writes the change into the demo repository, and a pull request opens.
+export async function shipPr(client: Clients, g: GitHubConfig, input: ShipIn, model = 'Claude Sonnet 5'): Promise<AgentResult<ShipOut>> {
+  const repo = await github<{ default_branch: string; full_name: string }>(g, 'GET', '')
+  const base = repo.default_branch
+  let head: { object: { sha: string } }
+  try {
+    head = await github<{ object: { sha: string } }>(g, 'GET', `/git/ref/heads/${encodeURIComponent(base)}`)
+  } catch {
+    throw new Error(`${repo.full_name} has no commits yet. Add a first commit (a README is enough) and try again.`)
+  }
+  const commit = await github<{ tree: { sha: string } }>(g, 'GET', `/git/commits/${head.object.sha}`)
+  const tree = await github<{ tree: { path: string; type: string; size?: number }[] }>(g, 'GET', `/git/trees/${commit.tree.sha}?recursive=1`)
+  const paths = tree.tree.filter((t) => t.type === 'blob' && !SKIP.test(t.path)).map((t) => t.path)
+  const context = await Promise.all(
+    pickContext(tree.tree).map(async (path) => {
+      const f = await github<{ content?: string }>(g, 'GET', `/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(base)}`)
+      return { path, text: f.content ? decode(f.content) : '' }
+    }),
+  )
+  const plan = input.tasks.map((t) => `- ${t.name} (${t.farmer}): done when ${t.doneWhen}`).join('\n')
+  const out = await callJSON<{ title: string; summary: string; files: { path: string; content: string }[] }>(
+    client,
+    `You are the Builder on a Homestead crew of AI coding agents. You write real code into a real repository, and a person reviews it as a pull request before anything merges. Make the smallest complete change that meets the goal and the plan's done-whens, in the repository's own language, framework, folder layout and style. Prefer working code over stubs, and never leave a TODO where the goal needs code. Write each file whole: for a file you change, return its full new content and keep every line you are not changing exactly as it was. Change at most 6 files, only the ones the goal needs. Never write secrets, CI workflows, lock files or binary files. If part of the goal can't be done in this repository, do the part that can and say what is left in the summary.`,
+    `The goal:
+<goal>
+${input.goal}
+</goal>
+
+The plan the crew agreed:
+${plan || '(no tasks)'}
+
+Every file in the repository (${repo.full_name}, branch ${base}):
+${paths.slice(0, 300).join('\n')}${paths.length > 300 ? `\n(and ${paths.length - 300} more)` : ''}
+
+The files you can read:
+${context.map((f) => `<file path="${f.path}">\n${f.text}\n</file>`).join('\n\n') || '(none)'}
+
+Answer with:
+- title: the pull request's title, under 70 characters, in the imperative, for example "Add a contact form to the home page".
+- summary: two to four short sentences for the reviewer: what changed, where, and how to try it.
+- files: each file you add or change, with its path from the repository root and its full content.`,
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['title', 'summary', 'files'],
+      properties: {
+        title: { type: 'string' },
+        summary: { type: 'string' },
+        files: {
+          type: 'array',
+          items: { type: 'object', additionalProperties: false, required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } },
+        },
+      },
+    },
+    model,
+  )
+  const files = safeFiles(out.data.files ?? [])
+  if (!files.length) throw new Error('The Builder wrote no files it may commit, so no pull request was opened.')
+  const title = (out.data.title || `Homestead: ${input.name ?? input.goal}`).trim().slice(0, 100)
+  const newTree = await github<{ sha: string }>(g, 'POST', '/git/trees', { base_tree: commit.tree.sha, tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) })
+  const made = await github<{ sha: string }>(g, 'POST', '/git/commits', { message: title, tree: newTree.sha, parents: [head.object.sha] })
+  const branch = `homestead/${slug(input.name ?? title)}-${Date.now().toString(36)}`
+  await github(g, 'POST', '/git/refs', { ref: `refs/heads/${branch}`, sha: made.sha })
+  const own = out.usd ?? 0
+  const spent = input.spent && Number.isFinite(input.spent.usd) && Number.isFinite(input.spent.calls) ? input.spent : { usd: 0, calls: 0 }
+  const body = [
+    (out.data.summary ?? '').trim(),
+    '',
+    'The goal, as typed in Homestead:',
+    `> ${input.goal.replace(/\n/g, '\n> ')}`,
+    '',
+    'The plan:',
+    plan || '(no tasks)',
+    '',
+    `**What's real here:** ${model} wrote this change in one live call, from the repository as it stands. The rest of the run in Homestead (the other farmers' work, the checks and the rollout) was simulated.`,
+    '',
+    `**Live AI on this farm, at list prices:** ${dollars(spent.usd + own)} across ${spent.calls + 1} calls, including ${dollars(own)} for this change.`,
+    '',
+    "_Opened by Homestead's live Builder._",
+  ].join('\n')
+  const pr = await github<{ html_url: string; number: number }>(g, 'POST', '/pulls', { title, head: branch, base, body })
+  return { ...out, data: { url: pr.html_url, number: pr.number, title, repo: repo.full_name, branch, files: files.map((f) => f.path) } }
+}
+
 // ---- Entry point used by /api/agent ---------------------------------------------------
 
-export type AgentTask = 'plan' | 'route' | 'reshape' | 'discuss' | 'talk' | 'chat'
+export type AgentTask = 'plan' | 'route' | 'reshape' | 'discuss' | 'talk' | 'chat' | 'ship'
+
+// What a server adds to a call: who is calling, for the per-visitor limit, and the repository a real pull request
+// goes to, from the GITHUB_TOKEN and GITHUB_REPO secrets.
+export interface ServerOpts {
+  visitor?: string
+  github?: GitHubConfig
+}
 
 // An Anthropic client alone still works, for local dev without the gateway.
-export async function runAgent(clients: Clients | ClaudeClient, task: AgentTask, input: Record<string, unknown>): Promise<AgentResult<unknown>> {
+export async function runAgent(clients: Clients | ClaudeClient, task: AgentTask, input: Record<string, unknown>, opts: ServerOpts = {}): Promise<AgentResult<unknown>> {
   const client: Clients = 'beta' in clients ? { claude: clients } : clients
+  if (opts.visitor) checkVisitor(opts.visitor, task)
   const model = modelFor(task, typeof input.model === 'string' ? input.model : undefined)
   switch (task) {
+    case 'ship': {
+      if (!opts.github) throw new GitHubMissing()
+      const inp = input as unknown as ShipIn
+      if (typeof inp.goal !== 'string' || !inp.goal.trim() || !Array.isArray(inp.tasks)) throw new Error('A goal and its plan are needed.')
+      const own = typeof input.model === 'string' && modelOf(input.model) ? input.model : 'Claude Sonnet 5'
+      return shipPr(client, opts.github, { ...inp, goal: inp.goal.trim(), tasks: inp.tasks.slice(0, 12) }, own)
+    }
     case 'plan': {
       const goal = typeof input.goal === 'string' ? input.goal.trim() : ''
       if (!goal) throw new Error('A goal is needed to make a plan.')

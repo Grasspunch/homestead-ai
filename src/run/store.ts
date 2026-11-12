@@ -44,6 +44,9 @@ export interface Project {
   liveNote?: string // why a live call fell back to the simulation
   plannedLive?: boolean // the plan came from the real Planner, not the simulation
   liveSource?: string // who answered it: Lovable AI, or your own Anthropic or OpenAI key
+  liveUsd?: number // what this farm's live AI calls cost, at list prices
+  liveCalls?: number // how many live AI calls this farm made
+  realPr?: { url: string; number: number; title: string; repo: string; files: string[]; usd: number } // the real pull request the live Builder opened
   plannedEarlier?: string // the live call failed, so this is a live plan for the same goal from this date (ISO)
   sendBacks?: Record<string, { task: string; note: string }> // work you sent back from the pull request review, by ask
   rollbacks?: number[] // run times you rolled a live release back
@@ -1327,6 +1330,15 @@ class Store {
     let n = 2
     while (taken.has(`${name} ${n}`)) n++
     return `${name} ${n}`
+  }
+
+  // A live call's cost goes to the farm it was for: the open one, or the one being planned.
+  addLiveCost(usd: number) {
+    const p = this.project() ?? [...this.projects].reverse().find((x) => x.planning)
+    if (!p) return
+    p.liveUsd = (p.liveUsd ?? 0) + usd
+    p.liveCalls = (p.liveCalls ?? 0) + 1
+    this.notify()
   }
 
   newProject(goal: string): Project {
