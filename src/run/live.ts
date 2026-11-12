@@ -2,12 +2,12 @@
 // A failed call throws and the caller shows the error. For the demo goals only, a live plan kept from an earlier
 // call stands in (see recorded.ts): a recorded plan can't match an arbitrary goal.
 
-import type { AgentTask, PlanOut, ReshapeOut, RouteInput, RouteOut, ShipIn, ShipOut, Source } from '../agent/agents'
+import type { AgentTask, PlanOut, ReshapeOut, RouteInput, RouteOut, ShipIn, ShipOpenIn, ShipOut, ShipWritten, Source } from '../agent/agents'
 import type { Ctx as ReshapeCtx } from './reshape'
 import type { Talk, TalkLine } from './discuss'
 import type { AskTalkIn, AskTalkOut, ChatIn, ChatOut } from './talk'
 
-export type { PlanOut, RouteInput, RouteOut, ShipOut } from '../agent/agents'
+export type { PlanOut, RouteInput, RouteOut, ShipDraft, ShipOut, ShipWritten } from '../agent/agents'
 
 export type LiveResult<T> = T & { tokens: number; usd: number; model?: string; source?: Source }
 
@@ -91,24 +91,28 @@ async function call<T>(task: AgentTask, input: Record<string, unknown>): Promise
   } catch {
     throw new Error('Could not reach the agent server.')
   }
-  let body: { data?: T; tokens?: number; usd?: number; model?: string; source?: Source; error?: string; missing?: 'anthropic' | 'openai'; code?: 'credits' | 'rate' | 'model' | 'visitor' } | null = null
+  let body: { data?: T; tokens?: number; usd?: number; model?: string; source?: Source; error?: string; missing?: 'anthropic' | 'openai'; code?: 'credits' | 'rate' | 'model' | 'visitor'; status?: number } | null = null
   try {
     body = await res.json()
   } catch {
     body = null
   }
-  if (res.status === 503 && body?.missing) throw new KeyMissing(body.missing)
-  if (res.status === 402) throw new GatewayRefused('credits')
+  // A long call answers at once and puts its status in the body (keepAlive in agents.ts).
+  const status = typeof body?.status === 'number' ? body.status : res.status
+  const ok = status >= 200 && status < 300
+  if (status === 503 && body?.missing) throw new KeyMissing(body.missing)
+  if (status === 402) throw new GatewayRefused('credits')
   // A real pull request says why in its own words, since nothing stands in for it.
-  if (res.status === 429 && task === 'ship' && body?.error) throw new Error(body.error)
-  if (res.status === 429) throw new GatewayRefused(body?.code === 'visitor' ? 'visitor' : 'rate')
+  if (status === 429 && task === 'ship' && body?.error) throw new Error(body.error)
+  if (status === 429) throw new GatewayRefused(body?.code === 'visitor' ? 'visitor' : 'rate')
   if (body?.code === 'model') throw new GatewayRefused('model', (body as { model?: string }).model)
-  if (!res.ok || !body || body.data === undefined) {
-    const why = body?.error ?? (res.ok ? 'The agent sent back no answer.' : `The agent server answered ${res.status}.`)
+  if (!ok || !body || body.data === undefined) {
+    const why = body?.error ?? (ok ? 'The agent sent back no answer.' : `The agent server answered ${status}.`)
     throw new Error(task === 'ship' ? `Couldn't open the pull request: ${why}` : task === 'plan' ? `Couldn't make a plan: ${why}` : task === 'reshape' ? `Couldn't read the change: ${why}` : task === 'discuss' || task === 'talk' || task === 'chat' ? `Couldn't answer that: ${why}` : `Couldn't route the message: ${why}`)
   }
   const usd = typeof body.usd === 'number' && Number.isFinite(body.usd) ? body.usd : 0
-  for (const fn of costWatchers) fn(usd, task)
+  // A call that ran no model (opening the pull request) adds nothing to the farm's live AI.
+  if (body.tokens || usd) for (const fn of costWatchers) fn(usd, task)
   return { ...body.data, tokens: body.tokens ?? 0, usd, model: body.model, source: body.source }
 }
 
@@ -141,8 +145,12 @@ export function chatLive(inp: ChatIn, model?: string): Promise<LiveResult<ChatOu
   return call<ChatOut>('chat', { ...inp, model })
 }
 
-// The one real step of a run: the Builder writes the change into the server's demo repository and opens a pull
-// request there. Nothing stands in for it: a failure says why.
-export function shipLive(inp: ShipIn, model?: string): Promise<LiveResult<ShipOut>> {
-  return call<ShipOut>('ship', { ...inp, model })
+// The one real step of a run, in two calls: the Builder writes the change from the server's demo repository, then
+// the server commits it and opens a pull request there. Nothing stands in for either: a failure says why.
+export function writeShipLive(inp: ShipIn, model?: string): Promise<LiveResult<ShipWritten>> {
+  return call<ShipWritten>('ship', { ...inp, step: 'write', model })
+}
+
+export function openShipLive(inp: ShipOpenIn): Promise<LiveResult<ShipOut>> {
+  return call<ShipOut>('ship', { ...inp, step: 'open' })
 }

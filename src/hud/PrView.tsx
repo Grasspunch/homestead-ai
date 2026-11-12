@@ -1,7 +1,7 @@
 // The pull request, the way GitHub shows it when you open one: the title, its state, what it merges, the lines
 // and files it changes, and its checks. Commits, Checks and Files changed open the rest, with the diffs.
 import './pr.css'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { store, type Project } from '../run/store'
 import { branchOf, prOf, type Commit, type Pr, type PrFile, type Row } from '../run/files'
 import { SEND_BACK } from '../run/simulate'
@@ -16,7 +16,7 @@ import { caughtLine } from './Side'
 import { ExportButtons } from './Export'
 import { soloLine } from '../run/export'
 import { getLiveMode } from '../run/agent'
-import { probeKeys, shipLive } from '../run/live'
+import { openShipLive, probeKeys, writeShipLive, type ShipWritten } from '../run/live'
 import { providerOf } from '../run/kit'
 
 type Tab = 'conversation' | 'commits' | 'checks' | 'files'
@@ -746,8 +746,10 @@ function GateRow({ g }: { g: Gate }) {
 // request there, with what the farm's live AI cost. Only in Live mode, and only when the server has a repository.
 function RealPr({ s, p }: { s: RunState; p: Project }) {
   const [repo, setRepo] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<'write' | 'open' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The Builder's change, once written: trying again after a failed open reuses it, so it isn't paid for twice.
+  const written = useRef<ShipWritten | null>(null)
   useEffect(() => {
     let on = true
     probeKeys().then((k) => on && setRepo(k.github))
@@ -759,23 +761,26 @@ function RealPr({ s, p }: { s: RunState; p: Project }) {
   if (!real && (!repo || !getLiveMode())) return null
   const spent = `${usd(p.liveUsd ?? 0)} across ${plural(p.liveCalls ?? 0, 'call')}`
   const open = async () => {
-    setBusy(true)
     setError(null)
     try {
-      const keys = await probeKeys()
-      // The Builder's own model, if the server can run it; otherwise the everyday model it can.
-      const want = s.farmers.builder?.model
-      const model = want && keys[providerOf(want)] ? want : keys.anthropic ? 'Claude Sonnet 5' : 'GPT-6.1 Sol'
-      const r = await shipLive(
-        { goal: p.goal, name: p.name, tasks: s.tasks.map((t) => ({ name: t.name, doneWhen: t.doneWhen, farmer: t.farmer })), spent: { usd: p.liveUsd ?? 0, calls: p.liveCalls ?? 0 } },
-        model,
-      )
-      p.realPr = { url: r.url, number: r.number, title: r.title, repo: r.repo, files: r.files, usd: r.usd }
+      if (!written.current) {
+        setBusy('write')
+        const keys = await probeKeys()
+        // The Builder's own model, if the server can run it; otherwise the everyday model it can.
+        const want = s.farmers.builder?.model
+        const model = want && keys[providerOf(want)] ? want : keys.anthropic ? 'Claude Sonnet 5' : 'GPT-6.1 Sol'
+        written.current = await writeShipLive({ goal: p.goal, name: p.name, tasks: s.tasks.map((t) => ({ name: t.name, doneWhen: t.doneWhen, farmer: t.farmer })) }, model)
+      }
+      const w = written.current
+      setBusy('open')
+      // The farm's live AI so far, the Builder's change included.
+      const r = await openShipLive({ draft: w.draft, sig: w.sig, spent: { usd: p.liveUsd ?? 0, calls: p.liveCalls ?? 0 } })
+      p.realPr = { url: r.url, number: r.number, title: r.title, repo: r.repo, files: r.files, usd: w.draft.usd }
       store.notify()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
   if (real)
@@ -806,12 +811,12 @@ function RealPr({ s, p }: { s: RunState; p: Project }) {
           <Ico name={error ? 'cross' : 'play'} tone="light" />
         </span>
         <span className="grow">
-          <b>{busy ? 'The Builder is writing it…' : error ? 'No pull request opened' : 'Open it on GitHub for real'}</b>
+          <b>{busy === 'write' ? 'The Builder is writing it…' : busy === 'open' ? 'Opening the pull request…' : error ? 'No pull request opened' : 'Open it on GitHub for real'}</b>
           <span className="sub">
             {error ?? `The live Builder writes this change into ${repo} and opens a real pull request. Live AI on this farm so far: ${spent}.`}
           </span>
         </span>
-        <button className="btn sm" onClick={open} disabled={busy}>
+        <button className="btn sm" onClick={open} disabled={!!busy}>
           {busy ? '...' : error ? 'Try again' : 'Open pull request'}
         </button>
       </div>

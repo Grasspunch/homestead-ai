@@ -709,11 +709,45 @@ export class GitHubMissing extends Error {
   }
 }
 
+// A real pull request runs in two short calls, since a host cuts off a request that runs long: "write" reads the
+// repository and has the Builder write the change, with nothing sent to GitHub; "open" commits that change on a new
+// branch and opens the pull request. Trying "write" again costs a call but leaves nothing behind; trying "open" again
+// finds the branch and pull request it already made.
 export interface ShipIn {
   goal: string
   name?: string
   tasks: { name: string; doneWhen: string; farmer: string }[]
-  spent?: { usd: number; calls: number } // the farm's live calls so far, for the pull request's cost line
+}
+
+// What "write" hands back for "open": the change and where it goes, signed with the server's GitHub token so that
+// "open" commits only what the Builder wrote.
+export interface ShipDraft {
+  id: string
+  repo: string
+  base: string
+  parent: string
+  tree: string
+  title: string
+  summary: string
+  goal: string
+  plan: string
+  name?: string
+  files: { path: string; content: string }[]
+  model: string
+  source: Source
+  usd: number
+}
+
+export interface ShipWritten {
+  draft: ShipDraft
+  sig: string
+  files: string[]
+}
+
+export interface ShipOpenIn {
+  draft: ShipDraft
+  sig: string
+  spent?: { usd: number; calls: number } // the farm's live calls so far, the Builder's included, for the cost line
 }
 
 export interface ShipOut {
@@ -738,15 +772,21 @@ async function github<T>(g: GitHubConfig, method: string, path: string, body?: u
     body: body ? JSON.stringify(body) : undefined,
   })
   const j = (await res.json().catch(() => ({}))) as T & { message?: string }
-  if (!res.ok) throw new Error(`GitHub answered ${res.status}${j.message ? `: ${j.message}` : ''}`)
+  if (!res.ok) throw new GitHubError(res.status, `GitHub answered ${res.status}${j.message ? `: ${j.message}` : ''}`)
   return j
+}
+
+class GitHubError extends Error {
+  constructor(public status: number, message: string) {
+    super(message)
+  }
 }
 
 const TEXT = /\.(md|txt|json|jsonc|js|jsx|mjs|cjs|ts|tsx|css|scss|html|svelte|vue|py|rb|go|rs|java|kt|swift|toml|ya?ml|sh|sql)$/i
 const SKIP = /(^|\/)(node_modules|dist|build|out|coverage|vendor|\.git|\.github|\.next|\.vercel)\//
 const LOCK = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|poetry\.lock)$/
 
-// The files the Builder reads first: the README and manifests, then the shallowest source files, up to 60 KB.
+// The files the Builder reads first: the README and manifests, then the shallowest source files, up to 40 KB.
 export function pickContext(tree: { path: string; type: string; size?: number }[]): string[] {
   const files = tree.filter((t) => t.type === 'blob' && TEXT.test(t.path) && !SKIP.test(t.path) && !LOCK.test(t.path) && (t.size ?? 0) <= 12_000)
   const rank = (p: string) => (/^readme/i.test(p) ? 0 : /^(package\.json|pyproject\.toml|Cargo\.toml|go\.mod)$/.test(p) ? 1 : 2 + p.split('/').length)
@@ -754,7 +794,7 @@ export function pickContext(tree: { path: string; type: string; size?: number }[
   const out: string[] = []
   let bytes = 0
   for (const f of sorted) {
-    if (out.length >= 15 || bytes + (f.size ?? 0) > 60_000) continue
+    if (out.length >= 12 || bytes + (f.size ?? 0) > 40_000) continue
     out.push(f.path)
     bytes += f.size ?? 0
   }
@@ -776,8 +816,15 @@ export function safeFiles(files: { path: string; content: string }[]): { path: s
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'change'
 const dollars = (n: number) => `$${n.toFixed(2)}`
 
-// The one real step of a run: the Builder writes the change into the demo repository, and a pull request opens.
-export async function shipPr(client: Clients, g: GitHubConfig, input: ShipIn, model = 'Claude Sonnet 5'): Promise<AgentResult<ShipOut>> {
+async function signOf(key: string, draft: ShipDraft): Promise<string> {
+  const enc = new TextEncoder()
+  const k = await crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const s = new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(JSON.stringify(draft))))
+  return Array.from(s, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+// Step one: the Builder reads the repository and writes the change. Nothing reaches GitHub yet.
+export async function writeShip(client: Clients, g: GitHubConfig, input: ShipIn, model = 'Claude Sonnet 5'): Promise<AgentResult<ShipWritten>> {
   const repo = await github<{ default_branch: string; full_name: string }>(g, 'GET', '')
   const base = repo.default_branch
   let head: { object: { sha: string } }
@@ -798,7 +845,7 @@ export async function shipPr(client: Clients, g: GitHubConfig, input: ShipIn, mo
   const plan = input.tasks.map((t) => `- ${t.name} (${t.farmer}): done when ${t.doneWhen}`).join('\n')
   const out = await callJSON<{ title: string; summary: string; files: { path: string; content: string }[] }>(
     client,
-    `You are the Builder on a Homestead crew of AI coding agents. You write real code into a real repository, and a person reviews it as a pull request before anything merges. Make the smallest complete change that meets the goal and the plan's done-whens, in the repository's own language, framework, folder layout and style. Prefer working code over stubs, and never leave a TODO where the goal needs code. Write each file whole: for a file you change, return its full new content and keep every line you are not changing exactly as it was. Change at most 6 files, only the ones the goal needs. Never write secrets, CI workflows, lock files or binary files. If part of the goal can't be done in this repository, do the part that can and say what is left in the summary.`,
+    `You are the Builder on a Homestead crew of AI coding agents. You write real code into a real repository, and a person reviews it as a pull request before anything merges. Make the smallest complete change that meets the goal, in the repository's own language, framework, folder layout and style: a first working version a reviewer can read in two minutes, not every part of the plan. Prefer working code over stubs, and never leave a TODO where the goal needs code. Write each file whole: for a file you change, return its full new content and keep every line you are not changing exactly as it was. Change at most 3 files, only the ones the goal needs, and keep each new file short. Never write secrets, CI workflows, lock files or binary files. If part of the goal can't be done in this repository, do the part that can and say what is left in the summary.`,
     `The goal:
 <goal>
 ${input.goal}
@@ -834,31 +881,110 @@ Answer with:
   )
   const files = safeFiles(out.data.files ?? [])
   if (!files.length) throw new Error('The Builder wrote no files it may commit, so no pull request was opened.')
-  const title = (out.data.title || `Homestead: ${input.name ?? input.goal}`).trim().slice(0, 100)
-  const newTree = await github<{ sha: string }>(g, 'POST', '/git/trees', { base_tree: commit.tree.sha, tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) })
-  const made = await github<{ sha: string }>(g, 'POST', '/git/commits', { message: title, tree: newTree.sha, parents: [head.object.sha] })
-  const branch = `homestead/${slug(input.name ?? title)}-${Date.now().toString(36)}`
-  await github(g, 'POST', '/git/refs', { ref: `refs/heads/${branch}`, sha: made.sha })
-  const own = out.usd ?? 0
-  const spent = input.spent && Number.isFinite(input.spent.usd) && Number.isFinite(input.spent.calls) ? input.spent : { usd: 0, calls: 0 }
+  const draft: ShipDraft = {
+    id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+    repo: repo.full_name,
+    base,
+    parent: head.object.sha,
+    tree: commit.tree.sha,
+    title: (out.data.title || `Homestead: ${input.name ?? input.goal}`).trim().slice(0, 100),
+    summary: (out.data.summary ?? '').trim(),
+    goal: input.goal,
+    plan,
+    ...(input.name ? { name: input.name } : {}),
+    files,
+    model,
+    source: out.source,
+    usd: out.usd ?? 0,
+  }
+  return { ...out, data: { draft, sig: await signOf(g.token, draft), files: files.map((f) => f.path) } }
+}
+
+// Step two: commit what the Builder wrote on a new branch and open the pull request, with what the farm's live AI
+// cost. Run again with the same draft, it finds what it already made instead of opening a second one.
+export async function openShip(g: GitHubConfig, input: ShipOpenIn): Promise<AgentResult<ShipOut>> {
+  const d = input.draft
+  if (!d || typeof input.sig !== 'string' || input.sig !== (await signOf(g.token, d)) || d.repo.toLowerCase() !== g.repo.toLowerCase())
+    throw new Error("This change wasn't written by the Builder on this server. Ask it to write the change again.")
+  const files = safeFiles(d.files)
+  const branch = `homestead/${slug(d.name ?? d.title)}-${d.id}`
+  const newTree = await github<{ sha: string }>(g, 'POST', '/git/trees', { base_tree: d.tree, tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) })
+  const made = await github<{ sha: string }>(g, 'POST', '/git/commits', { message: d.title, tree: newTree.sha, parents: [d.parent] })
+  try {
+    await github(g, 'POST', '/git/refs', { ref: `refs/heads/${branch}`, sha: made.sha })
+  } catch (e) {
+    // 422: the branch is there from an earlier try.
+    if (!(e instanceof GitHubError && e.status === 422)) throw e
+  }
+  const spent = input.spent && Number.isFinite(input.spent.usd) && Number.isFinite(input.spent.calls) ? input.spent : { usd: d.usd, calls: 1 }
   const body = [
-    (out.data.summary ?? '').trim(),
+    d.summary,
     '',
     'The goal, as typed in Homestead:',
-    `> ${input.goal.replace(/\n/g, '\n> ')}`,
+    `> ${d.goal.replace(/\n/g, '\n> ')}`,
     '',
     'The plan:',
-    plan || '(no tasks)',
+    d.plan || '(no tasks)',
     '',
-    `**What's real here:** ${model} wrote this change in one live call, from the repository as it stands. The rest of the run in Homestead (the other farmers' work, the checks and the rollout) was simulated.`,
+    `**What's real here:** ${d.model} wrote this change in one live call, from the repository as it stands. The rest of the run in Homestead (the other farmers' work, the checks and the rollout) was simulated.`,
     '',
-    `**Live AI on this farm, at list prices:** ${dollars(spent.usd + own)} across ${spent.calls + 1} calls, including ${dollars(own)} for this change.`,
+    `**Live AI on this farm, at list prices:** ${dollars(spent.usd)} across ${spent.calls} calls, including ${dollars(d.usd)} for this change.`,
     '',
     "_Opened by Homestead's live Builder._",
   ].join('\n')
-  const pr = await github<{ html_url: string; number: number }>(g, 'POST', '/pulls', { title, head: branch, base, body })
-  return { ...out, data: { url: pr.html_url, number: pr.number, title, repo: repo.full_name, branch, files: files.map((f) => f.path) } }
+  let pr: { html_url: string; number: number }
+  try {
+    pr = await github<{ html_url: string; number: number }>(g, 'POST', '/pulls', { title: d.title, head: branch, base: d.base, body })
+  } catch (e) {
+    // 422: a pull request from this branch is open already.
+    if (!(e instanceof GitHubError && e.status === 422)) throw e
+    const owner = d.repo.split('/')[0]
+    const found = await github<{ html_url: string; number: number }[]>(g, 'GET', `/pulls?state=all&head=${encodeURIComponent(`${owner}:${branch}`)}`)
+    if (!found[0]) throw e
+    pr = found[0]
+  }
+  return { data: { url: pr.html_url, number: pr.number, title: d.title, repo: d.repo, branch, files: files.map((f) => f.path) }, tokens: 0, usd: 0, model: d.model, source: d.source }
 }
+
+// A real pull request's calls can run longer than a host lets a request sit silent. So the answer starts at once and
+// sends a space every couple of seconds while the work runs (JSON allows spaces before the value), and the status
+// goes in the body: an error comes as { error, status }.
+export function keepAlive(work: () => Promise<unknown>, every = 2000): ReadableStream<Uint8Array> {
+  const enc = new TextEncoder()
+  let timer: ReturnType<typeof setInterval> | undefined
+  return new ReadableStream<Uint8Array>({
+    async start(c) {
+      c.enqueue(enc.encode(' '))
+      timer = setInterval(() => {
+        try {
+          c.enqueue(enc.encode(' '))
+        } catch {
+          clearInterval(timer)
+        }
+      }, every)
+      let out: unknown
+      try {
+        out = await work()
+      } catch (e) {
+        const r = errorReply(e)
+        out = { ...r.body, status: r.status }
+      }
+      clearInterval(timer)
+      try {
+        c.enqueue(enc.encode(JSON.stringify(out)))
+        c.close()
+      } catch {
+        // The browser left.
+      }
+    },
+    cancel() {
+      clearInterval(timer)
+    },
+  })
+}
+
+// Headers for a keepAlive answer. An event stream, so the host neither holds it back nor compresses it in chunks.
+export const KEEP_ALIVE_HEADERS = { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' }
 
 // ---- Entry point used by /api/agent ---------------------------------------------------
 
@@ -874,15 +1000,17 @@ export interface ServerOpts {
 // An Anthropic client alone still works, for local dev without the gateway.
 export async function runAgent(clients: Clients | ClaudeClient, task: AgentTask, input: Record<string, unknown>, opts: ServerOpts = {}): Promise<AgentResult<unknown>> {
   const client: Clients = 'beta' in clients ? { claude: clients } : clients
-  if (opts.visitor) checkVisitor(opts.visitor, task)
+  // Opening the pull request the Builder already wrote calls no model, so only writing it counts.
+  if (opts.visitor && !(task === 'ship' && input.step === 'open')) checkVisitor(opts.visitor, task)
   const model = modelFor(task, typeof input.model === 'string' ? input.model : undefined)
   switch (task) {
     case 'ship': {
       if (!opts.github) throw new GitHubMissing()
+      if (input.step === 'open') return openShip(opts.github, input as unknown as ShipOpenIn)
       const inp = input as unknown as ShipIn
       if (typeof inp.goal !== 'string' || !inp.goal.trim() || !Array.isArray(inp.tasks)) throw new Error('A goal and its plan are needed.')
       const own = typeof input.model === 'string' && modelOf(input.model) ? input.model : 'Claude Sonnet 5'
-      return shipPr(client, opts.github, { ...inp, goal: inp.goal.trim(), tasks: inp.tasks.slice(0, 12) }, own)
+      return writeShip(client, opts.github, { goal: inp.goal.trim(), ...(typeof inp.name === 'string' ? { name: inp.name } : {}), tasks: inp.tasks.slice(0, 12) }, own)
     }
     case 'plan': {
       const goal = typeof input.goal === 'string' ? input.goal.trim() : ''
