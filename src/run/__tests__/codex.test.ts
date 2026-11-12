@@ -169,11 +169,21 @@ describe('out of Lovable credits, the person’s own key answers', () => {
     expect(errorReply(e)).toMatchObject({ status: 402, body: { code: 'credits' } })
     expect(e.message).toMatch(/your Anthropic key failed too: invalid x-api-key/)
   })
-  it('a rate limit or a wrong id does not spend the own keys', async () => {
+  it('a rate limit does not spend the own keys', async () => {
     const create = claudeOk()
     const e = await runAgent({ gateway: gateway({}, 429).client, claude: { beta: { messages: { create } } } }, 'route', ROUTE_IN).catch((x) => x)
     expect(errorReply(e).status).toBe(429)
     expect(create).not.toHaveBeenCalled()
+  })
+  it('a request or model the gateway refuses goes to the own key, and says why when that fails too', async () => {
+    const create = claudeOk()
+    const r = await runAgent({ gateway: gateway({ error: { message: 'Unsupported parameter: response_format' } }, 400).client, claude: { beta: { messages: { create } } } }, 'route', ROUTE_IN)
+    expect(r.source).toBe('anthropic')
+    expect(create).toHaveBeenCalledOnce()
+    // Haiku 4.5 has no effort setting.
+    expect((create.mock.calls[0] as unknown as [{ output_config: object }])[0].output_config).not.toHaveProperty('effort')
+    const e = await runAgent({ gateway: gateway('upstream says no', 400).client }, 'route', ROUTE_IN).catch((x) => x)
+    expect(e.message).toMatch(/upstream says no/)
   })
   it('the screen names the source: plan tag and reshape note', async () => {
     const real = globalThis.fetch

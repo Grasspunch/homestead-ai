@@ -150,12 +150,15 @@ async function rawJSON<T>(clients: Clients, system: string, user: string, schema
     try {
       return await callGateway<T>(clients.gateway, system, user, schema, m.gateway)
     } catch (e) {
-      // Out of Lovable credits: try the person's own key for this maker. Missing, or failing too, it stays out of credits.
-      if (!(e instanceof GatewayError) || e.code !== 'credits' || !hasDirect) throw e
+      // Lovable AI couldn't answer (out of credits, or it refused the request or the model): try the person's own
+      // key for this maker. Missing, or failing too, the gateway's reason stands, with the key's. A rate limit
+      // passes in a moment, so it doesn't spend the person's own key.
+      if (!hasDirect || (e instanceof GatewayError && e.code === 'rate')) throw e
       try {
         return await direct()
       } catch (d) {
-        throw new GatewayError('credits', `Out of Lovable credits, and your ${m.provider === 'openai' ? 'OpenAI' : 'Anthropic'} key failed too: ${d instanceof Error ? d.message : String(d)}`)
+        const why = `${e instanceof Error ? e.message : String(e)}, and your ${m.provider === 'openai' ? 'OpenAI' : 'Anthropic'} key failed too: ${d instanceof Error ? d.message : String(d)}`
+        throw e instanceof GatewayError ? new GatewayError(e.code, why, e.model) : new Error(why)
       }
     }
   }
@@ -169,7 +172,8 @@ async function callClaude<T>(client: ClaudeClient, system: string, user: string,
     max_tokens: 16000,
     // Opus falls back on the server when it declines; the smaller models have no server-side fallback.
     ...(api === MODEL ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
-    output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+    // Haiku 4.5 has no effort setting: sending one is a 400.
+    output_config: api === 'claude-haiku-4-5' ? { format: { type: 'json_schema', schema } } : { effort: 'low', format: { type: 'json_schema', schema } },
     system,
     messages: [{ role: 'user', content: user }],
   })
@@ -232,8 +236,15 @@ async function callGateway<T>(g: GatewayClient, system: string, user: string, sc
     choices?: { finish_reason?: string; message?: { content?: string | null; refusal?: string | null } }[]
     usage?: { prompt_tokens?: number; completion_tokens?: number }
   }
-  const body = (await res.json().catch(() => ({}))) as Body
-  const said = typeof body.error === 'string' ? body.error : body.error?.message ?? ''
+  const raw = await res.text().catch(() => '')
+  let body: Body = {}
+  try {
+    body = JSON.parse(raw) as Body
+  } catch {
+    body = {}
+  }
+  // What the gateway said, so a refusal names its reason on screen: its error message, or the start of its answer.
+  const said = (typeof body.error === 'string' ? body.error : body.error?.message) || (res.ok ? '' : raw.trim().slice(0, 200))
   if (res.status === 402) throw new GatewayError('credits', 'Out of Lovable credits')
   if (res.status === 429) throw new GatewayError('rate', 'Lovable AI rate limit reached')
   if (!res.ok) {
@@ -304,7 +315,7 @@ export const CREW: Record<FarmerId, { label: string; role: string; agent: string
   deployer: { label: 'Deployer', role: 'ships to staging and production, watches the rollout', agent: 'codex', model: 'GPT-6 Luna' },
 }
 
-const STYLE = 'Write every string as one short plain line. No jargon, no em dashes, no "·" separators, no lists packed into one string.'
+const STYLE = 'Write every string as one short plain line. No jargon, no em dashes, no "·" separators, no lists packed into one string. Write names in sentence case. Say "done-when", never "completion rule".'
 
 // ---- Plan ---------------------------------------------------------------------------
 
@@ -382,7 +393,7 @@ export function crewInstruction(crewSize?: number): string {
     return [
       'Choose the team size from the goal. Add a farmer only when it has real work on this goal, and never add one just because it exists.',
       'A small change (a line of copy, a label, a colour, a typo, a config value) is the Builder alone: it makes the change, runs the existing tests, and ships it straight to everyone once the person merges. No Tester, no Planner, no staged rollout.',
-      'Add the Designer only when the goal changes screens, flows or copy that need designing. Add the Planner only when there are several tasks to keep in step. Add the Deployer only when the release needs a staged rollout watched, as most new features with real users do.',
+      'Add the Designer only when the goal changes screens, flows or copy that need designing. Changing colours, themes or layout across screens counts as design. Add the Planner only when there are several tasks to keep in step. Add the Deployer only when a fault in the release would hurt users or money, such as payments, messages or data. An opt-in or read-only UI change ships on merge, with no Deployer.',
       'A new product or a big feature may need all five.',
     ].join(' ')
   }
@@ -411,16 +422,16 @@ Model rules: the crew is mixed. The Planner uses agent "claude-code" with "Claud
 Team size: ${crewInstruction(input.crewSize)}
 
 For each farmer:
-- context: the only paths and docs it may read, concrete and specific to this goal (for example "docs/pricing.md", "src/checkout/"), never "the codebase".
-- constraints: concrete rules (for example "May not deploy", "Read only: src/", "No network calls to production").
+- context: the only paths and docs it may read, concrete and specific to this goal (for example "src/checkout/"), never "the codebase". You can't see the repository: prefer folders over guessed file names, and list a doc only if the goal names it or a task in this plan writes it.
+- constraints: concrete rules that limit it (for example "Read only: src/", "No network calls to production"). Never restate its role. Put "May not deploy" only on a farmer that could otherwise deploy.
 - limits: a dollar and minute cap for its share of the work.
 - why: why this project needs this farmer, in its own terms (its tasks, its risk), not a generic job description.
 
-Tasks: as few as the goal needs, in run order, kebab-case ids. A small change is one task to make it and run the tests, then the release: 2 tasks. A big feature may need up to 8. Never pad the plan with steps the goal does not need. Each task has one farmer from the crew, a short done-when the Tester can check, and gate true only when it cannot be undone or reaches real users (deploys, sending messages, payments). The release belongs to the Deployer when it is on the crew, otherwise to the Builder.
+Tasks: as few as the goal needs, in run order, kebab-case ids. A small change is one task to make it and run the tests, then the release: 2 tasks. A big feature may need up to 8. Never pad the plan with steps the goal does not need. Each task has one farmer from the crew and a short done-when the Tester can check: a concrete result it can see or run, such as a test, a screen state or a number. Never point a done-when at rules or limits that are "agreed" or "in the plan", and never use vague words like "correctly" or "readable". gate is true only for the step that first reaches real users or cannot be undone (deploys, sending messages, payments), and for a task that waits on the person's answer. A small change that ships on merge has no gate, since the merge is the person's step. The release belongs to the Deployer when it is on the crew, otherwise to the Builder.
 
 Estimates, for real agent runs: reason from the number of tasks, how long each takes an agent (often 5 to 20 minutes), what each costs in tokens (often $0.50 to $4 per task), and which tasks can run at the same time.
 - estimate: this crew. Minutes follow the longest chain of tasks that must wait on each other, since farmers work in parallel. Dollars add up, plus a little for handoffs and checks.
-- singleAgentEstimate: one general agent doing all tasks alone, one after another, on Claude Sonnet 5. Slower, since nothing runs in parallel and it rereads one growing context. It also has nobody independent checking its work, so some problems surface late and get redone. Per token, Claude Sonnet 5 and GPT-6.1 Sol cost half of Opus 5.5 and GPT-6 Luna a fortieth, which usually pays for the crew's handoffs.
+- singleAgentEstimate: one general agent doing all tasks alone, one after another, on Claude Sonnet 5. Slower, since nothing runs in parallel and it rereads one growing context. Price it from the same tasks at Claude Sonnet 5's rates: per token, Claude Sonnet 5 and GPT-6.1 Sol cost half of Opus 5.5, and GPT-6 Luna a fortieth. Its dollars are usually within 10% of the crew's, and can be lower. With one farmer, singleAgentEstimate equals estimate.
 The farmers' limits should add up to roughly the crew estimate, with some headroom.`,
     PLAN_SCHEMA,
     model,
@@ -521,7 +532,7 @@ export async function discussDisagreement(client: Clients, input: { question: st
   const sides = t.sides.map((s) => `- ${s.farmer} (${s.label}): ${s.position}. Option "${s.option}". Why: ${s.why}`).join('\n')
   return callJSON(
     client,
-    `You are two farmers on a crew of AI coding agents who disagree, answering the person's question about it. Answer as the side the question is about, or as both when it's about both or neither. Answer what they actually asked, and don't restate your position: for pros and cons, give your way's real downside as well as its upside; for a vague question or a lone "?", name the one trade-off that decides it and what would make the other way the better pick. Up to two short sentences each, from what that side said and the costs given; never make up numbers, and never decide for the person. ${STYLE}`,
+    `You are two farmers on a crew of AI coding agents who disagree, answering the person's question about it. Answer as the side the question is about, or as both when it's about both or neither. Answer what they actually asked, and don't restate your position: for pros and cons, give your way's real downside as well as its upside; for a vague question or a lone "?", name the one trade-off that decides it and what would make the other way the better pick. Up to two short sentences each, from what that side said and the costs given; never make up numbers, and never decide for the person. When the answer is the same for both sides (cost, time), answer in one line, from the side asked. ${STYLE}`,
     `They disagree on ${t.topic}.
 ${t.impact ?? ''}
 
@@ -561,7 +572,7 @@ export async function talkAsk(client: Clients, input: AskTalkIn, model = 'Claude
   const sides = a.sides?.length ? `\nTwo agents disagree:\n${a.sides.map((x) => `- ${x.label}: ${x.position}. Option "${x.option}". Why: ${x.why}`).join('\n')}` : ''
   return callJSON<AskTalkOut>(
     client,
-    `You are the ${a.farmerLabel}, an AI agent on a small team building software for a person. You stopped to ask them a question, and they typed a reply. Talk it through with them like a trusted colleague. Answer what they actually asked, from the facts given; never make up numbers or claim you did something. If they push back, take it seriously: say what each option really trades off, and that they can wait or tell you what they'd rather do. If they ask for something the options don't offer (for example more review or more tests before merging), say plainly what you can do: on a pull request question you can send the work back with their words as the note. Set choice only when their words clearly and unconditionally pick one of the options; a question, a condition ("yes but"), a doubt or a counter-offer is not a pick, so leave choice null and answer. Set sendBack (the note, in their words) only on a pull request question when they ask for changes, more review or more tests before merging. Set hold only when they want to wait or think. Up to three short sentences, plain words: say agent, project and task, never farm or farmer. ${STYLE}`,
+    `You are the ${a.farmerLabel}, an AI agent on a small team building software for a person. You stopped to ask them a question, and they typed a reply. Talk it through with them like a trusted colleague. Answer what they actually asked, from the facts given; never make up numbers or claim you did something. If they push back, take it seriously: say what each option really trades off, and that they can wait or tell you what they'd rather do. If they ask for something the options don't offer (for example more review or more tests before merging), say plainly what you can do: on a pull request question you can send the work back with their words as the note. Set choice only when their words clearly and unconditionally pick one of the options; a question, a condition ("yes but"), a doubt or a counter-offer is not a pick, so leave choice null and answer. Set sendBack (the note, in their words) only on a pull request question when they ask for changes, more review or more tests before merging. A go-ahead with no condition ("just do it", "whatever you think", "fine") picks the option you suggested. When you set choice, ask them to confirm it; never say they already chose. On a send-back, name the task the note is about, not the shipping step. Set hold only when they want to wait or think. Up to three short sentences, plain words. Never say farm or farmer; name agents by role (the Builder) and tasks by their names, without adding "project" or "agent" to them. ${STYLE}`,
     `Your question to them: ${a.question}
 ${a.impact ? `What it means: ${a.impact}\n` : ''}${a.basis ? `How sure you are: ${a.confidence ?? 'unsure'}, because ${a.basis}\n` : ''}${a.task ? `The task: ${a.task}\n` : ''}Their options: ${a.options.map((o) => `"${o}"`).join(', ')} (you suggested "${a.suggested}")${a.canSendBack ? '. This is the pull request review, so work can also go back to an agent with a note.' : ''}${sides}
 
@@ -631,14 +642,14 @@ export async function plannerChat(client: Clients, input: ChatIn, model = 'Claud
   const out = await callJSON<ChatRaw>(
     client,
     `You are the Planner for a small team of AI agents building software for a person. They typed a message to you while the work runs. First, answer it like a trusted colleague, from the run as it stands below; never make up numbers or claim something happened that the run doesn't show. Then pick at most one action:
-- none: the answer is all they need (questions, opinions, "hmm").
+- none: the answer is all they need (questions, opinions, "hmm"). Answering the question they're waiting on is not an action here: if their words answer it ("yes", "just do it", "cap it at $5"), use none, say which option their words match or that they match none, and tell them to answer it in the question itself.
 - note: something for one agent to act on in its work, such as feedback on the code or design. Say who you handed it to.
-- change: they want to change how the project runs (skip a task, ship differently, turn the review off, hide or move a part of the screen, notifications). Put their request in request, in their words; they'll see a card to confirm it.
+- change: they want to change how the project runs (skip a task, ship differently, turn the review off, hide or move a part of the screen, notifications). Put their request in request, in their words; they'll see a card to confirm it. Only for the kinds listed here: a spend limit, a budget amount or an answer to a question is never a change. Never say a card will appear unless kind is change.
 - undo: they want a change that's on turned off or put back. id is that change's id.
 - reopen: they changed their mind about an earlier answer. askId is that question's id; choice is the new option when they named one, else null to ask it again. If it can't be changed, use none and say why and what you can do instead.
 - adjust: only while a change card is open: keep only some rows (keep, by row id) or set how long it lasts (scope farm for this project, every for every new project).
 - cancel: only while a change card is open, they want it dropped.
-Never pick an action they didn't ask for. Up to three short sentences, plain words: say agent, project and task, never farm or farmer. ${STYLE}`,
+Never pick an action they didn't ask for. For anything outside this run (the weather, news, general questions), say in one line that you can only help with this run, and offer one thing you can do. Up to three short sentences, plain words. Never say farm or farmer; name agents by role (the Builder) and tasks by their names, without adding "project" or "agent" to them. ${STYLE}`,
     `The goal: ${st.goal}
 ${st.done ? 'The run is finished.' : `${st.minutes} min into the run.`} Spent so far: $${st.spent.toFixed(2)}${st.budget ? ` of $${st.budget}` : ''}. Release: ${st.deploy ?? 'not shipped'}. Pull requests ${st.merge === 'auto' ? 'merge by themselves when every check passes' : 'wait for them to review and merge'}.
 
@@ -647,7 +658,7 @@ ${st.farmers.map((f) => `- ${f.id} (${f.label}): ${CREW[f.id]?.role ?? ''}. ${f.
 
 The tasks:
 ${st.tasks.map((t) => `- ${t.id}: ${t.name} (${t.farmer}, ${t.status})`).join('\n') || '(none yet)'}
-${st.openAsk ? `\nWaiting on them now: "${st.openAsk.question}" Options: ${st.openAsk.options.map((o) => `"${o}"`).join(', ')}\n` : ''}
+${st.openAsk ? `\nWaiting on them now: "${st.openAsk.question}" Options: ${st.openAsk.options.map((o) => `"${o}"`).join(', ')}${st.openAsk.impact ? `\nWhat it means: ${st.openAsk.impact}` : ''}\n` : ''}
 What they decided so far:
 ${decided || '(nothing yet)'}
 
