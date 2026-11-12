@@ -12,7 +12,7 @@ import { PrView } from './hud/PrView'
 import { Rollout } from './hud/Proof'
 import { AgentsButton, AgentsPanel, agentsLive } from './hud/Agents'
 import { ControlPanel, InboxPanel, LevelPicker, TaskPanel, UsagePanel, caughtLine, outcome } from './hud/Side'
-import { discuss, getLiveMode, reshapeRead, route, setLiveMode, talkAsk } from './run/agent'
+import { DEMO, discuss, getLiveMode, reshapeRead, route, setLiveMode, talkAsk } from './run/agent'
 import { ownWayIn, plainPick, sidesCanAnswer, taskFor } from './run/askTalk'
 import { OWN, confirmOwn } from './run/discuss'
 import type { Scope } from './run/reshape'
@@ -38,7 +38,11 @@ import { MODELS, MODEL_GROUPS, applyEdit } from './run/kit'
 export function App() {
   const st = useStore()
   useEffect(() => {
-    if (!st.projects.length) st.loadSample()
+    // The scripted sample farm is the demo's: it opens a first visit only at ?demo. Otherwise you start at Home.
+    if (!st.projects.length) {
+      if (DEMO) st.loadSample()
+      else st.restore()
+    }
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (store.settingsOpen) {
