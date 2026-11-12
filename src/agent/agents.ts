@@ -150,12 +150,15 @@ async function rawJSON<T>(clients: Clients, system: string, user: string, schema
     try {
       return await callGateway<T>(clients.gateway, system, user, schema, m.gateway)
     } catch (e) {
-      // Out of Lovable credits: try the person's own key for this maker. Missing, or failing too, it stays out of credits.
-      if (!(e instanceof GatewayError) || e.code !== 'credits' || !hasDirect) throw e
+      // Lovable AI couldn't answer (out of credits, or it refused the request or the model): try the person's own
+      // key for this maker. Missing, or failing too, the gateway's reason stands, with the key's. A rate limit
+      // passes in a moment, so it doesn't spend the person's own key.
+      if (!hasDirect || (e instanceof GatewayError && e.code === 'rate')) throw e
       try {
         return await direct()
       } catch (d) {
-        throw new GatewayError('credits', `Out of Lovable credits, and your ${m.provider === 'openai' ? 'OpenAI' : 'Anthropic'} key failed too: ${d instanceof Error ? d.message : String(d)}`)
+        const why = `${e instanceof Error ? e.message : String(e)}, and your ${m.provider === 'openai' ? 'OpenAI' : 'Anthropic'} key failed too: ${d instanceof Error ? d.message : String(d)}`
+        throw e instanceof GatewayError ? new GatewayError(e.code, why, e.model) : new Error(why)
       }
     }
   }
@@ -169,7 +172,8 @@ async function callClaude<T>(client: ClaudeClient, system: string, user: string,
     max_tokens: 16000,
     // Opus falls back on the server when it declines; the smaller models have no server-side fallback.
     ...(api === MODEL ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
-    output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+    // Haiku 4.5 has no effort setting: sending one is a 400.
+    output_config: api === 'claude-haiku-4-5' ? { format: { type: 'json_schema', schema } } : { effort: 'low', format: { type: 'json_schema', schema } },
     system,
     messages: [{ role: 'user', content: user }],
   })
@@ -232,8 +236,15 @@ async function callGateway<T>(g: GatewayClient, system: string, user: string, sc
     choices?: { finish_reason?: string; message?: { content?: string | null; refusal?: string | null } }[]
     usage?: { prompt_tokens?: number; completion_tokens?: number }
   }
-  const body = (await res.json().catch(() => ({}))) as Body
-  const said = typeof body.error === 'string' ? body.error : body.error?.message ?? ''
+  const raw = await res.text().catch(() => '')
+  let body: Body = {}
+  try {
+    body = JSON.parse(raw) as Body
+  } catch {
+    body = {}
+  }
+  // What the gateway said, so a refusal names its reason on screen: its error message, or the start of its answer.
+  const said = (typeof body.error === 'string' ? body.error : body.error?.message) || (res.ok ? '' : raw.trim().slice(0, 200))
   if (res.status === 402) throw new GatewayError('credits', 'Out of Lovable credits')
   if (res.status === 429) throw new GatewayError('rate', 'Lovable AI rate limit reached')
   if (!res.ok) {
