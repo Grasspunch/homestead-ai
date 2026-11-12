@@ -1158,6 +1158,12 @@ class Store {
     }
     if (!proposal) {
       const r = readChanges(text, ctx)
+      // The live Planner read it and found nothing it can change: say so, rather than pass it to an agent as work.
+      if (r.kind === 'not-a-change' && liveReply) {
+        this.chatTo(pid, { from: 'you', text: clip(text) })
+        this.chatTo(pid, { from: 'planner', text: liveReply })
+        return 'reply'
+      }
       if (r.kind === 'not-a-change') return false
       if (r.kind === 'none') {
         this.chatTo(pid, { from: 'you', text: clip(text) })

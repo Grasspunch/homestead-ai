@@ -444,7 +444,7 @@ export function reshapeSchema(ctx: Ctx) {
     additionalProperties: false,
     required: ['title', 'changes', 'reply'],
     properties: {
-      title: { type: 'string', description: 'Two or three words naming the mode, such as "Incident mode"' },
+      title: { type: 'string', description: 'Two or three words naming what changes, such as "Incident mode" or "Hidden PR button"' },
       reply: { type: 'string', description: 'One short sentence to the person, used only when no change fits' },
       changes: {
         type: 'array',
