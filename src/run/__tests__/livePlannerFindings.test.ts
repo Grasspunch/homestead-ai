@@ -1,7 +1,7 @@
 // Findings from the live Planner test: a reset only touches parts you changed, and what the live Planner says
 // about a change reaches its card.
 import { beforeAll, describe, expect, it } from 'vitest'
-import { BAR_DEFAULT, uiLookOf, uiNoop, type UiId } from '../ui'
+import { BAR_DEFAULT, uiLookOf, uiNoop, type UiChange, type UiId } from '../ui'
 import { simulatePlan } from '../simPlan'
 import { store } from '../store'
 
@@ -13,7 +13,7 @@ beforeAll(() => {
 describe('live Planner findings', () => {
   it('a part shifted along by another part’s move is not changed', () => {
     const last = BAR_DEFAULT[BAR_DEFAULT.length - 1] as UiId
-    const look = uiLookOf([{ kind: 'uiMove', el: last, to: 'start' }])
+    const look = uiLookOf([{ kind: 'uiMove', el: last, to: 'start' } as UiChange])
     expect(look.order.join()).not.toBe(BAR_DEFAULT.join())
     expect(uiNoop({ kind: 'uiReset', el: last }, look)).toBe(false)
     for (const el of ['inbox', 'skip', 'play'] as UiId[]) expect(uiNoop({ kind: 'uiReset', el }, look)).toBe(true)
