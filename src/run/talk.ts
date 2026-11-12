@@ -64,7 +64,7 @@ export interface ChatIn {
     budget?: number
     farmers: { id: FarmerId; label: string; state: string; model?: string; task?: string }[]
     tasks: { id: string; name: string; farmer: FarmerId; status: string }[]
-    openAsk?: { id: string; question: string; options: string[] }
+    openAsk?: { id: string; question: string; options: string[]; impact?: string }
     decided: DecidedAsk[]
     changesOn: { id: string; title: string; request: string }[]
     merge?: 'ask' | 'auto' // pull requests ask you before merging, or merge by themselves when checks pass

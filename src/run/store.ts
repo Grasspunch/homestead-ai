@@ -769,7 +769,7 @@ class Store {
         .filter((f): f is NonNullable<typeof f> => !!f)
         .map((f) => ({ id: f.id, label: f.label, state: f.state, model: look(f.id)?.model, ...(f.task ? { task: s?.tasks.find((t) => t.id === f.task)?.name ?? f.task } : {}) })),
       tasks: (s?.tasks ?? []).map((t) => ({ id: t.id, name: t.name, farmer: t.farmer, status: t.stopped ? 'stopped' : t.status })),
-      ...(open ? { openAsk: { id: open.id, question: open.question, options: [open.suggested, ...open.alternatives] } } : {}),
+      ...(open ? { openAsk: { id: open.id, question: open.question, options: [open.suggested, ...open.alternatives], impact: open.impact } } : {}),
       decided: this.decided(p),
       changesOn: (p.reshapes ?? []).map((r) => ({ id: r.id, title: r.title, request: r.request })),
       merge: p.autonomy.ship === 'auto' ? 'auto' : 'ask',
