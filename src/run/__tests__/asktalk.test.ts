@@ -1,9 +1,9 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { simulatePlan } from '../simPlan'
 import { store } from '../store'
 import { SEND_BACK } from '../simulate'
 import { askTalkSim, ownWayIn, plainPick, sidesCanAnswer, taskFor } from '../askTalk'
-import { talkAsk } from '../agent'
+import { setLiveMode, talkAsk } from '../agent'
 import { resetLiveProbe } from '../live'
 import type { AskTalkIn } from '../talk'
 import type { AskReason } from '../types'
@@ -203,6 +203,8 @@ describe('talkAsk', () => {
     expect(r.data).toEqual(askTalkSim(inp))
   })
   it('a model’s reply is checked: no made-up option, no send-back where work can’t go back', async () => {
+    setLiveMode(true)
+    onTestFinished(() => setLiveMode(false))
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: string, init?: RequestInit) =>

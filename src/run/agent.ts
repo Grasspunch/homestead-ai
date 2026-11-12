@@ -1,5 +1,6 @@
-// The Planner the app talks to. Live by default: requests go to the real Planner through /api/agent, which on
-// Lovable calls every model through Lovable AI, paid with workspace credits. Live mode in Settings turns it off.
+// The Planner the app talks to. Scripted by default. Live mode in Settings sends every request (the plan, chat, asks,
+// changes) to the real models through /api/agent, which on Lovable calls them through Lovable AI, paid with
+// workspace credits. Off, nothing calls a model.
 // ?demo in the address plays the scripted demo the pitch video was recorded from: Live mode starts off there, and
 // a change to it lasts for that page only, so your own choice stays as it was.
 // A failed live call, one the server can't run, or one Lovable AI refuses (credits, rate limit) falls back to the
@@ -22,13 +23,14 @@ const KEY = 'homestead.live'
 // Read once, when the page loads: the app changes the address as you move around, and the demo lasts the visit.
 export const DEMO = typeof location !== 'undefined' && new URLSearchParams(location.search).has('demo')
 
-// On unless you turned it off. Outside a browser (the tests) there is no server to call, so it's off.
+// Off unless you turned it on in Settings: the scripted run is quick and free. Outside a browser (the tests) there is
+// no server to call, so it's off.
 export function getLiveMode(): boolean {
   if (DEMO || typeof window === 'undefined') return false
   try {
-    return localStorage.getItem(KEY) !== '0'
+    return localStorage.getItem(KEY) === '1'
   } catch {
-    return true
+    return false
   }
 }
 
@@ -64,15 +66,14 @@ export const isFallbackNote = (note?: string) =>
 const noteOf = (e: unknown) => (e instanceof KeyMissing ? NO_KEY[e.provider] : e instanceof Error ? e.message : String(e))
 
 // `model` is the Planner's model. On Lovable both makers run through Lovable AI; in local dev without it, only Claude.
-// `chat`: something you said to a farmer. A canned reply to a real question reads as not listening, so chat calls
-// a real model even with Live mode off, and only falls back to the script, quietly, when it can't.
-function run<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, model?: string, chat = false): Promise<AgentAnswer<T>> {
-  return waitingOn(answer(liveCall, sim, paceMs, model, chat))
+// With Live mode off, nothing calls a model: every answer is scripted.
+function run<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, model?: string): Promise<AgentAnswer<T>> {
+  return waitingOn(answer(liveCall, sim, paceMs, model))
 }
 
-async function answer<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, model: string | undefined, chat: boolean): Promise<AgentAnswer<T>> {
+async function answer<T>(liveCall: () => Promise<T>, sim: () => T, paceMs: number, model: string | undefined): Promise<AgentAnswer<T>> {
   const provider = providerOf(model)
-  if ((live || chat) && (await probeKeys())[provider]) {
+  if (live && (await probeKeys())[provider]) {
     try {
       const data = await liveCall()
       const src = (data as { source?: keyof typeof SOURCE }).source
@@ -91,27 +92,26 @@ export function plan(goal: string, crewSize?: number | FarmerId[], model?: strin
 }
 
 export function route(input: RouteInput, model?: string) {
-  return run<RouteOut>(() => liveRoute(input.message, input.farmers, input.tasks, model), () => simulateRoute(input), 700, model, true)
+  return run<RouteOut>(() => liveRoute(input.message, input.farmers, input.tasks, model), () => simulateRoute(input), 700, model)
 }
 
 // A change to the farm, read by the live Planner when Live mode is on. Off, or when the call fails, the app reads it
 // with its own scripted parser, and a failed call says so on the card.
-// Like chat, it calls a real model even with Live mode off when the server can run one, and falls back quietly.
 // `reply`: what the live Planner said when it found no change it can make, so the reason isn't lost.
 export function reshapeRead(message: string, ctx: ReshapeCtx, model?: string): Promise<{ proposal: Proposal | null; note?: string; reply?: string }> {
   return waitingOn(readChange(message, ctx, model))
 }
 
 async function readChange(message: string, ctx: ReshapeCtx, model?: string): Promise<{ proposal: Proposal | null; note?: string; reply?: string }> {
+  if (!live) return { proposal: null }
   const provider = providerOf(model)
-  if (!(await probeKeys())[provider]) return live ? { proposal: null, note: NO_KEY[provider] } : { proposal: null }
+  if (!(await probeKeys())[provider]) return { proposal: null, note: NO_KEY[provider] }
   try {
     const out = await reshapeLive(message, ctx, model)
     const proposal = changesFromLive(out, ctx)
     if (!proposal) return out.reply ? { proposal: null, reply: out.reply } : { proposal: null }
     return { proposal: { ...proposal, note: `Read by the live Planner, through ${out.source ? SOURCE[out.source] : 'Lovable AI'}` } }
   } catch (e) {
-    if (!live) return { proposal: null }
     if (e instanceof KeyMissing || e instanceof GatewayRefused) return { proposal: null, note: noteOf(e) }
     return { proposal: null, note: `The live Planner failed (${e instanceof Error ? e.message : String(e)}), so I read this myself.` }
   }
@@ -123,7 +123,7 @@ export async function discuss(question: string, talk: Talk, modelOf: (f: string)
   const lower = question.toLowerCase()
   const side = talk.sides.find((s) => lower.includes(s.label.toLowerCase())) ?? talk.sides[0]
   const model = modelOf(side.farmer)
-  const r = await run<{ lines: TalkLine[] }>(() => discussLive(question, talk, model), () => ({ lines: discussSim(question, talk) }), 500, model, true)
+  const r = await run<{ lines: TalkLine[] }>(() => discussLive(question, talk, model), () => ({ lines: discussSim(question, talk) }), 500, model)
   const lines = r.data.lines.filter((l) => talk.sides.some((s) => s.farmer === l.from)).slice(0, 2)
   return { ...r, data: lines.length ? lines : discussSim(question, talk) }
 }
@@ -131,7 +131,7 @@ export async function discuss(question: string, talk: Talk, modelOf: (f: string)
 // Talking an ask through: you typed into a question an agent asked. Live, it runs on that agent's model; otherwise
 // the script answers from the ask. Either way the reply answers you, and a choice it reads is confirmed first.
 export async function talkAsk(inp: AskTalkIn, model?: string): Promise<AgentAnswer<AskTalkOut>> {
-  const r = await run<AskTalkOut>(() => askTalkLive(inp, model), () => askTalkSim(inp), 500, model, true)
+  const r = await run<AskTalkOut>(() => askTalkLive(inp, model), () => askTalkSim(inp), 500, model)
   return { ...r, data: checkAsk(r.data, inp) }
 }
 
@@ -145,7 +145,7 @@ function checkAsk(out: AskTalkOut, inp: AskTalkIn): AskTalkOut {
 // A message to the Planner. Live, the Planner answers from the run as it stands and picks at most one action;
 // otherwise the script does what it can, and returns null when it has nothing, so the message goes on as before.
 export async function chatTurn(inp: ChatIn, model?: string): Promise<AgentAnswer<ChatOut | null>> {
-  const r = await run<ChatOut | null>(() => chatLive(inp, model), () => chatSim(inp), 400, model, true)
+  const r = await run<ChatOut | null>(() => chatLive(inp, model), () => chatSim(inp), 400, model)
   return { ...r, data: r.data && checkChat(r.data, inp) }
 }
 
